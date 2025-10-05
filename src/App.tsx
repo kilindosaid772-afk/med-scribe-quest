@@ -10,6 +10,9 @@ import Auth from "./pages/Auth";
 import AdminDashboard from "./pages/AdminDashboard";
 import DoctorDashboard from "./pages/DoctorDashboard";
 import PatientDashboard from "./pages/PatientDashboard";
+import LabDashboard from "./pages/LabDashboard";
+import PharmacyDashboard from "./pages/PharmacyDashboard";
+import BillingDashboard from "./pages/BillingDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,6 +48,30 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <PatientDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/lab"
+              element={
+                <ProtectedRoute requiredRole="lab_tech">
+                  <LabDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pharmacy"
+              element={
+                <ProtectedRoute requiredRole="pharmacist">
+                  <PharmacyDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/billing"
+              element={
+                <ProtectedRoute requiredRole="billing">
+                  <BillingDashboard />
                 </ProtectedRoute>
               }
             />

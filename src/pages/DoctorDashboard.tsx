@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Calendar, Users, Activity, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { EnhancedDoctorFeatures } from '@/components/EnhancedDoctorFeatures';
 
 export default function DoctorDashboard() {
   const { user } = useAuth();
@@ -111,8 +112,13 @@ export default function DoctorDashboard() {
         {/* Upcoming Appointments */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Upcoming Appointments</CardTitle>
-            <CardDescription>Your scheduled patient appointments</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Upcoming Appointments</CardTitle>
+                <CardDescription>Your scheduled patient appointments</CardDescription>
+              </div>
+              <EnhancedDoctorFeatures patients={patients} onSuccess={fetchData} />
+            </div>
           </CardHeader>
           <CardContent>
             {appointments.length === 0 ? (

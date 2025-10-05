@@ -15,6 +15,12 @@ const Index = () => {
         navigate('/admin');
       } else if (roles.includes('doctor')) {
         navigate('/doctor');
+      } else if (roles.includes('lab_tech')) {
+        navigate('/lab');
+      } else if (roles.includes('pharmacist')) {
+        navigate('/pharmacy');
+      } else if (roles.includes('billing')) {
+        navigate('/billing');
       } else {
         navigate('/patient');
       }

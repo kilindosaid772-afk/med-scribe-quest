@@ -92,6 +92,251 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_items: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          invoice_id: string
+          item_type: string | null
+          quantity: number | null
+          total_price: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          invoice_id: string
+          item_type?: string | null
+          quantity?: number | null
+          total_price: number
+          unit_price: number
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          invoice_id?: string
+          item_type?: string | null
+          quantity?: number | null
+          total_price?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          created_at: string
+          discount: number | null
+          due_date: string | null
+          id: string
+          invoice_date: string
+          invoice_number: string
+          notes: string | null
+          paid_amount: number | null
+          patient_id: string
+          status: string | null
+          tax: number | null
+          total_amount: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          discount?: number | null
+          due_date?: string | null
+          id?: string
+          invoice_date?: string
+          invoice_number: string
+          notes?: string | null
+          paid_amount?: number | null
+          patient_id: string
+          status?: string | null
+          tax?: number | null
+          total_amount: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          discount?: number | null
+          due_date?: string | null
+          id?: string
+          invoice_date?: string
+          invoice_number?: string
+          notes?: string | null
+          paid_amount?: number | null
+          patient_id?: string
+          status?: string | null
+          tax?: number | null
+          total_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lab_results: {
+        Row: {
+          abnormal_flag: boolean | null
+          created_at: string
+          id: string
+          lab_test_id: string
+          notes: string | null
+          reference_range: string | null
+          result_date: string
+          result_value: string
+          technician_id: string | null
+          unit: string | null
+        }
+        Insert: {
+          abnormal_flag?: boolean | null
+          created_at?: string
+          id?: string
+          lab_test_id: string
+          notes?: string | null
+          reference_range?: string | null
+          result_date?: string
+          result_value: string
+          technician_id?: string | null
+          unit?: string | null
+        }
+        Update: {
+          abnormal_flag?: boolean | null
+          created_at?: string
+          id?: string
+          lab_test_id?: string
+          notes?: string | null
+          reference_range?: string | null
+          result_date?: string
+          result_value?: string
+          technician_id?: string | null
+          unit?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lab_results_lab_test_id_fkey"
+            columns: ["lab_test_id"]
+            isOneToOne: false
+            referencedRelation: "lab_tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lab_tests: {
+        Row: {
+          completed_date: string | null
+          created_at: string
+          description: string | null
+          id: string
+          notes: string | null
+          ordered_by_doctor_id: string | null
+          ordered_date: string
+          patient_id: string
+          priority: string | null
+          status: string | null
+          test_name: string
+          test_type: string
+          updated_at: string
+        }
+        Insert: {
+          completed_date?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          notes?: string | null
+          ordered_by_doctor_id?: string | null
+          ordered_date?: string
+          patient_id: string
+          priority?: string | null
+          status?: string | null
+          test_name: string
+          test_type: string
+          updated_at?: string
+        }
+        Update: {
+          completed_date?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          notes?: string | null
+          ordered_by_doctor_id?: string | null
+          ordered_date?: string
+          patient_id?: string
+          priority?: string | null
+          status?: string | null
+          test_name?: string
+          test_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lab_tests_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      medications: {
+        Row: {
+          created_at: string
+          dosage_form: string
+          expiry_date: string | null
+          generic_name: string | null
+          id: string
+          manufacturer: string | null
+          name: string
+          quantity_in_stock: number
+          reorder_level: number | null
+          strength: string
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dosage_form: string
+          expiry_date?: string | null
+          generic_name?: string | null
+          id?: string
+          manufacturer?: string | null
+          name: string
+          quantity_in_stock?: number
+          reorder_level?: number | null
+          strength: string
+          unit_price: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dosage_form?: string
+          expiry_date?: string | null
+          generic_name?: string | null
+          id?: string
+          manufacturer?: string | null
+          name?: string
+          quantity_in_stock?: number
+          reorder_level?: number | null
+          strength?: string
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       patients: {
         Row: {
           address: string | null
@@ -151,6 +396,119 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          invoice_id: string
+          notes: string | null
+          payment_date: string
+          payment_method: string | null
+          reference_number: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          invoice_id: string
+          notes?: string | null
+          payment_date?: string
+          payment_method?: string | null
+          reference_number?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          notes?: string | null
+          payment_date?: string
+          payment_method?: string | null
+          reference_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prescriptions: {
+        Row: {
+          created_at: string
+          dispensed_by: string | null
+          dispensed_date: string | null
+          doctor_id: string
+          dosage: string
+          duration: string
+          frequency: string
+          id: string
+          instructions: string | null
+          medication_id: string | null
+          medication_name: string
+          patient_id: string
+          prescribed_date: string
+          quantity: number
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dispensed_by?: string | null
+          dispensed_date?: string | null
+          doctor_id: string
+          dosage: string
+          duration: string
+          frequency: string
+          id?: string
+          instructions?: string | null
+          medication_id?: string | null
+          medication_name: string
+          patient_id: string
+          prescribed_date?: string
+          quantity: number
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dispensed_by?: string | null
+          dispensed_date?: string | null
+          doctor_id?: string
+          dosage?: string
+          duration?: string
+          frequency?: string
+          id?: string
+          instructions?: string | null
+          medication_id?: string | null
+          medication_name?: string
+          patient_id?: string
+          prescribed_date?: string
+          quantity?: number
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prescriptions_medication_id_fkey"
+            columns: ["medication_id"]
+            isOneToOne: false
+            referencedRelation: "medications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

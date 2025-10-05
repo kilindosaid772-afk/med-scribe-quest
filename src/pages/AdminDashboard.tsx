@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Users, UserPlus, Activity, Calendar, Loader2 } from 'lucide-react';
+import { EnhancedAppointmentBooking } from '@/components/EnhancedAppointmentBooking';
 
 export default function AdminDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
@@ -226,13 +227,15 @@ export default function AdminDashboard() {
                 <CardTitle>Recent Patients</CardTitle>
                 <CardDescription>Latest patient registrations</CardDescription>
               </div>
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Add Patient
-                  </Button>
-                </DialogTrigger>
+              <div className="flex gap-2">
+                <EnhancedAppointmentBooking patients={patients} onSuccess={fetchData} />
+                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Add Patient
+                    </Button>
+                  </DialogTrigger>
                 <DialogContent className="max-w-2xl">
                   <DialogHeader>
                     <DialogTitle>Add New Patient</DialogTitle>
@@ -280,8 +283,9 @@ export default function AdminDashboard() {
                     </div>
                     <Button type="submit" className="w-full">Add Patient</Button>
                   </form>
-                </DialogContent>
-              </Dialog>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
