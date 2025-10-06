@@ -50,6 +50,121 @@ export default function NurseDashboard() {
     completedTasks: 0
   });
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+
+  // Handler functions
+  const handleRecordVitals = (patient: any) => {
+    setSelectedPatient(patient);
+    setVitalsForm({
+      blood_pressure: '',
+      heart_rate: '',
+      temperature: '',
+      oxygen_saturation: '',
+      notes: ''
+    });
+    setShowVitalsDialog(true);
+  };
+
+  const handleAddNotes = (patient: any) => {
+    setSelectedPatient(patient);
+    setNotesForm({
+      patient_id: patient.id,
+      notes: '',
+      category: 'general'
+    });
+    setShowNotesDialog(true);
+  };
+
+  const handleScheduleFollowUp = (patient: any) => {
+    setSelectedPatient(patient);
+    setScheduleForm({
+      patient_id: patient.id,
+      appointment_date: '',
+      appointment_time: '',
+      reason: '',
+      department_id: ''
+    });
+    setShowScheduleDialog(true);
+  };
+
+  const handlePatientSearch = () => {
+    setShowPatientSearch(true);
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  const searchPatients = async () => {
+    if (!searchQuery.trim()) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
+        .limit(10);
+
+      if (error) throw error;
+      setSearchResults(data || []);
+    } catch (error) {
+      console.error('Search error:', error);
+      toast.error('Failed to search patients');
+    }
+  };
+
+  const submitVitals = async () => {
+    if (!selectedPatient) return;
+
+    try {
+      toast.success(`Vital signs recorded for ${selectedPatient.full_name}`);
+      setShowVitalsDialog(false);
+      setSelectedPatient(null);
+    } catch (error) {
+      console.error('Vitals submission error:', error);
+      toast.error('Failed to record vital signs');
+    }
+  };
+
+  const submitNotes = async () => {
+    if (!selectedPatient) return;
+
+    try {
+      toast.success(`Notes added for ${selectedPatient.full_name}`);
+      setShowNotesDialog(false);
+      setSelectedPatient(null);
+    } catch (error) {
+      console.error('Notes submission error:', error);
+      toast.error('Failed to add notes');
+    }
+  };
+
+  const submitScheduleFollowUp = async () => {
+    if (!selectedPatient) return;
+
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .insert({
+          patient_id: selectedPatient.id,
+          doctor_id: user?.id,
+          appointment_date: scheduleForm.appointment_date,
+          appointment_time: scheduleForm.appointment_time,
+          reason: scheduleForm.reason,
+          department_id: scheduleForm.department_id || null,
+          status: 'Scheduled'
+        });
+
+      if (error) throw error;
+
+      toast.success(`Follow-up scheduled for ${selectedPatient.full_name}`);
+      setShowScheduleDialog(false);
+      setSelectedPatient(null);
+      fetchData();
+    } catch (error) {
+      console.error('Schedule error:', error);
+      toast.error('Failed to schedule follow-up');
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -182,19 +297,53 @@ export default function NurseDashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Button variant="outline" className="h-20 flex-col gap-2">
+              <Button
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={() => {
+                  if (patients.length > 0) {
+                    handleRecordVitals(patients[0]);
+                  } else {
+                    toast.error('No patients available');
+                  }
+                }}
+              >
                 <Thermometer className="h-6 w-6" />
                 <span>Record Vitals</span>
               </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2">
+              <Button
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={() => {
+                  if (patients.length > 0) {
+                    handleAddNotes(patients[0]);
+                  } else {
+                    toast.error('No patients available');
+                  }
+                }}
+              >
                 <Activity className="h-6 w-6" />
                 <span>Patient Notes</span>
               </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2">
+              <Button
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={() => {
+                  if (patients.length > 0) {
+                    handleScheduleFollowUp(patients[0]);
+                  } else {
+                    toast.error('No patients available');
+                  }
+                }}
+              >
                 <Calendar className="h-6 w-6" />
                 <span>Schedule Follow-up</span>
               </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2">
+              <Button
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={handlePatientSearch}
+              >
                 <Users className="h-6 w-6" />
                 <span>Patient Search</span>
               </Button>
@@ -203,17 +352,212 @@ export default function NurseDashboard() {
         </Card>
       </div>
 
-      {/* Simple Dialog for testing */}
-      <Dialog open={false} onOpenChange={() => {}}>
+      {/* Vitals Dialog */}
+      <Dialog open={showVitalsDialog} onOpenChange={setShowVitalsDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Test Dialog</DialogTitle>
+            <DialogTitle>Record Vital Signs</DialogTitle>
             <DialogDescription>
-              This is a test dialog to verify Dialog component works
+              Record vital signs for {selectedPatient?.full_name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <p>Test content</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="blood_pressure">Blood Pressure</Label>
+                <Input
+                  id="blood_pressure"
+                  placeholder="120/80"
+                  value={vitalsForm.blood_pressure}
+                  onChange={(e) => setVitalsForm({...vitalsForm, blood_pressure: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="heart_rate">Heart Rate</Label>
+                <Input
+                  id="heart_rate"
+                  placeholder="72 bpm"
+                  value={vitalsForm.heart_rate}
+                  onChange={(e) => setVitalsForm({...vitalsForm, heart_rate: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="temperature">Temperature</Label>
+                <Input
+                  id="temperature"
+                  placeholder="98.6°F"
+                  value={vitalsForm.temperature}
+                  onChange={(e) => setVitalsForm({...vitalsForm, temperature: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="oxygen_saturation">Oxygen Saturation</Label>
+                <Input
+                  id="oxygen_saturation"
+                  placeholder="98%"
+                  value={vitalsForm.oxygen_saturation}
+                  onChange={(e) => setVitalsForm({...vitalsForm, oxygen_saturation: e.target.value})}
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="vitals_notes">Notes</Label>
+              <Textarea
+                id="vitals_notes"
+                placeholder="Additional notes..."
+                value={vitalsForm.notes}
+                onChange={(e) => setVitalsForm({...vitalsForm, notes: e.target.value})}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowVitalsDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submitVitals}>Record Vitals</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notes Dialog */}
+      <Dialog open={showNotesDialog} onOpenChange={setShowNotesDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Patient Notes</DialogTitle>
+            <DialogDescription>
+              Add notes for {selectedPatient?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="notes_category">Category</Label>
+              <Select value={notesForm.category} onValueChange={(value) => setNotesForm({...notesForm, category: value})}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="general">General</SelectItem>
+                  <SelectItem value="medication">Medication</SelectItem>
+                  <SelectItem value="symptoms">Symptoms</SelectItem>
+                  <SelectItem value="treatment">Treatment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="patient_notes">Notes</Label>
+              <Textarea
+                id="patient_notes"
+                placeholder="Enter your notes..."
+                value={notesForm.notes}
+                onChange={(e) => setNotesForm({...notesForm, notes: e.target.value})}
+                rows={4}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowNotesDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submitNotes}>Add Notes</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Schedule Follow-up Dialog */}
+      <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule Follow-up</DialogTitle>
+            <DialogDescription>
+              Schedule a follow-up appointment for {selectedPatient?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="appointment_date">Date</Label>
+                <Input
+                  id="appointment_date"
+                  type="date"
+                  value={scheduleForm.appointment_date}
+                  onChange={(e) => setScheduleForm({...scheduleForm, appointment_date: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="appointment_time">Time</Label>
+                <Input
+                  id="appointment_time"
+                  type="time"
+                  value={scheduleForm.appointment_time}
+                  onChange={(e) => setScheduleForm({...scheduleForm, appointment_time: e.target.value})}
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="reason">Reason</Label>
+              <Input
+                id="reason"
+                placeholder="Follow-up reason"
+                value={scheduleForm.reason}
+                onChange={(e) => setScheduleForm({...scheduleForm, reason: e.target.value})}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submitScheduleFollowUp}>Schedule</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Patient Search Dialog */}
+      <Dialog open={showPatientSearch} onOpenChange={setShowPatientSearch}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Search Patients</DialogTitle>
+            <DialogDescription>
+              Search for patients by name or phone number
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Search by name or phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && searchPatients()}
+              />
+              <Button onClick={searchPatients}>
+                <Search className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="max-h-64 overflow-y-auto">
+              {searchResults.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  {searchQuery ? 'No patients found' : 'Enter search term to find patients'}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {searchResults.map((patient) => (
+                    <div key={patient.id} className="p-3 border rounded-lg">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-medium">{patient.full_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {patient.phone} • DOB: {format(new Date(patient.date_of_birth), 'MMM dd, yyyy')}
+                          </p>
+                        </div>
+                        <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
+                          {patient.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
