@@ -38,16 +38,16 @@ const Index = () => {
       navigate('/admin');
     } else if (roles.includes('doctor')) {
       navigate('/doctor');
+    } else if (roles.includes('nurse')) {
+      navigate('/nurse'); // NurseDashboard
+    } else if (roles.includes('receptionist')) {
+      navigate('/receptionist'); // ReceptionistDashboard
     } else if (roles.includes('lab_tech')) {
       navigate('/lab');
     } else if (roles.includes('pharmacist')) {
       navigate('/pharmacy');
     } else if (roles.includes('billing')) {
       navigate('/billing');
-    } else if (roles.includes('receptionist')) {
-      navigate('/patient'); // Temporary - until ReceptionistDashboard is created
-    } else if (roles.includes('nurse')) {
-      navigate('/patient'); // Temporary - until NurseDashboard is created
     } else {
       navigate('/patient');
     }

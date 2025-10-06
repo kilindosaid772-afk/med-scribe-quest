@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Heart, Loader2 } from 'lucide-react';
+import { Activity, Loader2 } from 'lucide-react';
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
@@ -66,7 +66,7 @@ export default function Auth() {
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
             <div className="rounded-full bg-primary/10 p-3">
-              <Heart className="h-8 w-8 text-primary" />
+              <Activity className="h-8 w-8 text-primary" />
             </div>
           </div>
           <CardTitle className="text-3xl font-bold">Hospital Management</CardTitle>

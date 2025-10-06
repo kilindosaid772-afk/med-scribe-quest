@@ -13,6 +13,8 @@ import PatientDashboard from "./pages/PatientDashboard";
 import LabDashboard from "./pages/LabDashboard";
 import PharmacyDashboard from "./pages/PharmacyDashboard";
 import BillingDashboard from "./pages/BillingDashboard";
+import NurseDashboard from "./pages/NurseDashboard";
+import ReceptionistDashboard from "./pages/ReceptionistDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -68,14 +70,21 @@ const App = () => (
               }
             />
             <Route
-              path="/billing"
+              path="/nurse"
               element={
-                <ProtectedRoute requiredRole="billing">
-                  <BillingDashboard />
+                <ProtectedRoute requiredRole="nurse">
+                  <NurseDashboard />
                 </ProtectedRoute>
               }
             />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route
+              path="/receptionist"
+              element={
+                <ProtectedRoute requiredRole="receptionist">
+                  <ReceptionistDashboard />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
