@@ -8,19 +8,25 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { DollarSign, CreditCard, AlertCircle, Loader2, Plus } from 'lucide-react';
+import { DollarSign, CreditCard, AlertCircle, Loader2, Plus, Shield, Smartphone, Building2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function BillingDashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
-  const [stats, setStats] = useState({ unpaid: 0, partiallyPaid: 0, totalRevenue: 0 });
+  const [insuranceCompanies, setInsuranceCompanies] = useState<any[]>([]);
+  const [insuranceClaims, setInsuranceClaims] = useState<any[]>([]);
+  const [stats, setStats] = useState({ unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0 });
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string>('');
 
   useEffect(() => {
     fetchData();
@@ -33,7 +39,7 @@ export default function BillingDashboard() {
         .from('invoices')
         .select(`
           *,
-          patient:patients(full_name, phone)
+          patient:patients(full_name, phone, insurance_company_id, insurance_policy_number)
         `)
         .order('invoice_date', { ascending: false })
         .limit(50);
@@ -41,19 +47,39 @@ export default function BillingDashboard() {
       // Fetch patients for invoice creation
       const { data: patientsData } = await supabase
         .from('patients')
-        .select('id, full_name')
+        .select('id, full_name, insurance_company_id, insurance_policy_number')
         .eq('status', 'Active');
+
+      // Fetch insurance companies
+      const { data: insuranceData } = await supabase
+        .from('insurance_companies')
+        .select('*')
+        .eq('status', 'Active');
+
+      // Fetch insurance claims
+      const { data: claimsData } = await supabase
+        .from('insurance_claims')
+        .select(`
+          *,
+          patient:patients(full_name),
+          insurance_company:insurance_companies(name),
+          invoice:invoices(invoice_number)
+        `)
+        .order('submission_date', { ascending: false });
 
       setInvoices(invoicesData || []);
       setPatients(patientsData || []);
+      setInsuranceCompanies(insuranceData || []);
+      setInsuranceClaims(claimsData || []);
 
       const unpaid = invoicesData?.filter(i => i.status === 'Unpaid').length || 0;
       const partiallyPaid = invoicesData?.filter(i => i.status === 'Partially Paid').length || 0;
       const totalRevenue = invoicesData
         ?.filter(i => i.status === 'Paid')
         .reduce((sum, i) => sum + Number(i.total_amount), 0) || 0;
+      const pendingClaims = claimsData?.filter(c => c.status === 'Pending').length || 0;
 
-      setStats({ unpaid, partiallyPaid, totalRevenue });
+      setStats({ unpaid, partiallyPaid, totalRevenue, pendingClaims });
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load billing data');
@@ -150,7 +176,7 @@ export default function BillingDashboard() {
     <DashboardLayout title="Billing Dashboard">
       <div className="space-y-8">
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <Card className="border-destructive/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
@@ -171,6 +197,16 @@ export default function BillingDashboard() {
             </CardContent>
           </Card>
 
+          <Card className="border-blue-200 shadow-lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending Claims</CardTitle>
+              <Shield className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{stats.pendingClaims}</div>
+            </CardContent>
+          </Card>
+
           <Card className="border-green-200 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
@@ -184,14 +220,22 @@ export default function BillingDashboard() {
           </Card>
         </div>
 
-        {/* Invoices Table */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Invoices</CardTitle>
-                <CardDescription>Manage patient invoices and payments</CardDescription>
-              </div>
+        {/* Main Content with Tabs */}
+        <Tabs defaultValue="invoices" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="invoices">Invoices & Payments</TabsTrigger>
+            <TabsTrigger value="insurance">Insurance Claims</TabsTrigger>
+          </TabsList>
+
+          {/* Invoices Tab */}
+          <TabsContent value="invoices" className="space-y-4">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Invoices</CardTitle>
+                    <CardDescription>Manage patient invoices and payments</CardDescription>
+                  </div>
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogTrigger asChild>
                   <Button>
@@ -298,6 +342,66 @@ export default function BillingDashboard() {
             </Table>
           </CardContent>
         </Card>
+          </TabsContent>
+
+          {/* Insurance Claims Tab */}
+          <TabsContent value="insurance" className="space-y-4">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Insurance Claims</CardTitle>
+                    <CardDescription>Manage insurance claims and approvals</CardDescription>
+                  </div>
+                  <Button onClick={() => setClaimDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Submit Claim
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Claim #</TableHead>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Insurance</TableHead>
+                      <TableHead>Claim Amount</TableHead>
+                      <TableHead>Approved Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {insuranceClaims.map((claim) => (
+                      <TableRow key={claim.id}>
+                        <TableCell className="font-medium">{claim.claim_number}</TableCell>
+                        <TableCell>{claim.patient?.full_name || 'Unknown'}</TableCell>
+                        <TableCell>{claim.insurance_company?.name || 'N/A'}</TableCell>
+                        <TableCell>${Number(claim.claim_amount).toFixed(2)}</TableCell>
+                        <TableCell>${Number(claim.approved_amount).toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              claim.status === 'Approved' ? 'default' :
+                              claim.status === 'Pending' ? 'secondary' :
+                              'destructive'
+                            }
+                          >
+                            {claim.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(claim.submission_date), 'MMM dd, yyyy')}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Payment Dialog */}
         <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
@@ -322,19 +426,77 @@ export default function BillingDashboard() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
-                <Select name="paymentMethod" required>
+                <Select name="paymentMethod" value={paymentMethod} onValueChange={setPaymentMethod} required>
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Select payment method" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="Card">Card</SelectItem>
-                    <SelectItem value="Insurance">Insurance</SelectItem>
-                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
+                    <SelectItem value="Cash">💵 Cash</SelectItem>
+                    <SelectItem value="Card">💳 Debit/Credit Card</SelectItem>
+                    <SelectItem value="M-Pesa">📱 M-Pesa</SelectItem>
+                    <SelectItem value="Airtel Money">📱 Airtel Money</SelectItem>
+                    <SelectItem value="Tigo Pesa">📱 Tigo Pesa</SelectItem>
+                    <SelectItem value="Halopesa">📱 Halopesa</SelectItem>
+                    <SelectItem value="Bank Transfer">🏦 Bank Transfer</SelectItem>
+                    <SelectItem value="Cheque">📄 Cheque</SelectItem>
+                    <SelectItem value="Insurance">🛡️ Insurance</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              
+              {/* Mobile Money Fields */}
+              {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) && (
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber">Phone Number</Label>
+                  <Input 
+                    id="phoneNumber" 
+                    name="phoneNumber" 
+                    placeholder="+255 7XX XXX XXX"
+                    required
+                  />
+                </div>
+              )}
+
+              {/* Bank Transfer Fields */}
+              {paymentMethod === 'Bank Transfer' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="bankName">Bank Name</Label>
+                    <Input id="bankName" name="bankName" placeholder="e.g., CRDB Bank" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="accountNumber">Account Number</Label>
+                    <Input id="accountNumber" name="accountNumber" placeholder="Account number" required />
+                  </div>
+                </>
+              )}
+
+              {/* Cheque Fields */}
+              {paymentMethod === 'Cheque' && (
+                <div className="space-y-2">
+                  <Label htmlFor="chequeNumber">Cheque Number</Label>
+                  <Input id="chequeNumber" name="chequeNumber" placeholder="Cheque number" required />
+                </div>
+              )}
+
+              {/* Insurance Fields */}
+              {paymentMethod === 'Insurance' && (
+                <div className="space-y-2">
+                  <Label>Insurance Company</Label>
+                  <Select name="insuranceCompanyId" required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select insurance company" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {insuranceCompanies.map((company) => (
+                        <SelectItem key={company.id} value={company.id}>
+                          {company.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="referenceNumber">Reference Number</Label>
                 <Input id="referenceNumber" name="referenceNumber" />
@@ -344,6 +506,87 @@ export default function BillingDashboard() {
                 <Input id="notes" name="notes" />
               </div>
               <Button type="submit" className="w-full">Record Payment</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Insurance Claim Dialog */}
+        <Dialog open={claimDialogOpen} onOpenChange={setClaimDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Submit Insurance Claim</DialogTitle>
+              <DialogDescription>
+                Submit a new insurance claim for an invoice
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              
+              const claimData = {
+                invoice_id: formData.get('invoiceId') as string,
+                insurance_company_id: formData.get('insuranceCompanyId') as string,
+                patient_id: invoices.find(inv => inv.id === formData.get('invoiceId'))?.patient_id,
+                claim_number: `CLM-${Date.now().toString().slice(-8)}`,
+                claim_amount: Number(formData.get('claimAmount')),
+                notes: formData.get('notes') as string,
+              };
+
+              const { error } = await supabase.from('insurance_claims').insert([claimData]);
+              
+              if (error) {
+                toast.error('Failed to submit claim');
+              } else {
+                toast.success('Insurance claim submitted successfully');
+                setClaimDialogOpen(false);
+                fetchData();
+              }
+            }} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="invoiceId">Invoice</Label>
+                <Select name="invoiceId" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select invoice" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {invoices.filter(inv => inv.patient?.insurance_company_id).map((invoice) => (
+                      <SelectItem key={invoice.id} value={invoice.id}>
+                        {invoice.invoice_number} - {invoice.patient?.full_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="insuranceCompanyId">Insurance Company</Label>
+                <Select name="insuranceCompanyId" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select insurance company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {insuranceCompanies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name} ({company.coverage_percentage}% coverage)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="claimAmount">Claim Amount ($)</Label>
+                <Input
+                  id="claimAmount"
+                  name="claimAmount"
+                  type="number"
+                  step="0.01"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea id="notes" name="notes" rows={3} />
+              </div>
+              <Button type="submit" className="w-full">Submit Claim</Button>
             </form>
           </DialogContent>
         </Dialog>

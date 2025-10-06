@@ -92,6 +92,118 @@ export type Database = {
         }
         Relationships: []
       }
+      insurance_claims: {
+        Row: {
+          approval_date: string | null
+          approved_amount: number | null
+          claim_amount: number
+          claim_number: string
+          created_at: string
+          id: string
+          insurance_company_id: string
+          invoice_id: string
+          notes: string | null
+          patient_id: string
+          rejection_reason: string | null
+          status: string | null
+          submission_date: string
+          updated_at: string
+        }
+        Insert: {
+          approval_date?: string | null
+          approved_amount?: number | null
+          claim_amount: number
+          claim_number: string
+          created_at?: string
+          id?: string
+          insurance_company_id: string
+          invoice_id: string
+          notes?: string | null
+          patient_id: string
+          rejection_reason?: string | null
+          status?: string | null
+          submission_date?: string
+          updated_at?: string
+        }
+        Update: {
+          approval_date?: string | null
+          approved_amount?: number | null
+          claim_amount?: number
+          claim_number?: string
+          created_at?: string
+          id?: string
+          insurance_company_id?: string
+          invoice_id?: string
+          notes?: string | null
+          patient_id?: string
+          rejection_reason?: string | null
+          status?: string | null
+          submission_date?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insurance_claims_insurance_company_id_fkey"
+            columns: ["insurance_company_id"]
+            isOneToOne: false
+            referencedRelation: "insurance_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "insurance_claims_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "insurance_claims_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insurance_companies: {
+        Row: {
+          address: string | null
+          contact_person: string | null
+          coverage_percentage: number | null
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          contact_person?: string | null
+          coverage_percentage?: number | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          contact_person?: string | null
+          coverage_percentage?: number | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       invoice_items: {
         Row: {
           created_at: string
@@ -351,6 +463,9 @@ export type Database = {
           full_name: string
           gender: string | null
           id: string
+          insurance_company_id: string | null
+          insurance_coverage_percentage: number | null
+          insurance_policy_number: string | null
           medical_history: string | null
           phone: string
           status: string | null
@@ -370,6 +485,9 @@ export type Database = {
           full_name: string
           gender?: string | null
           id?: string
+          insurance_company_id?: string | null
+          insurance_coverage_percentage?: number | null
+          insurance_policy_number?: string | null
           medical_history?: string | null
           phone: string
           status?: string | null
@@ -389,13 +507,24 @@ export type Database = {
           full_name?: string
           gender?: string | null
           id?: string
+          insurance_company_id?: string | null
+          insurance_coverage_percentage?: number | null
+          insurance_policy_number?: string | null
           medical_history?: string | null
           phone?: string
           status?: string | null
           updated_at?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "patients_insurance_company_id_fkey"
+            columns: ["insurance_company_id"]
+            isOneToOne: false
+            referencedRelation: "insurance_companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       payments: {
         Row: {
