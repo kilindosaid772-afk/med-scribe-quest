@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Users, UserPlus, Activity, Calendar, Loader2 } from 'lucide-react';
@@ -44,12 +45,16 @@ export default function AdminDashboard() {
       // Fetch user roles
       const { data: rolesData } = await supabase
         .from('user_roles')
-        .select('user_id, role');
+        .select('id, user_id, role, is_primary');
 
       // Combine users with their roles
       const usersWithRoles = usersData?.map(user => ({
         ...user,
-        roles: rolesData?.filter(r => r.user_id === user.id).map(r => r.role) || []
+        roles: rolesData?.filter(r => r.user_id === user.id).map(r => ({
+          id: r.id,
+          role: r.role,
+          is_primary: r.is_primary
+        })) || []
       })) || [];
 
       // Fetch stats
@@ -106,16 +111,31 @@ export default function AdminDashboard() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const role = formData.get('role');
+    const isPrimary = formData.get('isPrimary') === 'on';
 
     const { error } = await supabase
       .from('user_roles')
-      .insert([{ user_id: selectedUserId, role: role as any }]);
+      .insert([{ user_id: selectedUserId, role: role as any, is_primary: isPrimary }]);
 
     if (error) {
       toast.error('Failed to assign role');
     } else {
       toast.success('Role assigned successfully');
       setRoleDialogOpen(false);
+      fetchData();
+    }
+  };
+
+  const handleSetPrimaryRole = async (userId: string, roleId: string) => {
+    const { error } = await supabase
+      .from('user_roles')
+      .update({ is_primary: true })
+      .eq('id', roleId);
+
+    if (error) {
+      toast.error('Failed to set primary role');
+    } else {
+      toast.success('Primary role updated');
       fetchData();
     }
   };
@@ -182,7 +202,7 @@ export default function AdminDashboard() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Roles</TableHead>
+                  <TableHead>Roles (★ = Active)</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -193,9 +213,15 @@ export default function AdminDashboard() {
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">
-                        {user.roles.map((role: string, idx: number) => (
-                          <Badge key={`${role}-${idx}`} variant="secondary" className="capitalize">
-                            {role.replace('_', ' ')}
+                        {user.roles.map((roleObj: any) => (
+                          <Badge 
+                            key={roleObj.id}
+                            variant={roleObj.is_primary ? "default" : "secondary"} 
+                            className="capitalize cursor-pointer"
+                            onClick={() => !roleObj.is_primary && handleSetPrimaryRole(user.id, roleObj.id)}
+                          >
+                            {roleObj.is_primary && '★ '}
+                            {roleObj.role.replace('_', ' ')}
                           </Badge>
                         ))}
                       </div>
@@ -340,6 +366,15 @@ export default function AdminDashboard() {
                     <SelectItem value="billing">Billing</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox id="isPrimary" name="isPrimary" />
+                <Label 
+                  htmlFor="isPrimary" 
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Set as active role (determines login redirect)
+                </Label>
               </div>
               <Button type="submit" className="w-full">Assign Role</Button>
             </form>

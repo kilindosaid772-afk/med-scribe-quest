@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 const Index = () => {
-  const { user, roles, loading } = useAuth();
+  const { user, primaryRole, roles, loading } = useAuth();
   const navigate = useNavigate();
   const [redirectAttempted, setRedirectAttempted] = useState(false);
 
@@ -21,39 +21,53 @@ const Index = () => {
       return;
     }
 
-    // Wait for roles to be loaded (add small delay if roles are empty)
+    // Wait for roles to be loaded
     if (roles.length === 0) {
       setTimeout(() => {
         if (roles.length === 0) {
           console.log('Roles still empty, retrying...');
-          // Force a re-render to trigger the effect again
           setRedirectAttempted(false);
         }
       }, 100);
       return;
     }
 
-    // Now make the redirect decision based on roles
-    if (roles.includes('admin')) {
-      navigate('/admin');
-    } else if (roles.includes('doctor')) {
-      navigate('/doctor');
-    } else if (roles.includes('nurse')) {
-      navigate('/nurse'); // NurseDashboard
-    } else if (roles.includes('receptionist')) {
-      navigate('/receptionist'); // ReceptionistDashboard
-    } else if (roles.includes('lab_tech')) {
-      navigate('/lab');
-    } else if (roles.includes('pharmacist')) {
-      navigate('/pharmacy');
-    } else if (roles.includes('billing')) {
-      navigate('/billing');
+    // Use primary role if available, otherwise use priority order
+    if (primaryRole) {
+      const roleRoutes: Record<string, string> = {
+        admin: '/admin',
+        doctor: '/doctor',
+        nurse: '/nurse',
+        receptionist: '/receptionist',
+        lab_tech: '/lab',
+        pharmacist: '/pharmacy',
+        billing: '/billing',
+        patient: '/patient'
+      };
+      navigate(roleRoutes[primaryRole] || '/patient');
     } else {
-      navigate('/patient');
+      // Fallback to priority order if no primary role set
+      if (roles.includes('admin')) {
+        navigate('/admin');
+      } else if (roles.includes('doctor')) {
+        navigate('/doctor');
+      } else if (roles.includes('nurse')) {
+        navigate('/nurse');
+      } else if (roles.includes('receptionist')) {
+        navigate('/receptionist');
+      } else if (roles.includes('lab_tech')) {
+        navigate('/lab');
+      } else if (roles.includes('pharmacist')) {
+        navigate('/pharmacy');
+      } else if (roles.includes('billing')) {
+        navigate('/billing');
+      } else {
+        navigate('/patient');
+      }
     }
 
     setRedirectAttempted(true);
-  }, [user, roles, loading, navigate, redirectAttempted]);
+  }, [user, primaryRole, roles, loading, navigate, redirectAttempted]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5">

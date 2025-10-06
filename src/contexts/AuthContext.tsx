@@ -9,6 +9,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   roles: AppRole[];
+  primaryRole: AppRole | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signUp: (email: string, password: string, fullName: string, phone?: string) => Promise<{ error: any }>;
@@ -22,17 +23,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [primaryRole, setPrimaryRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   const fetchUserRoles = async (userId: string) => {
     const { data, error } = await supabase
       .from('user_roles')
-      .select('role')
+      .select('role, is_primary')
       .eq('user_id', userId);
     
     if (!error && data) {
       setRoles(data.map(r => r.role as AppRole));
+      const primary = data.find(r => r.is_primary);
+      setPrimaryRole(primary ? primary.role as AppRole : null);
     }
   };
 
@@ -98,6 +102,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = async () => {
     await supabase.auth.signOut();
     setRoles([]);
+    setPrimaryRole(null);
     navigate('/auth');
   };
 
@@ -106,7 +111,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, roles, loading, signIn, signUp, signOut, hasRole }}>
+    <AuthContext.Provider value={{ user, session, roles, primaryRole, loading, signIn, signUp, signOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
