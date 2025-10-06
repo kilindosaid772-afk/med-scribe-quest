@@ -18,29 +18,46 @@ export default function PatientDashboard() {
   useEffect(() => {
     fetchData();
   }, [user]);
-
   const fetchData = async () => {
     if (!user) return;
 
     try {
       // Fetch patient's own data
-      const { data: patient } = await supabase
+      const { data: patient, error: patientError } = await supabase
         .from('patients')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows
+
+      if (patientError && patientError.code !== 'PGRST116') {
+        console.error('Patient fetch error:', patientError);
+        toast.error('Error loading patient data');
+        setLoading(false);
+        return;
+      }
+
+      if (!patient) {
+        console.log('No patient record found for user');
+        toast.error('Patient record not found. Please contact the hospital administration to set up your profile.');
+        setLoading(false);
+        return;
+      }
 
       if (patient) {
-        // Fetch patient's appointments
-        const { data: appointmentsData } = await supabase
+        // Fetch patient's appointments (simplified query)
+        const { data: appointmentsData, error: appointmentsError } = await supabase
           .from('appointments')
           .select(`
             *,
-            department:departments(name),
-            doctor:profiles!appointments_doctor_id_fkey(full_name)
+            department:departments(name)
           `)
           .eq('patient_id', patient.id)
           .order('appointment_date', { ascending: true });
+
+        if (appointmentsError) {
+          console.error('Appointments fetch error:', appointmentsError);
+          toast.error('Failed to load appointments');
+        }
 
         setPatientData(patient);
         setAppointments(appointmentsData || []);
@@ -52,16 +69,6 @@ export default function PatientDashboard() {
       setLoading(false);
     }
   };
-
-  if (loading) {
-    return (
-      <DashboardLayout title="Patient Dashboard">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </DashboardLayout>
-    );
-  }
 
   if (!patientData) {
     return (
