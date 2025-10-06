@@ -85,6 +85,14 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/billing"
+              element={
+                <ProtectedRoute requiredRole="billing">
+                  <BillingDashboard />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { supabase } from '@/integrations/supabase/client';
 import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 
 export default function NurseDashboard() {
   const { user } = useAuth();
