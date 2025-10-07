@@ -66,18 +66,25 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
       ordered_by_doctor_id: user.id,
       test_name: formData.get('testName') as string,
       test_type: formData.get('testType') as string,
-      description: formData.get('description') as string,
-      priority: formData.get('priority') as string,
-      notes: formData.get('notes') as string,
+      description: formData.get('description') as string || null,
+      priority: formData.get('priority') as string || 'Normal',
+      notes: formData.get('notes') as string || null,
+      status: 'Pending',
+      ordered_date: new Date().toISOString(),
     };
 
-    const { error } = await supabase.from('lab_tests').insert([labTestData]);
+    console.log('Inserting lab test:', labTestData);
+
+    const { data, error } = await supabase.from('lab_tests').insert([labTestData]).select();
 
     if (error) {
-      toast.error('Failed to order lab test');
+      console.error('Lab test error:', error);
+      toast.error(`Failed to order lab test: ${error.message}`);
     } else {
+      console.log('Lab test created:', data);
       toast.success('Lab test ordered successfully');
       setLabTestDialogOpen(false);
+      e.currentTarget.reset();
       onSuccess();
     }
   };

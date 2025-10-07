@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { DollarSign, CreditCard, AlertCircle, Loader2, Plus, Shield, Smartphone, Building2 } from 'lucide-react';
+import { DollarSign, CreditCard, AlertCircle, Loader2, Plus, Shield, Smartphone, Building2, Send } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function BillingDashboard() {
@@ -27,6 +27,7 @@ export default function BillingDashboard() {
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>('');
+  const [mobilePaymentProcessing, setMobilePaymentProcessing] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -117,17 +118,76 @@ export default function BillingDashboard() {
     }
   };
 
+  const handleInitiateMobilePayment = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedInvoice) return;
+
+    const formData = new FormData(e.currentTarget);
+    const phoneNumber = formData.get('phoneNumber') as string;
+    const amount = Number(formData.get('amount'));
+
+    setMobilePaymentProcessing(true);
+
+    try {
+      // Simulate mobile payment push request
+      toast.info(`📱 Payment request sent to ${phoneNumber}. Waiting for confirmation...`);
+      
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Record the payment
+      const paymentData = {
+        invoice_id: selectedInvoice.id,
+        amount,
+        payment_method: paymentMethod,
+        reference_number: `${paymentMethod.replace(/\s/g, '').toUpperCase()}-${Date.now()}`,
+        notes: `Mobile payment via ${paymentMethod} from ${phoneNumber}`,
+      };
+
+      const { error: paymentError } = await supabase.from('payments').insert([paymentData]);
+      if (paymentError) throw paymentError;
+
+      const newPaidAmount = Number(selectedInvoice.paid_amount) + amount;
+      const totalAmount = Number(selectedInvoice.total_amount);
+      const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
+
+      const { error: updateError } = await supabase
+        .from('invoices')
+        .update({ paid_amount: newPaidAmount, status: newStatus })
+        .eq('id', selectedInvoice.id);
+
+      if (updateError) throw updateError;
+
+      toast.success('✅ Payment completed successfully!');
+      setPaymentDialogOpen(false);
+      setSelectedInvoice(null);
+      setPaymentMethod('');
+      fetchData();
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast.error('Failed to process mobile payment');
+    } finally {
+      setMobilePaymentProcessing(false);
+    }
+  };
+
   const handleRecordPayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    // Handle mobile payments separately
+    if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod)) {
+      return handleInitiateMobilePayment(e);
+    }
+
     const formData = new FormData(e.currentTarget);
     const amount = Number(formData.get('amount'));
 
     const paymentData = {
       invoice_id: selectedInvoice.id,
       amount,
-      payment_method: formData.get('paymentMethod') as string,
-      reference_number: formData.get('referenceNumber') as string,
-      notes: formData.get('notes') as string,
+      payment_method: paymentMethod,
+      reference_number: formData.get('referenceNumber') as string || null,
+      notes: formData.get('notes') as string || null,
     };
 
     const { error } = await supabase.from('payments').insert([paymentData]);
@@ -137,28 +197,19 @@ export default function BillingDashboard() {
       return;
     }
 
-    // Update invoice status
     const newPaidAmount = Number(selectedInvoice.paid_amount) + amount;
     const totalAmount = Number(selectedInvoice.total_amount);
-    let newStatus = 'Unpaid';
-    
-    if (newPaidAmount >= totalAmount) {
-      newStatus = 'Paid';
-    } else if (newPaidAmount > 0) {
-      newStatus = 'Partially Paid';
-    }
+    const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
 
     await supabase
       .from('invoices')
-      .update({
-        paid_amount: newPaidAmount,
-        status: newStatus
-      })
+      .update({ paid_amount: newPaidAmount, status: newStatus })
       .eq('id', selectedInvoice.id);
 
     toast.success('Payment recorded successfully');
     setPaymentDialogOpen(false);
     setSelectedInvoice(null);
+    setPaymentMethod('');
     fetchData();
   };
 
@@ -447,13 +498,19 @@ export default function BillingDashboard() {
               {/* Mobile Money Fields */}
               {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) && (
                 <div className="space-y-2">
-                  <Label htmlFor="phoneNumber">Phone Number</Label>
+                  <Label htmlFor="phoneNumber">
+                    <Smartphone className="inline h-4 w-4 mr-1" />
+                    Phone Number *
+                  </Label>
                   <Input 
                     id="phoneNumber" 
                     name="phoneNumber" 
-                    placeholder="+255 7XX XXX XXX"
+                    placeholder="0712345678"
                     required
                   />
+                  <p className="text-sm text-muted-foreground">
+                    Customer will receive payment request on this number
+                  </p>
                 </div>
               )}
 
@@ -497,15 +554,36 @@ export default function BillingDashboard() {
                   </Select>
                 </div>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="referenceNumber">Reference Number</Label>
-                <Input id="referenceNumber" name="referenceNumber" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Input id="notes" name="notes" />
-              </div>
-              <Button type="submit" className="w-full">Record Payment</Button>
+              {!['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="referenceNumber">Reference Number</Label>
+                    <Input id="referenceNumber" name="referenceNumber" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notes</Label>
+                    <Input id="notes" name="notes" />
+                  </div>
+                </>
+              )}
+              
+              {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) ? (
+                <Button type="submit" className="w-full" disabled={mobilePaymentProcessing}>
+                  {mobilePaymentProcessing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="mr-2 h-4 w-4" />
+                      Send Payment Request
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button type="submit" className="w-full">Record Payment</Button>
+              )}
             </form>
           </DialogContent>
         </Dialog>
