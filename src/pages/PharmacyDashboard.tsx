@@ -6,13 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Pill, AlertTriangle, Package, Loader2, Plus, Edit } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Upload, FileText, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function PharmacyDashboard() {
@@ -25,6 +25,15 @@ export default function PharmacyDashboard() {
   const [editingMedication, setEditingMedication] = useState<any>(null);
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<any>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const generateInvoiceNumber = () => {
+    return `INV-${Date.now().toString().slice(-8)}`;
+  };
+
   const loadPharmacyData = async () => {
     try {
       setLoading(true);
@@ -187,12 +196,13 @@ export default function PharmacyDashboard() {
 
       // Update prescription status to dispensed
       console.log('Updating prescription status...');
+      const currentUserId = user?.id;
       const { error } = await supabase
         .from('prescriptions')
         .update({
           status: 'Dispensed',
           dispensed_date: new Date().toISOString(),
-          dispensed_by: user?.id
+          dispensed_by: currentUserId || null
         })
         .eq('id', prescriptionId);
 
@@ -321,8 +331,158 @@ export default function PharmacyDashboard() {
     setMedicationDialogOpen(true);
   };
 
-  const generateInvoiceNumber = () => {
-    return `INV-${Date.now().toString().slice(-8)}`;
+  const downloadCSVTemplate = () => {
+    const csvContent = `name,generic_name,strength,dosage_form,manufacturer,quantity_in_stock,reorder_level,unit_price,expiry_date
+Paracetamol,,500mg,Tablet,ABC Pharma,100,10,25.50,2025-12-31
+Ibuprofen,,200mg,Tablet,XYZ Pharma,50,5,15.75,2025-10-15
+Amoxicillin,Amoxycillin,250mg,Capsule,HealthCorp,75,8,45.00,2025-08-20
+Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'medication_import_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const parseCSV = (text: string) => {
+    const lines = text.split('\n');
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+
+    return lines.slice(1).map((line, index) => {
+      if (!line.trim()) return null;
+
+      const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+      const medication: any = {};
+
+      headers.forEach((header, i) => {
+        const value = values[i] || '';
+        switch (header.toLowerCase()) {
+          case 'name':
+            medication.name = value;
+            break;
+          case 'generic_name':
+          case 'generic name':
+            medication.generic_name = value || null;
+            break;
+          case 'strength':
+            medication.strength = value;
+            break;
+          case 'dosage_form':
+          case 'dosage form':
+            medication.dosage_form = value || 'Tablet';
+            break;
+          case 'manufacturer':
+            medication.manufacturer = value || null;
+            break;
+          case 'quantity_in_stock':
+          case 'quantity':
+          case 'stock':
+            medication.quantity_in_stock = parseInt(value) || 0;
+            break;
+          case 'reorder_level':
+          case 'reorder level':
+            medication.reorder_level = parseInt(value) || 10;
+            break;
+          case 'unit_price':
+          case 'unit price':
+          case 'price':
+            medication.unit_price = parseFloat(value) || 0;
+            break;
+          case 'expiry_date':
+          case 'expiry date':
+            medication.expiry_date = value || null;
+            break;
+        }
+      });
+
+      // Validate required fields
+      if (!medication.name || !medication.strength) {
+        medication.error = 'Missing required fields: name or strength';
+      }
+
+      return medication;
+    }).filter(Boolean);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      toast.error('Please upload a CSV file');
+      return;
+    }
+
+    setImportFile(file);
+
+    const text = await file.text();
+    const medications = parseCSV(text);
+
+    const validMedications = medications.filter(med => !med.error);
+    const invalidMedications = medications.filter(med => med.error);
+
+    setImportPreview(validMedications);
+
+    if (invalidMedications.length > 0) {
+      toast.warning(`${invalidMedications.length} rows have errors and will be skipped`);
+    }
+
+    if (validMedications.length === 0) {
+      toast.error('No valid medications found in the file');
+      return;
+    }
+
+    toast.success(`Found ${validMedications.length} valid medications to import`);
+  };
+
+  const handleBulkImport = async () => {
+    if (importPreview.length === 0) {
+      toast.error('No medications to import');
+      return;
+    }
+
+    setImportLoading(true);
+    setImportProgress(0);
+
+    const medicationsToImport = importPreview.map(med => ({
+      name: med.name,
+      generic_name: med.generic_name,
+      strength: med.strength,
+      dosage_form: med.dosage_form,
+      manufacturer: med.manufacturer,
+      quantity_in_stock: med.quantity_in_stock,
+      reorder_level: med.reorder_level,
+      unit_price: med.unit_price,
+      expiry_date: med.expiry_date,
+    }));
+
+    try {
+      const { error } = await supabase
+        .from('medications')
+        .insert(medicationsToImport);
+
+      if (error) {
+        console.error('Bulk import error:', error);
+        toast.error(`Failed to import medications: ${error.message}`);
+      } else {
+        toast.success(`Successfully imported ${medicationsToImport.length} medications`);
+        setImportDialogOpen(false);
+        setImportFile(null);
+        setImportPreview([]);
+        loadPharmacyData();
+      }
+    } catch (error) {
+      console.error('Unexpected error during import:', error);
+      toast.error('An unexpected error occurred during import');
+    } finally {
+      setImportLoading(false);
+      setImportProgress(0);
+    }
   };
 
   const createInvoiceFromPrescription = async (prescription: any) => {
@@ -548,84 +708,27 @@ export default function PharmacyDashboard() {
                   <CardTitle>Medication Inventory</CardTitle>
                   <CardDescription>Track and manage medication stock levels</CardDescription>
                 </div>
-                <Dialog open={medicationDialogOpen} onOpenChange={(open) => {
-                  setMedicationDialogOpen(open);
-                  if (!open) setEditingMedication(null);
-                }}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Medication
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                      <DialogTitle>{editingMedication ? 'Edit' : 'Add'} Medication</DialogTitle>
-                      <DialogDescription>
-                        {editingMedication ? 'Update' : 'Enter'} medication details
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleSaveMedication} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="name">Medication Name *</Label>
-                          <Input id="name" name="name" defaultValue={editingMedication?.name} required />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="genericName">Generic Name</Label>
-                          <Input id="genericName" name="genericName" defaultValue={editingMedication?.generic_name} />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="strength">Strength *</Label>
-                          <Input id="strength" name="strength" placeholder="e.g., 500mg" defaultValue={editingMedication?.strength} required />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="dosageForm">Dosage Form *</Label>
-                          <Select name="dosageForm" defaultValue={editingMedication?.dosage_form || "Tablet"}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Tablet">Tablet</SelectItem>
-                              <SelectItem value="Capsule">Capsule</SelectItem>
-                              <SelectItem value="Syrup">Syrup</SelectItem>
-                              <SelectItem value="Injection">Injection</SelectItem>
-                              <SelectItem value="Cream">Cream</SelectItem>
-                              <SelectItem value="Drops">Drops</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="manufacturer">Manufacturer</Label>
-                        <Input id="manufacturer" name="manufacturer" defaultValue={editingMedication?.manufacturer} />
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="quantity">Quantity in Stock *</Label>
-                          <Input id="quantity" name="quantity" type="number" defaultValue={editingMedication?.quantity_in_stock} required />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="reorderLevel">Reorder Level *</Label>
-                          <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue={editingMedication?.reorder_level || 10} required />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="unitPrice">Unit Price *</Label>
-                          <Input id="unitPrice" name="unitPrice" type="number" step="0.01" defaultValue={editingMedication?.unit_price} required />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="expiryDate">Expiry Date</Label>
-                        <Input id="expiryDate" name="expiryDate" type="date" defaultValue={editingMedication?.expiry_date} />
-                      </div>
-                      <Button type="submit" className="w-full">
-                        {editingMedication ? 'Update' : 'Add'} Medication
+                <div className="flex gap-2">
+                  <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import Medications
                       </Button>
-                    </form>
-                  </DialogContent>
-                </Dialog>
+                    </DialogTrigger>
+                  </Dialog>
+                  <Dialog open={medicationDialogOpen} onOpenChange={(open) => {
+                    setMedicationDialogOpen(open);
+                    if (!open) setEditingMedication(null);
+                  }}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Medication
+                      </Button>
+                    </DialogTrigger>
+                  </Dialog>
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -708,6 +811,187 @@ export default function PharmacyDashboard() {
                 </Dialog>
               </CardContent>
             </Card>
+
+            {/* Import Medications Dialog */}
+            <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+              <DialogContent className="max-w-4xl">
+                <DialogHeader>
+                  <DialogTitle>Bulk Import Medications</DialogTitle>
+                  <DialogDescription>
+                    Upload a CSV file to import multiple medications at once
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label htmlFor="csvFile">CSV File</Label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={downloadCSVTemplate}
+                        className="text-xs"
+                      >
+                        <FileText className="mr-1 h-3 w-3" />
+                        Download Template
+                      </Button>
+                    </div>
+                    <Input
+                      id="csvFile"
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileUpload}
+                      disabled={importLoading}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Upload a CSV file with columns: name, generic_name, strength, dosage_form, manufacturer, quantity_in_stock, reorder_level, unit_price, expiry_date
+                    </p>
+                  </div>
+
+                  {importPreview.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Preview ({importPreview.length} medications)</Label>
+                      <div className="border rounded-lg max-h-60 overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Strength</TableHead>
+                              <TableHead>Stock</TableHead>
+                              <TableHead>Price</TableHead>
+                              <TableHead>Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {importPreview.slice(0, 10).map((med, index) => (
+                              <TableRow key={index}>
+                                <TableCell className="font-medium">{med.name}</TableCell>
+                                <TableCell>{med.strength}</TableCell>
+                                <TableCell>{med.quantity_in_stock}</TableCell>
+                                <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
+                                <TableCell>
+                                  <CheckCircle className="h-4 w-4 text-green-500" />
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            {importPreview.length > 10 && (
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                                  ... and {importPreview.length - 10} more medications
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setImportDialogOpen(false);
+                        setImportFile(null);
+                        setImportPreview([]);
+                      }}
+                      disabled={importLoading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleBulkImport}
+                      disabled={importPreview.length === 0 || importLoading}
+                    >
+                      {importLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Importing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Import {importPreview.length} Medications
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Add/Edit Medication Dialog */}
+            <Dialog open={medicationDialogOpen} onOpenChange={(open) => {
+              setMedicationDialogOpen(open);
+              if (!open) setEditingMedication(null);
+            }}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>{editingMedication ? 'Edit' : 'Add'} Medication</DialogTitle>
+                  <DialogDescription>
+                    {editingMedication ? 'Update' : 'Enter'} medication details
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSaveMedication} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Medication Name *</Label>
+                      <Input id="name" name="name" defaultValue={editingMedication?.name} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="genericName">Generic Name</Label>
+                      <Input id="genericName" name="genericName" defaultValue={editingMedication?.generic_name} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="strength">Strength *</Label>
+                      <Input id="strength" name="strength" placeholder="e.g., 500mg" defaultValue={editingMedication?.strength} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="dosageForm">Dosage Form *</Label>
+                      <Select name="dosageForm" defaultValue={editingMedication?.dosage_form || "Tablet"}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Tablet">Tablet</SelectItem>
+                          <SelectItem value="Capsule">Capsule</SelectItem>
+                          <SelectItem value="Syrup">Syrup</SelectItem>
+                          <SelectItem value="Injection">Injection</SelectItem>
+                          <SelectItem value="Cream">Cream</SelectItem>
+                          <SelectItem value="Drops">Drops</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="manufacturer">Manufacturer</Label>
+                    <Input id="manufacturer" name="manufacturer" defaultValue={editingMedication?.manufacturer} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="quantity">Quantity in Stock *</Label>
+                      <Input id="quantity" name="quantity" type="number" defaultValue={editingMedication?.quantity_in_stock} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reorderLevel">Reorder Level *</Label>
+                      <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue={editingMedication?.reorder_level || 10} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="unitPrice">Unit Price *</Label>
+                      <Input id="unitPrice" name="unitPrice" type="number" step="0.01" defaultValue={editingMedication?.unit_price} required />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="expiryDate">Expiry Date</Label>
+                    <Input id="expiryDate" name="expiryDate" type="date" defaultValue={editingMedication?.expiry_date} />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    {editingMedication ? 'Update' : 'Add'} Medication
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
         </Tabs>
       </div>
