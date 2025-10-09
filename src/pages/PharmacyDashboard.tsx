@@ -25,34 +25,70 @@ export default function PharmacyDashboard() {
   const [editingMedication, setEditingMedication] = useState<any>(null);
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<any>(null);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const loadPharmacyData = async () => {
     try {
-      // Fetch prescriptions
-      const { data: prescriptionsData } = await supabase
+      setLoading(true);
+
+      // First, let's fetch prescriptions with basic data
+      const { data: prescriptionsData, error: prescriptionsError } = await supabase
         .from('prescriptions')
         .select(`
           *,
-          patient:patients(full_name, phone),
-          doctor:profiles!prescriptions_doctor_id_fkey(full_name)
+          patient:patient_id(full_name),
+          medications(name)
         `)
         .order('prescribed_date', { ascending: false })
         .limit(50);
 
+      if (prescriptionsError) {
+        console.error('Error fetching prescriptions:', prescriptionsError);
+        console.error('Error details:', prescriptionsError.message, prescriptionsError.details, prescriptionsError.hint);
+        toast.error(`Failed to load prescriptions: ${prescriptionsError.message}`);
+        return;
+      }
+
+      // Get unique doctor IDs from prescriptions
+      const doctorIds = [...new Set(prescriptionsData?.map(p => p.doctor_id).filter(Boolean) || [])];
+
+      // Fetch doctor profiles
+      let doctorProfiles = {};
+      if (doctorIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', doctorIds);
+
+        doctorProfiles = profilesData?.reduce((acc, profile) => {
+          acc[profile.id] = profile;
+          return acc;
+        }, {}) || {};
+      }
+
       // Fetch medications
-      const { data: medicationsData } = await supabase
+      const { data: medicationsData, error: medicationsError } = await supabase
         .from('medications')
         .select('*')
         .order('name');
 
-      setPrescriptions(prescriptionsData || []);
+      if (medicationsError) {
+        console.error('Error fetching medications:', medicationsError);
+        toast.error('Failed to load medications');
+        return;
+      }
+
+      // Add doctor profile information to prescriptions
+      const prescriptionsWithDoctors = prescriptionsData?.map(prescription => ({
+        ...prescription,
+        doctor_profile: doctorProfiles[prescription.doctor_id]
+      })) || [];
+
+      setPrescriptions(prescriptionsWithDoctors);
       setMedications(medicationsData || []);
 
-      const pending = prescriptionsData?.filter(p => p.status === 'Pending').length || 0;
+      console.log('Pharmacy Dashboard - Prescriptions loaded:', prescriptionsData?.length || 0);
+      console.log('Pharmacy Dashboard - Medications loaded:', medicationsData?.length || 0);
+
+      const pending = prescriptionsWithDoctors.filter(p => p.status === 'Pending').length;
       const lowStock = medicationsData?.filter(m => m.quantity_in_stock <= m.reorder_level).length || 0;
 
       setStats({
@@ -68,45 +104,60 @@ export default function PharmacyDashboard() {
     }
   };
 
+  useEffect(() => {
+    loadPharmacyData();
+  }, []);
+
   const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
-    const { error } = await supabase
-      .from('prescriptions')
-      .update({
-        status: 'Dispensed',
-        dispensed_date: new Date().toISOString(),
-        dispensed_by: user?.id
-      })
-      .eq('id', prescriptionId);
-
-    if (error) {
-      toast.error('Failed to dispense prescription');
-      return;
-    }
-
-    // Update workflow to move to billing
-    const { data: visits } = await supabase
-      .from('patient_visits')
-      .select('*')
-      .eq('patient_id', patientId)
-      .eq('current_stage', 'pharmacy')
-      .eq('overall_status', 'Active')
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (visits && visits.length > 0) {
-      await supabase
-        .from('patient_visits')
+    try {
+      const { error } = await supabase
+        .from('prescriptions')
         .update({
-          pharmacy_status: 'Completed',
-          pharmacy_completed_at: new Date().toISOString(),
-          current_stage: 'billing',
-          billing_status: 'Pending'
+          status: 'Dispensed',
+          dispensed_date: new Date().toISOString(),
+          dispensed_by: user?.id
         })
-        .eq('id', visits[0].id);
-    }
+        .eq('id', prescriptionId);
 
-    toast.success('Prescription dispensed, sent to billing');
-    fetchData();
+      if (error) {
+        console.error('Error dispensing prescription:', error);
+        toast.error('Failed to dispense prescription');
+        return;
+      }
+
+      // Update workflow to move to billing
+      const { data: visits } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .eq('patient_id', patientId)
+        .eq('current_stage', 'pharmacy')
+        .eq('overall_status', 'Active')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (visits && visits.length > 0) {
+        const { error: workflowError } = await supabase
+          .from('patient_visits')
+          .update({
+            pharmacy_status: 'Completed',
+            pharmacy_completed_at: new Date().toISOString(),
+            current_stage: 'billing',
+            billing_status: 'Pending'
+          })
+          .eq('id', visits[0].id);
+
+        if (workflowError) {
+          console.error('Error updating patient visit workflow:', workflowError);
+          toast.error('Prescription dispensed but failed to update workflow');
+        }
+      }
+
+      toast.success('Prescription dispensed successfully');
+      loadPharmacyData();
+    } catch (error) {
+      console.error('Unexpected error dispensing prescription:', error);
+      toast.error('An unexpected error occurred');
+    }
   };
 
   const handleUpdateStock = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -127,7 +178,7 @@ export default function PharmacyDashboard() {
       toast.success('Stock updated successfully');
       setStockDialogOpen(false);
       setSelectedMedication(null);
-      fetchData();
+      loadPharmacyData();
     }
   };
 
@@ -165,7 +216,7 @@ export default function PharmacyDashboard() {
       toast.success(`Medication ${editingMedication ? 'updated' : 'added'} successfully`);
       setMedicationDialogOpen(false);
       setEditingMedication(null);
-      fetchData();
+      loadPharmacyData();
     }
   };
 
@@ -253,41 +304,56 @@ export default function PharmacyDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {prescriptions.map((prescription) => (
-                      <TableRow key={prescription.id}>
-                        <TableCell className="font-medium">
-                          {prescription.patient?.full_name || 'Unknown'}
-                        </TableCell>
-                        <TableCell>{prescription.medication_name}</TableCell>
-                        <TableCell>{prescription.dosage}</TableCell>
-                        <TableCell>{prescription.quantity}</TableCell>
-                        <TableCell>{prescription.doctor?.full_name || 'Unknown'}</TableCell>
-                        <TableCell>
-                          {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy')}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              prescription.status === 'Dispensed' ? 'default' :
-                              prescription.status === 'Pending' ? 'secondary' :
-                              'outline'
-                            }
-                          >
-                            {prescription.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {prescription.status === 'Pending' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleDispensePrescription(prescription.id, prescription.patient_id)}
-                            >
-                              Dispense
-                            </Button>
+                    {prescriptions.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          {loading ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading prescriptions...
+                            </div>
+                          ) : (
+                            'No prescriptions found. Create a prescription from the doctor dashboard first.'
                           )}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      prescriptions.map((prescription) => (
+                        <TableRow key={prescription.id}>
+                          <TableCell className="font-medium">
+                            {prescription.patient?.full_name || 'Unknown'}
+                          </TableCell>
+                          <TableCell>{prescription.medications?.name || prescription.medication_name || 'Unknown'}</TableCell>
+                          <TableCell>{prescription.dosage}</TableCell>
+                          <TableCell>{prescription.quantity}</TableCell>
+                          <TableCell>{prescription.doctor_profile?.full_name || 'Unknown'}</TableCell>
+                          <TableCell>
+                            {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy')}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                prescription.status === 'Dispensed' ? 'default' :
+                                prescription.status === 'Pending' ? 'secondary' :
+                                'outline'
+                              }
+                            >
+                              {prescription.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {prescription.status === 'Pending' && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleDispensePrescription(prescription.id, prescription.patient_id)}
+                              >
+                                Dispense
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>

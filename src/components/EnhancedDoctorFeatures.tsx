@@ -29,7 +29,7 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
   const handlePrescribe = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user) return;
-    
+
     const formData = new FormData(e.currentTarget);
 
     const prescriptionData = {
@@ -41,15 +41,52 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
       frequency: formData.get('frequency') as string,
       duration: formData.get('duration') as string,
       quantity: Number(formData.get('quantity')),
-      instructions: formData.get('instructions') as string,
+      instructions: formData.get('instructions') as string || null,
     };
 
-    const { error } = await supabase.from('prescriptions').insert([prescriptionData]);
+    const { data: insertedPrescription, error: prescriptionError } = await supabase
+      .from('prescriptions')
+      .insert([prescriptionData])
+      .select();
 
-    if (error) {
-      toast.error('Failed to create prescription');
+    if (prescriptionError) {
+      console.error('Error creating prescription:', prescriptionError);
+      console.error('Prescription data that failed:', prescriptionData);
+      toast.error(`Failed to create prescription: ${prescriptionError.message}`);
     } else {
-      toast.success('Prescription created successfully');
+      console.log('Prescription created successfully:', insertedPrescription);
+
+      // Update patient visit workflow to move to pharmacy
+      const { data: visits } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .eq('patient_id', prescriptionData.patient_id)
+        .eq('current_stage', 'doctor')
+        .eq('overall_status', 'Active')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (visits && visits.length > 0) {
+        const { error: workflowError } = await supabase
+          .from('patient_visits')
+          .update({
+            doctor_status: 'Completed',
+            doctor_completed_at: new Date().toISOString(),
+            current_stage: 'pharmacy',
+            pharmacy_status: 'Pending',
+          })
+          .eq('id', visits[0].id);
+
+        if (workflowError) {
+          console.error('Failed to update patient visit workflow:', workflowError);
+          toast.error('Prescription created but failed to update workflow');
+        } else {
+          toast.success('Prescription created successfully and sent to pharmacy');
+        }
+      } else {
+        toast.success('Prescription created successfully');
+      }
+
       setPrescriptionDialogOpen(false);
       onSuccess();
     }
@@ -91,10 +128,14 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
 
   return (
     <div className="flex gap-2">
-      <Dialog open={prescriptionDialogOpen} onOpenChange={(open) => {
-        setPrescriptionDialogOpen(open);
-        if (open) fetchMedications();
-      }}>
+      {/* Prescription Dialog */}
+      <Dialog
+        open={prescriptionDialogOpen}
+        onOpenChange={(open) => {
+          setPrescriptionDialogOpen(open);
+          if (open) fetchMedications();
+        }}
+      >
         <DialogTrigger asChild>
           <Button variant="outline">
             <Pill className="mr-2 h-4 w-4" />
@@ -122,6 +163,7 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
                 </SelectContent>
               </Select>
             </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="medicationId">Medication (from inventory)</Label>
@@ -143,6 +185,7 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
                 <Input id="medicationName" name="medicationName" required />
               </div>
             </div>
+
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="dosage">Dosage</Label>
@@ -157,19 +200,25 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
                 <Input id="duration" name="duration" placeholder="e.g., 7 days" required />
               </div>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="quantity">Quantity</Label>
               <Input id="quantity" name="quantity" type="number" required />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="instructions">Instructions</Label>
               <Textarea id="instructions" name="instructions" placeholder="Take with food, etc." />
             </div>
-            <Button type="submit" className="w-full">Create Prescription</Button>
+
+            <Button type="submit" className="w-full">
+              Create Prescription
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
 
+      {/* Lab Test Dialog */}
       <Dialog open={labTestDialogOpen} onOpenChange={setLabTestDialogOpen}>
         <DialogTrigger asChild>
           <Button variant="outline">
@@ -198,15 +247,17 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="testName">Test Name</Label>
               <Input id="testName" name="testName" placeholder="e.g., Complete Blood Count" required />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="testType">Test Type</Label>
               <Select name="testType" required>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Blood Test">Blood Test</SelectItem>
@@ -217,11 +268,12 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="priority">Priority</Label>
               <Select name="priority" defaultValue="Normal">
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select priority" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Normal">Normal</SelectItem>
@@ -230,18 +282,26 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess }: EnhancedDoctorFe
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" name="description" />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
               <Textarea id="notes" name="notes" />
             </div>
-            <Button type="submit" className="w-full">Order Test</Button>
+
+            <Button type="submit" className="w-full">
+              Order Test
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
     </div>
   );
 };
+
+// ✅ Final export to fix EOF / syntax issue
+export default EnhancedDoctorFeatures;
