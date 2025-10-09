@@ -449,6 +449,114 @@ export type Database = {
         }
         Relationships: []
       }
+      patient_visits: {
+        Row: {
+          appointment_id: string | null
+          billing_completed_at: string | null
+          billing_notes: string | null
+          billing_status: string | null
+          created_at: string
+          current_stage: string | null
+          doctor_completed_at: string | null
+          doctor_diagnosis: string | null
+          doctor_notes: string | null
+          doctor_status: string | null
+          id: string
+          lab_completed_at: string | null
+          lab_notes: string | null
+          lab_status: string | null
+          nurse_completed_at: string | null
+          nurse_notes: string | null
+          nurse_status: string | null
+          nurse_vitals: Json | null
+          overall_status: string | null
+          patient_id: string
+          pharmacy_completed_at: string | null
+          pharmacy_notes: string | null
+          pharmacy_status: string | null
+          reception_completed_at: string | null
+          reception_notes: string | null
+          reception_status: string | null
+          updated_at: string
+          visit_date: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          billing_completed_at?: string | null
+          billing_notes?: string | null
+          billing_status?: string | null
+          created_at?: string
+          current_stage?: string | null
+          doctor_completed_at?: string | null
+          doctor_diagnosis?: string | null
+          doctor_notes?: string | null
+          doctor_status?: string | null
+          id?: string
+          lab_completed_at?: string | null
+          lab_notes?: string | null
+          lab_status?: string | null
+          nurse_completed_at?: string | null
+          nurse_notes?: string | null
+          nurse_status?: string | null
+          nurse_vitals?: Json | null
+          overall_status?: string | null
+          patient_id: string
+          pharmacy_completed_at?: string | null
+          pharmacy_notes?: string | null
+          pharmacy_status?: string | null
+          reception_completed_at?: string | null
+          reception_notes?: string | null
+          reception_status?: string | null
+          updated_at?: string
+          visit_date?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          billing_completed_at?: string | null
+          billing_notes?: string | null
+          billing_status?: string | null
+          created_at?: string
+          current_stage?: string | null
+          doctor_completed_at?: string | null
+          doctor_diagnosis?: string | null
+          doctor_notes?: string | null
+          doctor_status?: string | null
+          id?: string
+          lab_completed_at?: string | null
+          lab_notes?: string | null
+          lab_status?: string | null
+          nurse_completed_at?: string | null
+          nurse_notes?: string | null
+          nurse_status?: string | null
+          nurse_vitals?: Json | null
+          overall_status?: string | null
+          patient_id?: string
+          pharmacy_completed_at?: string | null
+          pharmacy_notes?: string | null
+          pharmacy_status?: string | null
+          reception_completed_at?: string | null
+          reception_notes?: string | null
+          reception_status?: string | null
+          updated_at?: string
+          visit_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_visits_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_visits_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           address: string | null

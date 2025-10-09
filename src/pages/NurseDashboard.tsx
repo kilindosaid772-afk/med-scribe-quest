@@ -53,6 +53,7 @@ export default function NurseDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [pendingVisits, setPendingVisits] = useState<any[]>([]);
 
   // Handler functions
   const handleRecordVitals = (patient: any) => {
@@ -117,9 +118,39 @@ export default function NurseDashboard() {
     if (!selectedPatient) return;
 
     try {
-      toast.success(`Vital signs recorded for ${selectedPatient.full_name}`);
+      // Find the active visit for this patient
+      const { data: visits, error: visitError } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .eq('patient_id', selectedPatient.id)
+        .eq('current_stage', 'nurse')
+        .eq('overall_status', 'Active')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (visitError || !visits || visits.length === 0) {
+        toast.error('No active visit found for this patient');
+        return;
+      }
+
+      // Update visit with vitals and move to doctor stage
+      const { error: updateError } = await supabase
+        .from('patient_visits')
+        .update({
+          nurse_status: 'Completed',
+          nurse_vitals: vitalsForm,
+          nurse_completed_at: new Date().toISOString(),
+          current_stage: 'doctor',
+          doctor_status: 'Pending'
+        })
+        .eq('id', visits[0].id);
+
+      if (updateError) throw updateError;
+
+      toast.success(`Vital signs recorded. Patient sent to doctor.`);
       setShowVitalsDialog(false);
       setSelectedPatient(null);
+      fetchData();
     } catch (error) {
       console.error('Vitals submission error:', error);
       toast.error('Failed to record vital signs');
@@ -175,6 +206,19 @@ export default function NurseDashboard() {
     if (!user) return;
 
     try {
+      // Fetch visits waiting for nurse
+      const { data: visitsData, error: visitsError } = await supabase
+        .from('patient_visits')
+        .select(`
+          *,
+          patient:patients(*)
+        `)
+        .eq('current_stage', 'nurse')
+        .eq('overall_status', 'Active')
+        .order('created_at', { ascending: true });
+
+      if (visitsError) throw visitsError;
+
       // Fetch today's appointments for this nurse
       const today = new Date().toISOString().split('T')[0];
       const { data: appointmentsData } = await supabase
@@ -194,19 +238,15 @@ export default function NurseDashboard() {
         .order('updated_at', { ascending: false })
         .limit(10);
 
-      // For now, use empty array since vitals table doesn't exist
-      const vitalsData = [];
-
       // Calculate stats
-      const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
+      setPendingVisits(visitsData || []);
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
-      setVitalSigns(vitalsData || []);
       setStats({
         totalPatients: patientsData?.length || 0,
         todayAppointments: appointmentsData?.filter(a => a.appointment_date === today).length || 0,
-        pendingVitals: vitalsData?.filter(v => v.status === 'pending').length || 0,
-        completedTasks: Math.floor(appointmentsData?.filter(a => a.appointment_date === today).length * 0.7)
+        pendingVitals: visitsData?.length || 0,
+        completedTasks: visitsData?.filter(v => v.nurse_status === 'Completed').length || 0
       });
 
     } catch (error) {
@@ -290,6 +330,42 @@ export default function NurseDashboard() {
           </Card>
         </div>
 
+        {/* Pending Patients (Nurse Stage) */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Patients Waiting for Nurse
+            </CardTitle>
+            <CardDescription>Patients ready for vital signs assessment</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {pendingVisits.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No patients waiting</p>
+            ) : (
+              <div className="space-y-3">
+                {pendingVisits.map((visit) => (
+                  <div key={visit.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div>
+                      <p className="font-medium">{visit.patient?.full_name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Phone: {visit.patient?.phone} • Blood Group: {visit.patient?.blood_group || 'N/A'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Checked in: {format(new Date(visit.reception_completed_at || visit.created_at), 'MMM dd, yyyy HH:mm')}
+                      </p>
+                    </div>
+                    <Button onClick={() => handleRecordVitals(visit.patient)}>
+                      <Thermometer className="h-4 w-4 mr-2" />
+                      Record Vitals
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Quick Actions */}
         <Card className="shadow-lg">
           <CardHeader>
@@ -302,10 +378,10 @@ export default function NurseDashboard() {
                 variant="outline"
                 className="h-20 flex-col gap-2"
                 onClick={() => {
-                  if (patients.length > 0) {
-                    handleRecordVitals(patients[0]);
+                  if (pendingVisits.length > 0) {
+                    handleRecordVitals(pendingVisits[0].patient);
                   } else {
-                    toast.error('No patients available');
+                    toast.error('No patients waiting');
                   }
                 }}
               >
