@@ -52,7 +52,7 @@ export default function LabDashboard() {
     }
   };
 
-  const handleUpdateStatus = async (testId: string, newStatus: string) => {
+  const handleUpdateStatus = async (testId: string, newStatus: string, patientId?: string) => {
     const { error } = await supabase
       .from('lab_tests')
       .update({ 
@@ -63,10 +63,35 @@ export default function LabDashboard() {
 
     if (error) {
       toast.error('Failed to update test status');
-    } else {
-      toast.success('Test status updated');
-      fetchData();
+      return;
     }
+
+    // If test is completed and we have patient ID, update workflow
+    if (newStatus === 'Completed' && patientId) {
+      const { data: visits } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .eq('patient_id', patientId)
+        .eq('current_stage', 'lab')
+        .eq('overall_status', 'Active')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (visits && visits.length > 0) {
+        await supabase
+          .from('patient_visits')
+          .update({
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'doctor',
+            doctor_status: 'Pending'
+          })
+          .eq('id', visits[0].id);
+      }
+    }
+
+    toast.success('Test status updated');
+    fetchData();
   };
 
   const handleSubmitResult = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -87,8 +112,8 @@ export default function LabDashboard() {
     if (error) {
       toast.error('Failed to submit result');
     } else {
-      await handleUpdateStatus(selectedTest.id, 'Completed');
-      toast.success('Lab result submitted successfully');
+      await handleUpdateStatus(selectedTest.id, 'Completed', selectedTest.patient_id);
+      toast.success('Lab result submitted and sent back to doctor');
       setDialogOpen(false);
       setSelectedTest(null);
     }

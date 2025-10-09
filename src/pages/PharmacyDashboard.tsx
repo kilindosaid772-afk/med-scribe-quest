@@ -68,7 +68,7 @@ export default function PharmacyDashboard() {
     }
   };
 
-  const handleDispensePrescription = async (prescriptionId: string) => {
+  const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
     const { error } = await supabase
       .from('prescriptions')
       .update({
@@ -80,10 +80,33 @@ export default function PharmacyDashboard() {
 
     if (error) {
       toast.error('Failed to dispense prescription');
-    } else {
-      toast.success('Prescription dispensed successfully');
-      fetchData();
+      return;
     }
+
+    // Update workflow to move to billing
+    const { data: visits } = await supabase
+      .from('patient_visits')
+      .select('*')
+      .eq('patient_id', patientId)
+      .eq('current_stage', 'pharmacy')
+      .eq('overall_status', 'Active')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (visits && visits.length > 0) {
+      await supabase
+        .from('patient_visits')
+        .update({
+          pharmacy_status: 'Completed',
+          pharmacy_completed_at: new Date().toISOString(),
+          current_stage: 'billing',
+          billing_status: 'Pending'
+        })
+        .eq('id', visits[0].id);
+    }
+
+    toast.success('Prescription dispensed, sent to billing');
+    fetchData();
   };
 
   const handleUpdateStock = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -257,7 +280,7 @@ export default function PharmacyDashboard() {
                           {prescription.status === 'Pending' && (
                             <Button
                               size="sm"
-                              onClick={() => handleDispensePrescription(prescription.id)}
+                              onClick={() => handleDispensePrescription(prescription.id, prescription.patient_id)}
                             >
                               Dispense
                             </Button>

@@ -14,7 +14,8 @@ export default function DoctorDashboard() {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
-  const [stats, setStats] = useState({ totalAppointments: 0, todayAppointments: 0, totalPatients: 0 });
+  const [pendingVisits, setPendingVisits] = useState<any[]>([]);
+  const [stats, setStats] = useState({ totalAppointments: 0, todayAppointments: 0, totalPatients: 0, pendingConsultations: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,6 +26,17 @@ export default function DoctorDashboard() {
     if (!user) return;
 
     try {
+      // Fetch visits waiting for doctor
+      const { data: visitsData } = await supabase
+        .from('patient_visits')
+        .select(`
+          *,
+          patient:patients(full_name, phone, blood_group, date_of_birth, gender, allergies, medical_history)
+        `)
+        .eq('current_stage', 'doctor')
+        .eq('overall_status', 'Active')
+        .order('nurse_completed_at', { ascending: true });
+
       // Fetch doctor's appointments
       const { data: appointmentsData } = await supabase
         .from('appointments')
@@ -48,12 +60,14 @@ export default function DoctorDashboard() {
       const today = new Date().toISOString().split('T')[0];
       const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
 
+      setPendingVisits(visitsData || []);
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
       setStats({
         totalAppointments: appointmentsData?.length || 0,
         todayAppointments,
-        totalPatients: patientsData?.length || 0
+        totalPatients: patientsData?.length || 0,
+        pendingConsultations: visitsData?.length || 0
       });
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -77,7 +91,7 @@ export default function DoctorDashboard() {
     <DashboardLayout title="Doctor Dashboard">
       <div className="space-y-8">
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <Card className="border-primary/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Today's Appointments</CardTitle>
@@ -100,14 +114,76 @@ export default function DoctorDashboard() {
 
           <Card className="border-accent/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
+              <CardTitle className="text-sm font-medium">Pending Consultations</CardTitle>
               <Users className="h-4 w-4 text-accent" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-accent">{stats.totalPatients}</div>
+              <div className="text-2xl font-bold text-accent">{stats.pendingConsultations}</div>
+              <p className="text-xs text-muted-foreground">Waiting for doctor</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-green-200 shadow-lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
+              <Users className="h-4 w-4 text-green-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.totalPatients}</div>
             </CardContent>
           </Card>
         </div>
+
+        {/* Pending Consultations */}
+        {pendingVisits.length > 0 && (
+          <Card className="shadow-lg border-blue-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-blue-600" />
+                Patients Waiting for Consultation
+              </CardTitle>
+              <CardDescription>Patients ready for doctor consultation</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {pendingVisits.map((visit) => (
+                  <div key={visit.id} className="p-4 border rounded-lg bg-blue-50/50">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-2 flex-1">
+                        <div>
+                          <h4 className="font-semibold text-lg">{visit.patient?.full_name}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            DOB: {format(new Date(visit.patient?.date_of_birth), 'MMM dd, yyyy')} • 
+                            Gender: {visit.patient?.gender} • 
+                            Blood: {visit.patient?.blood_group || 'N/A'}
+                          </p>
+                        </div>
+                        {visit.nurse_vitals && (
+                          <div className="text-sm bg-white p-2 rounded border">
+                            <strong>Vitals:</strong> BP: {visit.nurse_vitals.blood_pressure}, 
+                            HR: {visit.nurse_vitals.heart_rate}, 
+                            Temp: {visit.nurse_vitals.temperature}, 
+                            O2: {visit.nurse_vitals.oxygen_saturation}
+                          </div>
+                        )}
+                        {visit.patient?.medical_history && (
+                          <p className="text-sm"><strong>History:</strong> {visit.patient.medical_history}</p>
+                        )}
+                        {visit.patient?.allergies && (
+                          <p className="text-sm text-red-600"><strong>Allergies:</strong> {visit.patient.allergies}</p>
+                        )}
+                      </div>
+                      <EnhancedDoctorFeatures 
+                        patients={[visit.patient]} 
+                        onSuccess={fetchData}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Upcoming Appointments */}
         <Card className="shadow-lg">

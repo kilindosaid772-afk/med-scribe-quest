@@ -206,6 +206,30 @@ export default function BillingDashboard() {
       .update({ paid_amount: newPaidAmount, status: newStatus })
       .eq('id', selectedInvoice.id);
 
+    // If fully paid, complete the workflow
+    if (newStatus === 'Paid') {
+      const { data: visits } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .eq('patient_id', selectedInvoice.patient_id)
+        .eq('current_stage', 'billing')
+        .eq('overall_status', 'Active')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (visits && visits.length > 0) {
+        await supabase
+          .from('patient_visits')
+          .update({
+            billing_status: 'Paid',
+            billing_completed_at: new Date().toISOString(),
+            current_stage: 'completed',
+            overall_status: 'Completed'
+          })
+          .eq('id', visits[0].id);
+      }
+    }
+
     toast.success('Payment recorded successfully');
     setPaymentDialogOpen(false);
     setSelectedInvoice(null);
