@@ -110,6 +110,53 @@ export default function PharmacyDashboard() {
 
   const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
     try {
+      // First, get the prescription details to create invoice
+      const { data: prescription, error: fetchError } = await supabase
+        .from('prescriptions')
+        .select('*')
+        .eq('id', prescriptionId)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching prescription:', fetchError);
+        toast.error('Failed to fetch prescription details');
+        return;
+      }
+
+      // Create invoice from prescription before dispensing
+      const invoice = await createInvoiceFromPrescription(prescription);
+
+      // Reduce medication stock based on prescription quantity
+      const { data: medicationData } = await supabase
+        .from('medications')
+        .select('*')
+        .eq('id', prescription.medication_id)
+        .single();
+
+      if (!medicationData) {
+        toast.error('Medication not found for stock reduction');
+        return;
+      }
+
+      if (medicationData.quantity_in_stock < prescription.quantity) {
+        toast.error(`Insufficient stock. Available: ${medicationData.quantity_in_stock}, Required: ${prescription.quantity}`);
+        return;
+      }
+
+      const newStockQuantity = medicationData.quantity_in_stock - prescription.quantity;
+
+      const { error: stockError } = await supabase
+        .from('medications')
+        .update({ quantity_in_stock: newStockQuantity })
+        .eq('id', prescription.medication_id);
+
+      if (stockError) {
+        console.error('Error reducing stock:', stockError);
+        toast.error('Failed to reduce medication stock');
+        return;
+      }
+
+      // Update prescription status to dispensed
       const { error } = await supabase
         .from('prescriptions')
         .update({
@@ -152,11 +199,11 @@ export default function PharmacyDashboard() {
         }
       }
 
-      toast.success('Prescription dispensed successfully');
+      toast.success(`Prescription dispensed successfully. Invoice ${invoice.invoice_number} created for TSh${invoice.total_amount.toFixed(2)}`);
       loadPharmacyData();
     } catch (error) {
       console.error('Unexpected error dispensing prescription:', error);
-      toast.error('An unexpected error occurred');
+      toast.error('An unexpected error occurred while dispensing prescription');
     }
   };
 
@@ -220,14 +267,71 @@ export default function PharmacyDashboard() {
     }
   };
 
-  const openEditDialog = (medication: any) => {
-    setEditingMedication(medication);
-    setMedicationDialogOpen(true);
+  const generateInvoiceNumber = () => {
+    return `INV-${Date.now().toString().slice(-8)}`;
   };
 
-  const openStockDialog = (medication: any) => {
-    setSelectedMedication(medication);
-    setStockDialogOpen(true);
+  const createInvoiceFromPrescription = async (prescription: any) => {
+    try {
+      // Get medication details to calculate pricing
+      const { data: medicationData } = await supabase
+        .from('medications')
+        .select('*')
+        .eq('id', prescription.medication_id)
+        .single();
+
+      if (!medicationData) {
+        throw new Error('Medication not found');
+      }
+
+      // Calculate total amount (medication price * quantity + 10% tax)
+      const subtotal = medicationData.unit_price * prescription.quantity;
+      const tax = subtotal * 0.1;
+      const totalAmount = subtotal + tax;
+
+      // Create invoice
+      const invoiceData = {
+        invoice_number: generateInvoiceNumber(),
+        patient_id: prescription.patient_id,
+        total_amount: totalAmount,
+        tax: tax,
+        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+        notes: `Auto-generated invoice for prescription: ${prescription.medication_name} (${prescription.dosage})`
+      };
+
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .insert([invoiceData])
+        .select()
+        .single();
+
+      if (invoiceError) {
+        throw invoiceError;
+      }
+
+      // Create invoice item
+      const invoiceItemData = {
+        invoice_id: invoice.id,
+        description: `${prescription.medication_name} ${prescription.dosage}`,
+        item_type: 'medication',
+        quantity: prescription.quantity,
+        unit_price: medicationData.unit_price,
+        total_price: subtotal
+      };
+
+      const { error: itemError } = await supabase
+        .from('invoice_items')
+        .insert([invoiceItemData]);
+
+      if (itemError) {
+        throw itemError;
+      }
+
+      return invoice;
+    } catch (error) {
+      console.error('Error creating invoice from prescription:', error);
+      throw error;
+    }
   };
 
   if (loading) {
@@ -472,7 +576,7 @@ export default function PharmacyDashboard() {
                           <TableCell>{med.dosage_form}</TableCell>
                           <TableCell>{med.quantity_in_stock}</TableCell>
                           <TableCell>{med.reorder_level}</TableCell>
-                          <TableCell>${Number(med.unit_price).toFixed(2)}</TableCell>
+                          <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
                           <TableCell>
                             <Badge variant={isLowStock ? 'destructive' : 'default'}>
                               {isLowStock ? 'Low Stock' : 'In Stock'}

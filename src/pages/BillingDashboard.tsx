@@ -35,12 +35,13 @@ export default function BillingDashboard() {
 
   const fetchData = async () => {
     try {
-      // Fetch invoices
+      // Fetch invoices with items
       const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
           *,
-          patient:patients(full_name, phone, insurance_company_id, insurance_policy_number)
+          patient:patients(full_name, phone, insurance_company_id, insurance_policy_number),
+          invoice_items(*)
         `)
         .order('invoice_date', { ascending: false })
         .limit(50);
@@ -289,7 +290,7 @@ export default function BillingDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                ${stats.totalRevenue.toFixed(2)}
+                TSh{stats.totalRevenue.toFixed(2)}
               </div>
             </CardContent>
           </Card>
@@ -340,7 +341,7 @@ export default function BillingDashboard() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="totalAmount">Total Amount ($)</Label>
+                      <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
                       <Input
                         id="totalAmount"
                         name="totalAmount"
@@ -381,8 +382,8 @@ export default function BillingDashboard() {
                   <TableRow key={invoice.id}>
                     <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                     <TableCell>{invoice.patient?.full_name || 'Unknown'}</TableCell>
-                    <TableCell>${Number(invoice.total_amount).toFixed(2)}</TableCell>
-                    <TableCell>${Number(invoice.paid_amount).toFixed(2)}</TableCell>
+                    <TableCell>TSh{Number(invoice.total_amount).toFixed(2)}</TableCell>
+                    <TableCell>TSh{Number(invoice.paid_amount).toFixed(2)}</TableCell>
                     <TableCell>
                       {format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}
                     </TableCell>
@@ -453,8 +454,8 @@ export default function BillingDashboard() {
                         <TableCell className="font-medium">{claim.claim_number}</TableCell>
                         <TableCell>{claim.patient?.full_name || 'Unknown'}</TableCell>
                         <TableCell>{claim.insurance_company?.name || 'N/A'}</TableCell>
-                        <TableCell>${Number(claim.claim_amount).toFixed(2)}</TableCell>
-                        <TableCell>${Number(claim.approved_amount).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(claim.claim_amount).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(claim.approved_amount).toFixed(2)}</TableCell>
                         <TableCell>
                           <Badge
                             variant={
@@ -480,24 +481,90 @@ export default function BillingDashboard() {
 
         {/* Payment Dialog */}
         <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Record Payment</DialogTitle>
               <DialogDescription>
                 Record payment for invoice {selectedInvoice?.invoice_number}
               </DialogDescription>
             </DialogHeader>
+
+            {/* Invoice Details */}
+            {selectedInvoice && (
+              <div className="border rounded-lg p-4 mb-4 bg-gray-50">
+                <h4 className="font-semibold mb-3">Invoice Details</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span>Patient:</span>
+                    <span className="font-medium">{selectedInvoice.patient?.full_name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Invoice Date:</span>
+                    <span>{format(new Date(selectedInvoice.invoice_date), 'MMM dd, yyyy')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Due Date:</span>
+                    <span>{format(new Date(selectedInvoice.due_date), 'MMM dd, yyyy')}</span>
+                  </div>
+
+                  {/* Invoice Items */}
+                  {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 && (
+                    <div className="mt-4">
+                      <h5 className="font-medium mb-2">Items:</h5>
+                      <div className="space-y-1">
+                        {selectedInvoice.invoice_items.map((item: any, index: number) => (
+                          <div key={index} className="flex justify-between text-sm">
+                            <span>{item.description}</span>
+                            <span>
+                              {item.quantity} × TSh{Number(item.unit_price).toFixed(2)} = TSh{Number(item.total_price).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t pt-2 mt-2">
+                    <div className="flex justify-between">
+                      <span>Subtotal:</span>
+                      <span>TSh{(Number(selectedInvoice.total_amount) - Number(selectedInvoice.tax || 0)).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tax (10%):</span>
+                      <span>TSh{Number(selectedInvoice.tax || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-base">
+                      <span>Total:</span>
+                      <span>TSh{Number(selectedInvoice.total_amount).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Paid:</span>
+                      <span>TSh{Number(selectedInvoice.paid_amount || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-green-600">
+                      <span>Remaining:</span>
+                      <span>TSh{(Number(selectedInvoice.total_amount) - Number(selectedInvoice.paid_amount || 0)).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleRecordPayment} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="amount">Payment Amount ($)</Label>
+                <Label htmlFor="amount">Payment Amount (TSh)</Label>
                 <Input
                   id="amount"
                   name="amount"
                   type="number"
                   step="0.01"
-                  max={selectedInvoice ? Number(selectedInvoice.total_amount) - Number(selectedInvoice.paid_amount) : undefined}
-                  required
+                  value={selectedInvoice ? (Number(selectedInvoice.total_amount) - Number(selectedInvoice.paid_amount || 0)).toFixed(2) : ''}
+                  readOnly
+                  className="bg-gray-50"
                 />
+                <p className="text-sm text-muted-foreground">
+                  Payment amount is automatically set to the remaining balance
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
@@ -571,24 +638,12 @@ export default function BillingDashboard() {
                     <SelectContent>
                       {insuranceCompanies.map((company) => (
                         <SelectItem key={company.id} value={company.id}>
-                          {company.name}
+                          {company.name} ({company.coverage_percentage}% coverage)
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-              {!['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="referenceNumber">Reference Number</Label>
-                    <Input id="referenceNumber" name="referenceNumber" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Notes</Label>
-                    <Input id="notes" name="notes" />
-                  </div>
-                </>
               )}
               
               {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) ? (
@@ -675,7 +730,7 @@ export default function BillingDashboard() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="claimAmount">Claim Amount ($)</Label>
+                <Label htmlFor="claimAmount">Claim Amount (TSh)</Label>
                 <Input
                   id="claimAmount"
                   name="claimAmount"
