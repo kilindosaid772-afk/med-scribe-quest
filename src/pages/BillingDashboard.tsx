@@ -10,10 +10,22 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { mobilePaymentService, MobilePaymentRequest } from '@/lib/mobilePaymentService';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { DollarSign, CreditCard, AlertCircle, Loader2, Plus, Shield, Smartphone, Building2, Send } from 'lucide-react';
 import { format } from 'date-fns';
+import {
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Smartphone,
+  Plus,
+  Send,
+  AlertCircle,
+  CreditCard,
+  Shield,
+  DollarSign
+} from 'lucide-react';
 
 export default function BillingDashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -26,8 +38,10 @@ export default function BillingDashboard() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [paymentStatus, setPaymentStatus] = useState<string>('');
+  const [transactionId, setTransactionId] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('');
-  const [mobilePaymentProcessing, setMobilePaymentProcessing] = useState(false);
+  const [mobilePaymentProcessing, setMobilePaymentProcessing] = useState<boolean>(false);
 
   useEffect(() => {
     fetchData();
@@ -128,47 +142,140 @@ export default function BillingDashboard() {
     const amount = Number(formData.get('amount'));
 
     setMobilePaymentProcessing(true);
+    setPaymentStatus('processing');
 
     try {
-      // Simulate mobile payment push request
-      toast.info(`📱 Payment request sent to ${phoneNumber}. Waiting for confirmation...`);
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Record the payment
-      const paymentData = {
-        invoice_id: selectedInvoice.id,
+      const paymentRequest: MobilePaymentRequest = {
+        phoneNumber,
         amount,
-        payment_method: paymentMethod,
-        reference_number: `${paymentMethod.replace(/\s/g, '').toUpperCase()}-${Date.now()}`,
-        notes: `Mobile payment via ${paymentMethod} from ${phoneNumber}`,
+        invoiceId: selectedInvoice.id,
+        paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
+        description: `Payment for invoice ${selectedInvoice.invoice_number}`
       };
 
-      const { error: paymentError } = await supabase.from('payments').insert([paymentData]);
-      if (paymentError) throw paymentError;
+      const response = await mobilePaymentService.initiatePayment(paymentRequest);
 
-      const newPaidAmount = Number(selectedInvoice.paid_amount) + amount;
-      const totalAmount = Number(selectedInvoice.total_amount);
-      const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
+      if (response.success && response.transactionId) {
+        setTransactionId(response.transactionId);
+        setPaymentStatus('pending');
 
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({ paid_amount: newPaidAmount, status: newStatus })
-        .eq('id', selectedInvoice.id);
+        toast.success(`📱 ${paymentMethod} payment request sent to ${phoneNumber}. Waiting for confirmation...`);
 
-      if (updateError) throw updateError;
+        // Create a pending payment record
+        const paymentData = {
+          invoice_id: selectedInvoice.id,
+          amount,
+          payment_method: paymentMethod,
+          reference_number: response.transactionId,
+          status: 'pending',
+          notes: `Mobile payment via ${paymentMethod} from ${phoneNumber} - Transaction ID: ${response.transactionId}`,
+        };
 
-      toast.success('✅ Payment completed successfully!');
-      setPaymentDialogOpen(false);
-      setSelectedInvoice(null);
-      setPaymentMethod('');
-      fetchData();
+        const { error: paymentError } = await supabase.from('payments').insert([paymentData]);
+        if (paymentError) {
+          console.error('Failed to create pending payment record:', paymentError);
+        }
+
+        // Close dialog but keep status visible
+        setPaymentDialogOpen(false);
+
+        // Poll for payment status (in a real app, this would be handled via webhooks)
+        setTimeout(() => checkPaymentStatus(response.transactionId), 5000);
+
+      } else {
+        setPaymentStatus('failed');
+        toast.error(response.message || 'Failed to initiate mobile payment');
+      }
     } catch (error) {
       console.error('Payment error:', error);
+      setPaymentStatus('failed');
       toast.error('Failed to process mobile payment');
     } finally {
       setMobilePaymentProcessing(false);
+    }
+  };
+
+  const checkPaymentStatus = async (transactionId: string) => {
+    try {
+      // In a real implementation, this would check the actual payment status
+      // For now, we'll simulate checking the status
+      const { data: paymentData } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('reference_number', transactionId)
+        .single();
+
+      if (paymentData && paymentData.status === 'completed') {
+        setPaymentStatus('completed');
+        toast.success('✅ Payment confirmed successfully!');
+
+        // Update invoice status
+        await updateInvoiceAfterPayment(paymentData.invoice_id, paymentData.amount);
+
+        // Reset state after a delay
+        setTimeout(() => {
+          setPaymentStatus('');
+          setTransactionId('');
+          setSelectedInvoice(null);
+          setPaymentMethod('');
+          fetchData();
+        }, 3000);
+      } else if (paymentData && paymentData.status === 'failed') {
+        setPaymentStatus('failed');
+        toast.error('❌ Payment failed');
+      } else {
+        // Still pending, check again after a delay
+        setTimeout(() => checkPaymentStatus(transactionId), 10000);
+      }
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+    }
+  };
+
+  const updateInvoiceAfterPayment = async (invoiceId: string, amount: number) => {
+    try {
+      const { data: invoice } = await supabase
+        .from('invoices')
+        .select('paid_amount, total_amount')
+        .eq('id', invoiceId)
+        .single();
+
+      if (invoice) {
+        const newPaidAmount = Number(invoice.paid_amount) + amount;
+        const totalAmount = Number(invoice.total_amount);
+        const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
+
+        await supabase
+          .from('invoices')
+          .update({ paid_amount: newPaidAmount, status: newStatus })
+          .eq('id', invoiceId);
+
+        // If fully paid, complete the workflow
+        if (newStatus === 'Paid') {
+          const { data: visits } = await supabase
+            .from('patient_visits')
+            .select('*')
+            .eq('patient_id', selectedInvoice?.patient_id)
+            .eq('current_stage', 'billing')
+            .eq('overall_status', 'Active')
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (visits && visits.length > 0) {
+            await supabase
+              .from('patient_visits')
+              .update({
+                billing_status: 'Paid',
+                billing_completed_at: new Date().toISOString(),
+                current_stage: 'completed',
+                overall_status: 'Completed'
+              })
+              .eq('id', visits[0].id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error updating invoice after payment:', error);
     }
   };
 
@@ -189,6 +296,7 @@ export default function BillingDashboard() {
       payment_method: paymentMethod,
       reference_number: formData.get('referenceNumber') as string || null,
       notes: formData.get('notes') as string || null,
+      status: paymentMethod.includes('M-Pesa') || paymentMethod.includes('Airtel Money') || paymentMethod.includes('Tigo Pesa') || paymentMethod.includes('Halopesa') ? 'pending' : 'completed',
     };
 
     const { error } = await supabase.from('payments').insert([paymentData]);
@@ -251,6 +359,41 @@ export default function BillingDashboard() {
   return (
     <DashboardLayout title="Billing Dashboard">
       <div className="space-y-8">
+        {/* Payment Status Notification */}
+        {paymentStatus && (
+          <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm ${
+            paymentStatus === 'completed' ? 'bg-green-100 border border-green-500' :
+            paymentStatus === 'failed' ? 'bg-red-100 border border-red-500' :
+            'bg-blue-100 border border-blue-500'
+          }`}>
+            <div className="flex items-center space-x-3">
+              {paymentStatus === 'completed' && <CheckCircle className="h-6 w-6 text-green-600" />}
+              {paymentStatus === 'failed' && <XCircle className="h-6 w-6 text-red-600" />}
+              {paymentStatus === 'pending' && <Loader2 className="h-6 w-6 text-blue-600 animate-spin" />}
+
+              <div className="flex-1">
+                <p className={`text-sm font-medium ${
+                  paymentStatus === 'completed' ? 'text-green-800' :
+                  paymentStatus === 'failed' ? 'text-red-800' :
+                  'text-blue-800'
+                }`}>
+                  {paymentStatus === 'completed' && 'Payment Completed!'}
+                  {paymentStatus === 'failed' && 'Payment Failed'}
+                  {paymentStatus === 'pending' && 'Payment Pending Confirmation'}
+                </p>
+                {transactionId && (
+                  <p className={`text-xs mt-1 ${
+                    paymentStatus === 'completed' ? 'text-green-600' :
+                    paymentStatus === 'failed' ? 'text-red-600' :
+                    'text-blue-600'
+                  }`}>
+                    Transaction ID: {transactionId.slice(-8)}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="border-destructive/20 shadow-lg">
@@ -312,112 +455,112 @@ export default function BillingDashboard() {
                     <CardTitle>Invoices</CardTitle>
                     <CardDescription>Manage patient invoices and payments</CardDescription>
                   </div>
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Invoice
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create New Invoice</DialogTitle>
-                    <DialogDescription>Generate a new invoice for a patient</DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleCreateInvoice} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="patientId">Patient</Label>
-                      <Select name="patientId" required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select patient" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {patients.map((patient) => (
-                            <SelectItem key={patient.id} value={patient.id}>
-                              {patient.full_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
-                      <Input
-                        id="totalAmount"
-                        name="totalAmount"
-                        type="number"
-                        step="0.01"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="dueDate">Due Date</Label>
-                      <Input id="dueDate" name="dueDate" type="date" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="notes">Notes</Label>
-                      <Input id="notes" name="notes" />
-                    </div>
-                    <Button type="submit" className="w-full">Create Invoice</Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>Total Amount</TableHead>
-                  <TableHead>Paid Amount</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoices.map((invoice) => (
-                  <TableRow key={invoice.id}>
-                    <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
-                    <TableCell>{invoice.patient?.full_name || 'Unknown'}</TableCell>
-                    <TableCell>TSh{Number(invoice.total_amount).toFixed(2)}</TableCell>
-                    <TableCell>TSh{Number(invoice.paid_amount).toFixed(2)}</TableCell>
-                    <TableCell>
-                      {format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          invoice.status === 'Paid' ? 'default' :
-                          invoice.status === 'Partially Paid' ? 'secondary' :
-                          'destructive'
-                        }
-                      >
-                        {invoice.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {invoice.status !== 'Paid' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedInvoice(invoice);
-                            setPaymentDialogOpen(true);
-                          }}
-                        >
-                          Record Payment
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create Invoice
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Create New Invoice</DialogTitle>
+                        <DialogDescription>Generate a new invoice for a patient</DialogDescription>
+                      </DialogHeader>
+                      <form onSubmit={handleCreateInvoice} className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="patientId">Patient</Label>
+                          <Select name="patientId" required>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select patient" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {patients.map((patient) => (
+                                <SelectItem key={patient.id} value={patient.id}>
+                                  {patient.full_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
+                          <Input
+                            id="totalAmount"
+                            name="totalAmount"
+                            type="number"
+                            step="0.01"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="dueDate">Due Date</Label>
+                          <Input id="dueDate" name="dueDate" type="date" required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="notes">Notes</Label>
+                          <Input id="notes" name="notes" />
+                        </div>
+                        <Button type="submit" className="w-full">Create Invoice</Button>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice #</TableHead>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Total Amount</TableHead>
+                      <TableHead>Paid Amount</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invoices.map((invoice) => (
+                      <TableRow key={invoice.id}>
+                        <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
+                        <TableCell>{invoice.patient?.full_name || 'Unknown'}</TableCell>
+                        <TableCell>TSh{Number(invoice.total_amount).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(invoice.paid_amount).toFixed(2)}</TableCell>
+                        <TableCell>
+                          {format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              invoice.status === 'Paid' ? 'default' :
+                              invoice.status === 'Partially Paid' ? 'secondary' :
+                              'destructive'
+                            }
+                          >
+                            {invoice.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {invoice.status !== 'Paid' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedInvoice(invoice);
+                                setPaymentDialogOpen(true);
+                              }}
+                            >
+                              Record Payment
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Insurance Claims Tab */}
@@ -585,7 +728,7 @@ export default function BillingDashboard() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {/* Mobile Money Fields */}
               {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) && (
                 <div className="space-y-2">
@@ -593,9 +736,9 @@ export default function BillingDashboard() {
                     <Smartphone className="inline h-4 w-4 mr-1" />
                     Phone Number *
                   </Label>
-                  <Input 
-                    id="phoneNumber" 
-                    name="phoneNumber" 
+                  <Input
+                    id="phoneNumber"
+                    name="phoneNumber"
                     placeholder="0712345678"
                     required
                   />
@@ -645,7 +788,7 @@ export default function BillingDashboard() {
                   </Select>
                 </div>
               )}
-              
+
               {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) ? (
                 <Button type="submit" className="w-full" disabled={mobilePaymentProcessing}>
                   {mobilePaymentProcessing ? (
@@ -679,7 +822,7 @@ export default function BillingDashboard() {
             <form onSubmit={async (e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
-              
+
               const claimData = {
                 invoice_id: formData.get('invoiceId') as string,
                 insurance_company_id: formData.get('insuranceCompanyId') as string,
@@ -690,7 +833,7 @@ export default function BillingDashboard() {
               };
 
               const { error } = await supabase.from('insurance_claims').insert([claimData]);
-              
+
               if (error) {
                 toast.error('Failed to submit claim');
               } else {
