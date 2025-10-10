@@ -184,21 +184,21 @@ const fetchData = async () => {
               <div className="space-y-3">
                 {pendingVisits.map((visit) => (
                   <div key={visit.id} className="p-4 border rounded-lg bg-blue-50/50">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-2 flex-1">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="space-y-2">
                         <div>
                           <h4 className="font-semibold text-lg">{visit.patient?.full_name}</h4>
                           <p className="text-sm text-muted-foreground">
-                            DOB: {format(new Date(visit.patient?.date_of_birth), 'MMM dd, yyyy')} • 
-                            Gender: {visit.patient?.gender} • 
+                            DOB: {format(new Date(visit.patient?.date_of_birth), 'MMM dd, yyyy')} •
+                            Gender: {visit.patient?.gender} •
                             Blood: {visit.patient?.blood_group || 'N/A'}
                           </p>
                         </div>
                         {visit.nurse_vitals && (
                           <div className="text-sm bg-white p-2 rounded border">
-                            <strong>Vitals:</strong> BP: {visit.nurse_vitals.blood_pressure}, 
-                            HR: {visit.nurse_vitals.heart_rate}, 
-                            Temp: {visit.nurse_vitals.temperature}, 
+                            <strong>Vitals:</strong> BP: {visit.nurse_vitals.blood_pressure},
+                            HR: {visit.nurse_vitals.heart_rate},
+                            Temp: {visit.nurse_vitals.temperature},
                             O2: {visit.nurse_vitals.oxygen_saturation}
                           </div>
                         )}
@@ -208,44 +208,48 @@ const fetchData = async () => {
                         {visit.patient?.allergies && (
                           <p className="text-sm text-red-600"><strong>Allergies:</strong> {visit.patient.allergies}</p>
                         )}
-                        {visit.labTests && visit.labTests.length > 0 && (
-                          <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
-                            <strong className="text-green-800">Lab Results:</strong>
-                            <div className="mt-2 space-y-2">
-                              {visit.labTests.map((test: any) => (
-                                <div key={test.id} className="bg-white p-2 rounded border">
-                                  <div className="font-medium">{test.test_name} ({test.test_type})</div>
-                                  {test.lab_results && test.lab_results.length > 0 && (
-                                    <div className="mt-1 text-xs space-y-1">
-                                      {test.lab_results.map((result: any) => (
-                                        <div key={result.id} className="flex justify-between">
-                                          <span>{result.result_value} {result.unit}</span>
-                                          {result.reference_range && (
-                                            <span className="text-muted-foreground">
-                                              (Ref: {result.reference_range})
-                                            </span>
-                                          )}
-                                          {result.abnormal_flag && (
-                                            <span className="text-red-600 font-medium">⚠ Abnormal</span>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {test.notes && (
-                                    <p className="text-xs text-muted-foreground mt-1">Note: {test.notes}</p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
-                      <EnhancedDoctorFeatures 
-                        patients={[visit.patient]} 
+                      <EnhancedDoctorFeatures
+                        patients={[visit.patient]}
                         onSuccess={fetchData}
                       />
                     </div>
+
+                    {/* Lab Results - Full Width */}
+                    {visit.labTests && visit.labTests.length > 0 && (
+                      <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
+                        <strong className="text-green-800 block mb-2">Lab Results:</strong>
+                        <div className="space-y-3 max-h-48 overflow-y-auto">
+                          {visit.labTests.map((test: any) => (
+                            <div key={test.id} className="bg-white p-3 rounded border shadow-sm">
+                              <div className="font-medium text-sm mb-2">{test.test_name} ({test.test_type})</div>
+                              {test.lab_results && test.lab_results.length > 0 && (
+                                <div className="space-y-1">
+                                  {test.lab_results.map((result: any) => (
+                                    <div key={result.id} className="flex justify-between items-center text-xs bg-gray-50 p-2 rounded">
+                                      <span className="font-medium">{result.result_value} {result.unit}</span>
+                                      <div className="flex items-center gap-2">
+                                        {result.reference_range && (
+                                          <span className="text-muted-foreground">
+                                            (Ref: {result.reference_range})
+                                          </span>
+                                        )}
+                                        {result.abnormal_flag && (
+                                          <span className="text-red-600 font-medium text-xs">⚠ Abnormal</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {test.notes && (
+                                <p className="text-xs text-muted-foreground mt-2 p-2 bg-yellow-50 rounded">Note: {test.notes}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -97,15 +97,69 @@ export default function AdminDashboard() {
     };
 
     try {
-      // Create the patient record directly (no auth account needed)
-      const { error: patientError } = await supabase.from('patients').insert([patientData]);
+      // First create a user account for the patient
+      const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: patientData.email,
+        password: randomPassword,
+        options: {
+          data: {
+            full_name: patientData.full_name,
+            phone: patientData.phone,
+          },
+          emailRedirectTo: undefined, // Disable email confirmation for admin-created accounts
+        },
+      });
+
+      if (authError) {
+        // If email already exists, try to find the existing user
+        if (authError.message.includes('already registered')) {
+          toast.error('A user with this email already exists. Please use a different email or contact support.');
+          return;
+        }
+        toast.error('Failed to create patient account: ' + authError.message);
+        return;
+      }
+
+      // If user creation succeeded but email confirmation is required,
+      // we need to handle this differently for admin-created patients
+      if (authData.user && !authData.session) {
+        // Email confirmation required - for admin-created patients, we'll create
+        // the patient record anyway and link it to the unconfirmed user
+        console.log('User created but email confirmation required:', authData.user.id);
+      }
+
+      // Create the patient record
+      const { error: patientError } = await supabase.from('patients').insert([{
+        ...patientData,
+        user_id: authData.user?.id || null,
+      }]);
 
       if (patientError) {
         toast.error('Failed to add patient: ' + patientError.message);
       } else {
-        toast.success('Patient added successfully');
-        setDialogOpen(false);
-        fetchData();
+        // Assign the patient role if we have a user ID
+        if (authData.user?.id) {
+          const { error: roleError } = await supabase
+            .from('user_roles')
+            .insert([{
+              user_id: authData.user.id,
+              role: 'patient',
+              is_primary: true,
+            }]);
+
+          if (roleError) {
+            toast.error('Patient created but failed to assign role: ' + roleError.message);
+          } else {
+            toast.success('Patient added successfully with user account');
+            setDialogOpen(false);
+            fetchData();
+          }
+        } else {
+          toast.success('Patient created successfully (no user account created)');
+          setDialogOpen(false);
+          fetchData();
+        }
       }
     } catch (error) {
       console.error('Error creating patient:', error);
