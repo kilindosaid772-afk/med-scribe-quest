@@ -86,7 +86,7 @@ export default function ReceptionistDashboard() {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      // First, get appointments with basic info
+      // First, get appointments with basic info (get all appointments for better data handling)
       const { data: appointmentsBasic, error: appointmentsError } = await supabase
         .from('appointments')
         .select(`
@@ -94,7 +94,6 @@ export default function ReceptionistDashboard() {
           patient:patients(full_name, phone, date_of_birth),
           department:departments(name)
         `)
-        .gte('appointment_date', today)
         .order('appointment_time', { ascending: true });
 
       if (appointmentsError) throw appointmentsError;
@@ -241,6 +240,18 @@ export default function ReceptionistDashboard() {
       setPatients(patientsData || []);
       setDepartments(departmentsData || []);
       setDoctors(doctorsData || []);
+
+      // Debug logging
+      console.log('Dashboard data loaded:', {
+        appointments: appointmentsData?.length || 0,
+        patients: patientsData?.length || 0,
+        departments: departmentsData?.length || 0,
+        doctors: doctorsData?.length || 0,
+        todayAppointments,
+        pendingAppointments,
+        completedCheckins
+      });
+
       setStats({
         todayAppointments,
         pendingAppointments,
@@ -543,7 +554,8 @@ export default function ReceptionistDashboard() {
 
       if (patientError) throw patientError;
 
-      toast.success('Patient registered successfully! Please schedule their first appointment.');
+      // Success message
+      toast.success('Patient registered successfully! Auto-scheduling appointment for this patient...');
 
       // Automatically open appointment booking dialog with the new patient selected
       setAppointmentForm({
@@ -556,6 +568,9 @@ export default function ReceptionistDashboard() {
       });
       setShowRegisterDialog(false);
       setShowBookAppointmentDialog(true);
+
+      // Refresh data to show the new patient
+      fetchData();
     } catch (error) {
       console.error('Registration error:', error);
       toast.error('Failed to register patient');
@@ -565,7 +580,7 @@ export default function ReceptionistDashboard() {
   const submitBookAppointment = async () => {
     // Validate required fields
     if (!appointmentForm.patient_id || !appointmentForm.doctor_id ||
-        !appointmentForm.appointment_date || !appointmentForm.appointment_time || !appointmentForm.reason) {
+        !appointmentForm.appointment_date || !appointmentForm.appointment_time) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -578,7 +593,7 @@ export default function ReceptionistDashboard() {
           doctor_id: appointmentForm.doctor_id,
           appointment_date: appointmentForm.appointment_date,
           appointment_time: appointmentForm.appointment_time,
-          reason: appointmentForm.reason,
+          ...(appointmentForm.reason && { reason: appointmentForm.reason }),
           department_id: appointmentForm.department_id || null,
           status: 'Scheduled',
         })
@@ -945,7 +960,7 @@ export default function ReceptionistDashboard() {
               </select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="appt_reason">Reason for Visit *</Label>
+              <Label htmlFor="appt_reason">Reason for Visit</Label>
               <Input
                 id="appt_reason"
                 value={appointmentForm.reason}
@@ -1031,7 +1046,7 @@ export default function ReceptionistDashboard() {
                         <div className="text-sm text-muted-foreground">
                           {apt.appointment_time} • Dr. {apt.doctor?.full_name}
                         </div>
-                        <div className="text-sm text-muted-foreground">{apt.reason}</div>
+                        <div className="text-sm text-muted-foreground">{apt.reason || 'No reason specified'}</div>
                       </div>
                       <Badge variant={apt.status === 'Confirmed' ? 'default' : 'secondary'}>
                         {apt.status}

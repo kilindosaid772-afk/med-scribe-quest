@@ -8,21 +8,23 @@ interface PatientsCardProps {
 }
 
 export function PatientsCard({ patients }: PatientsCardProps) {
+  const recentPatients = patients.slice(0, 5); // Show only the 5 most recent patients
+
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users className="h-5 w-5" />
-          Recent Patients
+          Recent Patients ({patients.length})
         </CardTitle>
         <CardDescription>Recently registered patients</CardDescription>
       </CardHeader>
       <CardContent>
-        {patients.length === 0 ? (
+        {recentPatients.length === 0 ? (
           <p className="text-center text-muted-foreground py-8">No patients found</p>
         ) : (
           <div className="space-y-3">
-            {patients.slice(0, 5).map((patient) => (
+            {recentPatients.map((patient) => (
               <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">

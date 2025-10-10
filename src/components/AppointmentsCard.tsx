@@ -10,6 +10,7 @@ interface AppointmentsCardProps {
 }
 
 export function AppointmentsCard({ appointments, onCheckIn, onCancel }: AppointmentsCardProps) {
+  // Filter for today's appointments only (in case we have future appointments)
   const todayAppointments = appointments.filter(
     a => a.appointment_date === new Date().toISOString().split('T')[0]
   );
@@ -19,7 +20,7 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Calendar className="h-5 w-5" />
-          Today's Appointments
+          Today's Appointments ({todayAppointments.length})
         </CardTitle>
         <CardDescription>Manage today's patient schedule</CardDescription>
       </CardHeader>
@@ -32,12 +33,14 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
               <div key={appointment.id} className="flex items-center justify-between p-3 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col">
-                    <p className="font-medium">{appointment.patient?.full_name}</p>
+                    <p className="font-medium">
+                      {appointment.patient?.full_name || 'Unknown Patient'}
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      {appointment.appointment_time} • Dr. {appointment.doctor?.full_name}
+                      {appointment.appointment_time} • Dr. {appointment.doctor?.full_name || 'Unknown Doctor'}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {appointment.department?.name}
+                      {appointment.department?.name || 'No Department'}
                     </p>
                   </div>
                 </div>
