@@ -30,8 +30,15 @@ export default function PatientDashboard() {
       // In a real system, you might want to fetch all patients or implement search
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to load dashboard data');
+      console.error('Error fetching patient dashboard data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+      toast.error(`Failed to load dashboard data: ${error.message}`);
+    } finally {
       setLoading(false);
     }
   };
@@ -83,6 +90,43 @@ export default function PatientDashboard() {
     }
   };
 
+  // Helper function to create sample data for testing
+  const createSampleData = async () => {
+    try {
+      // Create sample patients if none exist
+      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
+      if (!existingPatients || existingPatients.length === 0) {
+        await supabase.from('patients').insert([
+          {
+            full_name: 'Sarah Johnson',
+            date_of_birth: '1995-06-10',
+            gender: 'Female',
+            phone: '+255700000007',
+            email: 'sarah@example.com',
+            blood_group: 'A-',
+            status: 'Active',
+            medical_history: 'No significant medical history'
+          },
+          {
+            full_name: 'David Wilson',
+            date_of_birth: '1983-09-22',
+            gender: 'Male',
+            phone: '+255700000008',
+            email: 'david@example.com',
+            blood_group: 'B-',
+            status: 'Active',
+            medical_history: 'Hypertension, Diabetes Type 2'
+          }
+        ]);
+      }
+
+      toast.success('Sample data created');
+    } catch (error) {
+      console.error('Error creating sample data:', error);
+      toast.error('Failed to create sample data');
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout title="Patient Dashboard">
@@ -99,8 +143,20 @@ export default function PatientDashboard() {
         {/* Patient Search */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Patient Lookup</CardTitle>
-            <CardDescription>Search for patient records</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Patient Lookup</CardTitle>
+                <CardDescription>Search for patient records</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createSampleData}
+                className="text-primary border-primary/20 hover:bg-primary/5"
+              >
+                Create Sample Data
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="flex gap-4">

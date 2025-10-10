@@ -75,8 +75,24 @@ export default function AdminDashboard() {
         totalUsers: usersData?.length || 0
       });
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to load dashboard data');
+      console.error('Error fetching admin data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Set empty data to prevent crashes
+      setPatients([]);
+      setUsers([]);
+      setStats({
+        totalPatients: 0,
+        activeAppointments: 0,
+        totalUsers: 0
+      });
+
+      toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -200,6 +216,73 @@ export default function AdminDashboard() {
     }
   };
 
+  // Helper function to create sample data for testing
+  const createSampleData = async () => {
+    try {
+      // Create sample departments if none exist
+      const { data: existingDepts } = await supabase.from('departments').select('id').limit(1);
+      if (!existingDepts || existingDepts.length === 0) {
+        await supabase.from('departments').insert([
+          { name: 'General Medicine', description: 'General medical care' },
+          { name: 'Cardiology', description: 'Heart and cardiovascular system' },
+          { name: 'Pediatrics', description: 'Children and infants' }
+        ]);
+      }
+
+      // Create sample patients if none exist
+      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
+      if (!existingPatients || existingPatients.length === 0) {
+        await supabase.from('patients').insert([
+          {
+            full_name: 'John Doe',
+            date_of_birth: '1990-01-01',
+            gender: 'Male',
+            phone: '+255700000001',
+            email: 'john@example.com',
+            blood_group: 'O+',
+            status: 'Active'
+          },
+          {
+            full_name: 'Jane Smith',
+            date_of_birth: '1985-05-15',
+            gender: 'Female',
+            phone: '+255700000002',
+            email: 'jane@example.com',
+            blood_group: 'A+',
+            status: 'Active'
+          }
+        ]);
+      }
+
+      // Create sample appointments if none exist
+      const { data: existingAppointments } = await supabase.from('appointments').select('id').limit(1);
+      if (!existingAppointments || existingAppointments.length === 0) {
+        const { data: patients } = await supabase.from('patients').select('id').limit(2);
+        const { data: departments } = await supabase.from('departments').select('id').limit(1);
+
+        if (patients && patients.length > 0 && departments && departments.length > 0) {
+          await supabase.from('appointments').insert([
+            {
+              patient_id: patients[0].id,
+              doctor_id: '00000000-0000-0000-0000-000000000000', // Placeholder doctor ID
+              department_id: departments[0].id,
+              appointment_date: new Date().toISOString().split('T')[0],
+              appointment_time: '10:00',
+              reason: 'Regular checkup',
+              status: 'Scheduled'
+            }
+          ]);
+        }
+      }
+
+      toast.success('Sample data created');
+      fetchData();
+    } catch (error) {
+      console.error('Error creating sample data:', error);
+      toast.error('Failed to create sample data');
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout title="Admin Dashboard">
@@ -242,6 +325,14 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-accent">{stats.totalUsers}</div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createSampleData}
+                className="mt-2 text-accent-600 border-accent-200 hover:bg-accent-50"
+              >
+                Create Sample Data
+              </Button>
             </CardContent>
           </Card>
         </div>

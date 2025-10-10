@@ -251,9 +251,83 @@ export default function NurseDashboard() {
 
     } catch (error) {
       console.error('Error fetching nurse data:', error);
-      toast.error('Failed to load dashboard data');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Set empty data to prevent crashes
+      setPendingVisits([]);
+      setAppointments([]);
+      setPatients([]);
+      setStats({
+        totalPatients: 0,
+        todayAppointments: 0,
+        pendingVitals: 0,
+        completedTasks: 0
+      });
+
+      toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper function to create sample data for testing
+  const createSampleData = async () => {
+    if (!user) return;
+
+    try {
+      // Create sample patients if none exist
+      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
+      if (!existingPatients || existingPatients.length === 0) {
+        await supabase.from('patients').insert([
+          {
+            full_name: 'Emma Wilson',
+            date_of_birth: '1992-08-15',
+            gender: 'Female',
+            phone: '+255700000005',
+            email: 'emma@example.com',
+            blood_group: 'O-',
+            status: 'Active'
+          },
+          {
+            full_name: 'Michael Brown',
+            date_of_birth: '1980-12-03',
+            gender: 'Male',
+            phone: '+255700000006',
+            email: 'michael@example.com',
+            blood_group: 'B+',
+            status: 'Active'
+          }
+        ]);
+      }
+
+      // Create sample patient visits waiting for nurse
+      const { data: existingVisits } = await supabase.from('patient_visits').select('id').limit(1);
+      if (!existingVisits || existingVisits.length === 0) {
+        const { data: patients } = await supabase.from('patients').select('id').limit(2);
+
+        if (patients && patients.length > 0) {
+          await supabase.from('patient_visits').insert([
+            {
+              patient_id: patients[0].id,
+              current_stage: 'nurse',
+              overall_status: 'Active',
+              reception_status: 'Checked In',
+              nurse_status: 'Pending'
+            }
+          ]);
+        }
+      }
+
+      toast.success('Sample data created');
+      fetchData();
+    } catch (error) {
+      console.error('Error creating sample data:', error);
+      toast.error('Failed to create sample data');
     }
   };
 
@@ -326,6 +400,14 @@ export default function NurseDashboard() {
             <CardContent>
               <div className="text-2xl font-bold text-purple-600">{stats.completedTasks}</div>
               <p className="text-xs text-muted-foreground">Tasks completed today</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createSampleData}
+                className="mt-2 text-purple-600 border-purple-200 hover:bg-purple-50"
+              >
+                Create Sample Data
+              </Button>
             </CardContent>
           </Card>
         </div>

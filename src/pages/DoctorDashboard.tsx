@@ -106,10 +106,100 @@ const fetchData = async () => {
         pendingConsultations: visitsWithLabTests.length
       });
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to load dashboard data');
+      console.error('Error fetching doctor data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Set empty data to prevent crashes
+      setPendingVisits([]);
+      setAppointments([]);
+      setPatients([]);
+      setStats({
+        totalAppointments: 0,
+        todayAppointments: 0,
+        totalPatients: 0,
+        pendingConsultations: 0,
+      });
+
+      toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper function to create sample data for testing
+  const createSampleData = async () => {
+    if (!user) return;
+
+    try {
+      // Create sample patients if none exist
+      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
+      if (!existingPatients || existingPatients.length === 0) {
+        const { data: newPatients } = await supabase.from('patients').insert([
+          {
+            full_name: 'Alice Johnson',
+            date_of_birth: '1988-03-20',
+            gender: 'Female',
+            phone: '+255700000003',
+            email: 'alice@example.com',
+            blood_group: 'B+',
+            status: 'Active'
+          },
+          {
+            full_name: 'Bob Wilson',
+            date_of_birth: '1975-11-10',
+            gender: 'Male',
+            phone: '+255700000004',
+            email: 'bob@example.com',
+            blood_group: 'AB+',
+            status: 'Active'
+          }
+        ]).select();
+
+        if (newPatients && newPatients.length > 0) {
+          // Create sample appointments for today
+          const today = new Date().toISOString().split('T')[0];
+          await supabase.from('appointments').insert([
+            {
+              patient_id: newPatients[0].id,
+              doctor_id: user.id,
+              appointment_date: today,
+              appointment_time: '09:00',
+              reason: 'Follow-up consultation',
+              status: 'Scheduled'
+            },
+            {
+              patient_id: newPatients[1].id,
+              doctor_id: user.id,
+              appointment_date: today,
+              appointment_time: '14:30',
+              reason: 'Regular checkup',
+              status: 'Confirmed'
+            }
+          ]);
+
+          // Create sample patient visits
+          await supabase.from('patient_visits').insert([
+            {
+              patient_id: newPatients[0].id,
+              current_stage: 'doctor',
+              overall_status: 'Active',
+              reception_status: 'Checked In',
+              nurse_status: 'Completed',
+              doctor_status: 'Pending'
+            }
+          ]);
+        }
+      }
+
+      toast.success('Sample data created');
+      fetchData();
+    } catch (error) {
+      console.error('Error creating sample data:', error);
     }
   };
 
@@ -166,6 +256,14 @@ const fetchData = async () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">{stats.totalPatients}</div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createSampleData}
+                className="mt-2 text-green-600 border-green-200 hover:bg-green-50"
+              >
+                Create Sample Data
+              </Button>
             </CardContent>
           </Card>
         </div>

@@ -63,8 +63,6 @@ export default function ReceptionistDashboard() {
     email: '',
     blood_group: '',
     address: '',
-    emergency_contact_name: '',
-    emergency_contact_phone: '',
   });
 
   const [appointmentForm, setAppointmentForm] = useState({
@@ -86,18 +84,37 @@ export default function ReceptionistDashboard() {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      const { data: appointmentsData, error: appointmentsError } = await supabase
+      // First, get appointments with basic info
+      const { data: appointmentsBasic, error: appointmentsError } = await supabase
         .from('appointments')
         .select(`
           *,
           patient:patients(full_name, phone, date_of_birth),
-          doctor:profiles!appointments_doctor_id_fkey(full_name),
-          department:departments(id, name)
+          department:departments(name)
         `)
         .gte('appointment_date', today)
         .order('appointment_time', { ascending: true });
 
       if (appointmentsError) throw appointmentsError;
+
+      // Then get doctor profiles for the appointments
+      const doctorIds = [...new Set(appointmentsBasic?.map(apt => apt.doctor_id).filter(Boolean) || [])];
+
+      let appointmentsData = appointmentsBasic;
+      if (doctorIds.length > 0) {
+        const { data: doctorsData, error: doctorsError } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', doctorIds);
+
+        if (!doctorsError && doctorsData) {
+          // Merge doctor information into appointments
+          appointmentsData = appointmentsBasic?.map(apt => ({
+            ...apt,
+            doctor: doctorsData.find(doc => doc.id === apt.doctor_id)
+          }));
+        }
+      }
 
       const { data: patientsData, error: patientsError } = await supabase
         .from('patients')
@@ -114,13 +131,30 @@ export default function ReceptionistDashboard() {
 
       if (departmentsError) throw departmentsError;
 
-      // Fetch doctors
-      const { data: doctorsData, error: doctorsError } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .limit(50);
+      // Fetch doctors - get profiles that have doctor role
+      let doctorsData = [];
+      try {
+        const { data: profilesWithRoles, error: profilesError } = await supabase
+          .from('profiles')
+          .select(`
+            *,
+            user_roles!inner(role)
+          `)
+          .eq('user_roles.role', 'doctor');
 
-      if (doctorsError) throw doctorsError;
+        if (profilesError) throw profilesError;
+        doctorsData = profilesWithRoles || [];
+      } catch (error) {
+        console.warn('Could not fetch doctors with roles, using fallback:', error);
+        // Fallback: get all profiles (for development)
+        const { data: allProfiles, error: fallbackError } = await supabase
+          .from('profiles')
+          .select('*')
+          .limit(10);
+        if (!fallbackError) {
+          doctorsData = allProfiles || [];
+        }
+      }
 
       const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
       const pendingAppointments = appointmentsData?.filter(a => a.status === 'Scheduled').length || 0;
@@ -138,9 +172,89 @@ export default function ReceptionistDashboard() {
       });
     } catch (error) {
       console.error('Error fetching receptionist data:', error);
-      toast.error('Failed to load dashboard data');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Set empty data to prevent crashes
+      setAppointments([]);
+      setPatients([]);
+      setDepartments([]);
+      setDoctors([]);
+      setStats({
+        todayAppointments: 0,
+        pendingAppointments: 0,
+        completedCheckins: 0,
+        totalPatients: 0,
+      });
+
+      toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper function to create sample data for testing
+  const createSampleData = async () => {
+    if (!user) return;
+
+    try {
+      // Create sample departments if none exist
+      const { data: existingDepts } = await supabase.from('departments').select('id').limit(1);
+      if (!existingDepts || existingDepts.length === 0) {
+        await supabase.from('departments').insert([
+          { name: 'General Medicine', description: 'General medical care' },
+          { name: 'Cardiology', description: 'Heart and cardiovascular system' },
+          { name: 'Pediatrics', description: 'Children and infants' }
+        ]);
+      }
+
+      // Create sample patients if none exist
+      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
+      if (!existingPatients || existingPatients.length === 0) {
+        const { data: newPatients } = await supabase.from('patients').insert([
+          {
+            full_name: 'John Doe',
+            date_of_birth: '1990-01-01',
+            gender: 'Male',
+            phone: '+255700000001',
+            email: 'john@example.com',
+            blood_group: 'O+',
+            status: 'Active'
+          },
+          {
+            full_name: 'Jane Smith',
+            date_of_birth: '1985-05-15',
+            gender: 'Female',
+            phone: '+255700000002',
+            email: 'jane@example.com',
+            blood_group: 'A+',
+            status: 'Active'
+          }
+        ]).select();
+
+        if (newPatients && newPatients.length > 0) {
+          // Create sample appointments
+          await supabase.from('appointments').insert([
+            {
+              patient_id: newPatients[0].id,
+              doctor_id: user.id,
+              appointment_date: new Date().toISOString().split('T')[0],
+              appointment_time: '10:00',
+              reason: 'Regular checkup',
+              status: 'Scheduled'
+            }
+          ]);
+        }
+      }
+
+      toast.success('Sample data created');
+      fetchData();
+    } catch (error) {
+      console.error('Error creating sample data:', error);
     }
   };
 
@@ -151,12 +265,26 @@ export default function ReceptionistDashboard() {
   // ---------------- HANDLERS ----------------
   const handleCheckIn = async (appointmentId: string) => {
     try {
-      const { error } = await supabase
+      // Update appointment status
+      const { error: appointmentError } = await supabase
         .from('appointments')
         .update({ status: 'Confirmed' })
         .eq('id', appointmentId);
 
-      if (error) throw error;
+      if (appointmentError) throw appointmentError;
+
+      // Update patient visit workflow
+      const { error: visitError } = await supabase
+        .from('patient_visits')
+        .update({
+          reception_status: 'Checked In',
+          reception_completed_at: new Date().toISOString(),
+          current_stage: 'nurse'
+        })
+        .eq('appointment_id', appointmentId);
+
+      if (visitError) throw visitError;
+
       toast.success('Patient checked in successfully');
       fetchData();
     } catch (error) {
@@ -167,12 +295,25 @@ export default function ReceptionistDashboard() {
 
   const handleCancelAppointment = async (appointmentId: string) => {
     try {
-      const { error } = await supabase
+      // Update appointment status
+      const { error: appointmentError } = await supabase
         .from('appointments')
         .update({ status: 'Cancelled' })
         .eq('id', appointmentId);
 
-      if (error) throw error;
+      if (appointmentError) throw appointmentError;
+
+      // Update patient visit workflow
+      const { error: visitError } = await supabase
+        .from('patient_visits')
+        .update({
+          overall_status: 'Cancelled',
+          reception_status: 'Cancelled'
+        })
+        .eq('appointment_id', appointmentId);
+
+      if (visitError) throw visitError;
+
       toast.success('Appointment cancelled');
       fetchData();
     } catch (error) {
@@ -190,8 +331,6 @@ export default function ReceptionistDashboard() {
       email: '',
       blood_group: '',
       address: '',
-      emergency_contact_name: '',
-      emergency_contact_phone: '',
     });
     setShowRegisterDialog(true);
   };
@@ -219,23 +358,37 @@ export default function ReceptionistDashboard() {
   };
 
   const searchPatients = async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim()) {
+      toast.error('Please enter a search term');
+      return;
+    }
+
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('patients')
         .select('*')
         .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
-        .limit(10);
+        .limit(20);
 
       if (error) throw error;
       setSearchResults(data || []);
     } catch (error) {
       console.error('Search error:', error);
       toast.error('Failed to search patients');
+    } finally {
+      setLoading(false);
     }
   };
 
   const submitPatientRegistration = async () => {
+    // Validate required fields
+    if (!registerForm.full_name || !registerForm.date_of_birth ||
+        !registerForm.gender || !registerForm.phone) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
     try {
       // Insert patient
       const { data: newPatient, error: patientError } = await supabase
@@ -245,11 +398,9 @@ export default function ReceptionistDashboard() {
           date_of_birth: registerForm.date_of_birth,
           gender: registerForm.gender,
           phone: registerForm.phone,
-          email: registerForm.email,
-          blood_group: registerForm.blood_group,
-          address: registerForm.address,
-          emergency_contact_name: registerForm.emergency_contact_name,
-          emergency_contact_phone: registerForm.emergency_contact_phone,
+          email: registerForm.email || null,
+          blood_group: registerForm.blood_group || null,
+          address: registerForm.address || null,
           status: 'Active',
         })
         .select()
@@ -257,19 +408,7 @@ export default function ReceptionistDashboard() {
 
       if (patientError) throw patientError;
 
-      // Create patient visit workflow
-      const { error: visitError } = await supabase
-        .from('patient_visits')
-        .insert({
-          patient_id: newPatient.id,
-          reception_status: 'Checked In',
-          reception_completed_at: new Date().toISOString(),
-          current_stage: 'nurse'
-        });
-
-      if (visitError) throw visitError;
-
-      toast.success('Patient registered and ready for nurse');
+      toast.success('Patient registered successfully');
       setShowRegisterDialog(false);
       fetchData();
     } catch (error) {
@@ -279,6 +418,13 @@ export default function ReceptionistDashboard() {
   };
 
   const submitBookAppointment = async () => {
+    // Validate required fields
+    if (!appointmentForm.patient_id || !appointmentForm.doctor_id ||
+        !appointmentForm.appointment_date || !appointmentForm.appointment_time || !appointmentForm.reason) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
     try {
       const { data: newAppointment, error: appointmentError } = await supabase
         .from('appointments')
@@ -296,7 +442,7 @@ export default function ReceptionistDashboard() {
 
       if (appointmentError) throw appointmentError;
 
-      // Create patient visit workflow
+      // Create patient visit workflow for appointment
       const { error: visitError } = await supabase
         .from('patient_visits')
         .insert({
@@ -330,92 +476,104 @@ export default function ReceptionistDashboard() {
 
   // ---------------- MAIN RENDER ----------------
   return (
-    <DashboardLayout title="Receptionist Dashboard">
-      <div className="space-y-8">
+    <>
+      <DashboardLayout title="Receptionist Dashboard">
+        <div className="space-y-8">
 
-        {/* Welcome Section */}
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-lg border border-green-200">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-full">
-              <Building className="h-6 w-6 text-green-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">
-                Welcome back, Receptionist!
-              </h2>
-              <p className="text-gray-600">
-                Here's your front desk overview for today
-              </p>
+          {/* Welcome Section */}
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-lg border border-green-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-full">
+                  <Building className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    Welcome back, Receptionist!
+                  </h2>
+                  <p className="text-gray-600">
+                    Here's your front desk overview for today
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createSampleData}
+                className="text-green-600 border-green-200 hover:bg-green-50"
+              >
+                Create Sample Data
+              </Button>
             </div>
           </div>
-        </div>
 
-        {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="Today's Schedule" value={stats.todayAppointments} icon={Calendar} color="green" sub="Appointments today" />
-          <StatCard title="Pending" value={stats.pendingAppointments} icon={Clock} color="blue" sub="Awaiting check-in" />
-          <StatCard title="Checked In" value={stats.completedCheckins} icon={CheckCircle} color="purple" sub="Patients checked in" />
-          <StatCard title="Total Patients" value={stats.totalPatients} icon={Users} color="orange" sub="Registered patients" />
-        </div>
+          {/* Stats */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <StatCard title="Today's Schedule" value={stats.todayAppointments} icon={Calendar} color="green" sub="Appointments today" />
+            <StatCard title="Pending" value={stats.pendingAppointments} icon={Clock} color="blue" sub="Awaiting check-in" />
+            <StatCard title="Checked In" value={stats.completedCheckins} icon={CheckCircle} color="purple" sub="Patients checked in" />
+            <StatCard title="Total Patients" value={stats.totalPatients} icon={Users} color="orange" sub="Registered patients" />
+          </div>
 
-        {/* Today's Appointments & Recent Patients */}
-        <div className="grid gap-8 lg:grid-cols-2">
-          <AppointmentsCard appointments={appointments} onCheckIn={handleCheckIn} onCancel={handleCancelAppointment} />
-          <PatientsCard patients={patients} />
-        </div>
+          {/* Today's Appointments & Recent Patients */}
+          <div className="grid gap-8 lg:grid-cols-2">
+            <AppointmentsCard appointments={appointments} onCheckIn={handleCheckIn} onCancel={handleCancelAppointment} />
+            <PatientsCard patients={patients} />
+          </div>
 
-        {/* Quick Actions */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Common receptionist tasks</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleRegisterPatient}>
-                <UserPlus className="h-6 w-6" />
-                <span>Register Patient</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleBookAppointment}>
-                <Calendar className="h-6 w-6" />
-                <span>Book Appointment</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={handlePatientSearch}>
-                <Phone className="h-6 w-6" />
-                <span>Patient Search</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleViewSchedule}>
-                <ClipboardList className="h-6 w-6" />
-                <span>View Schedule</span>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          {/* Quick Actions */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+              <CardDescription>Common receptionist tasks</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleRegisterPatient}>
+                  <UserPlus className="h-6 w-6" />
+                  <span>Register Patient</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleBookAppointment}>
+                  <Calendar className="h-6 w-6" />
+                  <span>Book Appointment</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col gap-2" onClick={handlePatientSearch}>
+                  <Phone className="h-6 w-6" />
+                  <span>Patient Search</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleViewSchedule}>
+                  <ClipboardList className="h-6 w-6" />
+                  <span>View Schedule</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* Departments */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building className="h-5 w-5" />
-              Departments
-            </CardTitle>
-            <CardDescription>Available departments and services</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {departments.map((dept) => (
-                <div key={dept.id} className="p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                  <h4 className="font-medium">{dept.name}</h4>
-                  <p className="text-sm text-muted-foreground mt-1">{dept.description}</p>
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    {appointments.filter(a => a.department?.id === dept.id).length} appointments today
+          {/* Departments */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="h-5 w-5" />
+                Departments
+              </CardTitle>
+              <CardDescription>Available departments and services</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {departments.map((dept) => (
+                  <div key={dept.id} className="p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <h4 className="font-medium">{dept.name}</h4>
+                    <p className="text-sm text-muted-foreground mt-1">{dept.description}</p>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      {appointments.filter(a => a.department?.id === dept.id).length} appointments today
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </DashboardLayout>
 
       {/* Register Patient Dialog */}
       <Dialog open={showRegisterDialog} onOpenChange={setShowRegisterDialog}>
@@ -459,16 +617,6 @@ export default function ReceptionistDashboard() {
               <Label htmlFor="address">Address</Label>
               <Input id="address" value={registerForm.address} onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })} placeholder="Street, City" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="emergency_contact_name">Emergency Contact Name</Label>
-                <Input id="emergency_contact_name" value={registerForm.emergency_contact_name} onChange={(e) => setRegisterForm({ ...registerForm, emergency_contact_name: e.target.value })} placeholder="Jane Doe" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="emergency_contact_phone">Emergency Contact Phone</Label>
-                <Input id="emergency_contact_phone" value={registerForm.emergency_contact_phone} onChange={(e) => setRegisterForm({ ...registerForm, emergency_contact_phone: e.target.value })} placeholder="+255 700 000 000" />
-              </div>
-            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowRegisterDialog(false)}>Cancel</Button>
@@ -492,6 +640,7 @@ export default function ReceptionistDashboard() {
                 className="w-full p-2 border rounded-md"
                 value={appointmentForm.patient_id}
                 onChange={(e) => setAppointmentForm({ ...appointmentForm, patient_id: e.target.value })}
+                required
               >
                 <option value="">Select Patient</option>
                 {patients.map(p => (
@@ -506,6 +655,7 @@ export default function ReceptionistDashboard() {
                 className="w-full p-2 border rounded-md"
                 value={appointmentForm.doctor_id}
                 onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
+                required
               >
                 <option value="">Select Doctor</option>
                 {doctors.map(d => (
@@ -578,11 +728,17 @@ export default function ReceptionistDashboard() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && searchPatients()}
+                disabled={loading}
               />
-              <Button onClick={searchPatients}>Search</Button>
+              <Button onClick={searchPatients} disabled={loading}>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
+              </Button>
             </div>
             {searchResults.length > 0 && (
               <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
+                <p className="text-sm text-muted-foreground mb-2">
+                  Found {searchResults.length} patient{searchResults.length !== 1 ? 's' : ''}
+                </p>
                 {searchResults.map((patient) => (
                   <div key={patient.id} className="p-3 border-b last:border-b-0 hover:bg-gray-50">
                     <div className="font-medium">{patient.full_name}</div>
@@ -592,9 +748,17 @@ export default function ReceptionistDashboard() {
                     <div className="text-sm text-muted-foreground">
                       Gender: {patient.gender} • Blood Group: {patient.blood_group || 'N/A'}
                     </div>
+                    {patient.address && (
+                      <div className="text-sm text-muted-foreground">
+                        Address: {patient.address}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
+            )}
+            {searchResults.length === 0 && searchQuery && !loading && (
+              <p className="text-center text-muted-foreground py-8">No patients found matching your search.</p>
             )}
           </div>
         </DialogContent>
@@ -633,6 +797,6 @@ export default function ReceptionistDashboard() {
           </div>
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </>
   );
 }
