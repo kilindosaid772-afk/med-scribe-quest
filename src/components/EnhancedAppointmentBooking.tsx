@@ -82,7 +82,30 @@ export const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppo
     if (error) {
       toast.error('Failed to book appointment');
     } else {
-      toast.success('Appointment booked successfully');
+      // Create patient visit record to track workflow
+      const visitData = {
+        patient_id: appointmentData.patient_id,
+        appointment_id: null, // Will be updated when we have the appointment ID
+        visit_date: appointmentData.appointment_date,
+        current_stage: 'reception',
+        overall_status: 'Active',
+        reception_status: 'Pending',
+        reception_notes: `Appointment scheduled for ${appointmentData.appointment_date} at ${appointmentData.appointment_time}`,
+      };
+
+      const { data: visit, error: visitError } = await supabase
+        .from('patient_visits')
+        .insert([visitData])
+        .select()
+        .single();
+
+      if (visitError) {
+        console.error('Failed to create patient visit:', visitError);
+        toast.error('Appointment booked but failed to create visit record');
+      } else {
+        toast.success('Appointment booked successfully');
+      }
+
       setDialogOpen(false);
       onSuccess();
     }

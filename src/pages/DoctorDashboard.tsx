@@ -37,6 +37,22 @@ export default function DoctorDashboard() {
         .eq('overall_status', 'Active')
         .order('nurse_completed_at', { ascending: true });
 
+      console.log('Doctor Dashboard Debug:', {
+        visitsQuery: {
+          current_stage_doctor: visitsData?.length || 0,
+          total_visits: 'N/A'
+        },
+        labWorkflowCheck: 'Check if visits are created when lab tests are completed'
+      });
+
+      // Also check all patient visits to see what's in the database
+      const { data: allVisits } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .limit(5);
+
+      console.log('All patient visits in DB:', allVisits);
+
       // Fetch doctor's appointments
       const { data: appointmentsData } = await supabase
         .from('appointments')

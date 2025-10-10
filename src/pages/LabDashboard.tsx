@@ -31,17 +31,29 @@ export default function LabDashboard() {
         .from('lab_tests')
         .select(`
           *,
-          patient:patients(full_name, phone),
-          doctor:profiles!lab_tests_ordered_by_doctor_id_fkey(full_name)
+          patient:patients(full_name, phone)
         `)
         .order('ordered_date', { ascending: false })
         .limit(50);
 
-      setLabTests(testsData || []);
+      // Remove duplicates based on ID
+      const uniqueTests = testsData?.filter((test, index, self) =>
+        index === self.findIndex(t => t.id === test.id)
+      ) || [];
 
-      const pending = testsData?.filter(t => t.status === 'Pending').length || 0;
-      const inProgress = testsData?.filter(t => t.status === 'In Progress').length || 0;
-      const completed = testsData?.filter(t => t.status === 'Completed').length || 0;
+      console.log('Lab tests data:', {
+        raw: testsData?.length || 0,
+        unique: uniqueTests.length,
+        duplicates: (testsData?.length || 0) - uniqueTests.length,
+        timestamp: new Date().toISOString(),
+        sample: uniqueTests.slice(0, 3).map(t => ({ id: t.id, name: t.test_name, patient: t.patient?.full_name }))
+      });
+
+      setLabTests(uniqueTests);
+
+      const pending = uniqueTests.filter(t => t.status === 'Pending').length;
+      const inProgress = uniqueTests.filter(t => t.status === 'In Progress').length;
+      const completed = uniqueTests.filter(t => t.status === 'Completed').length;
 
       setStats({ pending, inProgress, completed });
     } catch (error) {
@@ -68,17 +80,24 @@ export default function LabDashboard() {
 
     // If test is completed and we have patient ID, update workflow
     if (newStatus === 'Completed' && patientId) {
+      console.log('Updating patient visit workflow for lab completion:', {
+        patientId,
+        newStatus,
+        currentTime: new Date().toISOString()
+      });
+
       const { data: visits } = await supabase
         .from('patient_visits')
         .select('*')
         .eq('patient_id', patientId)
-        .eq('current_stage', 'lab')
         .eq('overall_status', 'Active')
         .order('created_at', { ascending: false })
         .limit(1);
 
+      console.log('Found visits for patient:', visits);
+
       if (visits && visits.length > 0) {
-        await supabase
+        const { error: workflowError } = await supabase
           .from('patient_visits')
           .update({
             lab_status: 'Completed',
@@ -87,6 +106,14 @@ export default function LabDashboard() {
             doctor_status: 'Pending'
           })
           .eq('id', visits[0].id);
+
+        if (workflowError) {
+          console.error('Failed to update patient visit workflow:', workflowError);
+        } else {
+          console.log('Successfully updated patient visit workflow');
+        }
+      } else {
+        console.log('No active patient visits found for lab workflow update');
       }
     }
 

@@ -96,14 +96,20 @@ export default function AdminDashboard() {
       blood_group: formData.get('bloodGroup') as string,
     };
 
-    const { error } = await supabase.from('patients').insert([patientData]);
+    try {
+      // Create the patient record directly (no auth account needed)
+      const { error: patientError } = await supabase.from('patients').insert([patientData]);
 
-    if (error) {
-      toast.error('Failed to add patient');
-    } else {
-      toast.success('Patient added successfully');
-      setDialogOpen(false);
-      fetchData();
+      if (patientError) {
+        toast.error('Failed to add patient: ' + patientError.message);
+      } else {
+        toast.success('Patient added successfully');
+        setDialogOpen(false);
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error creating patient:', error);
+      toast.error('An unexpected error occurred');
     }
   };
 
