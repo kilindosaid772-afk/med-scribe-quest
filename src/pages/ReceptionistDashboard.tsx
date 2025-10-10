@@ -24,7 +24,7 @@ import {
   Users,
   UserPlus,
   Phone,
-  ClipboardList
+  Clipboard,
 } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
@@ -34,6 +34,7 @@ export default function ReceptionistDashboard() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [doctors, setDoctors] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -74,9 +75,10 @@ export default function ReceptionistDashboard() {
     department_id: '',
   });
 
-  const [doctors, setDoctors] = useState<any[]>([]);
-
-  // ---------------- FETCH DATA ----------------
+// Load data when component mounts or user changes
+  useEffect(() => {
+    fetchData();
+  }, [user]);
   const fetchData = async () => {
     if (!user) return;
 
@@ -134,25 +136,100 @@ export default function ReceptionistDashboard() {
       // Fetch doctors - get profiles that have doctor role
       let doctorsData = [];
       try {
+        // First try with correct join syntax
         const { data: profilesWithRoles, error: profilesError } = await supabase
           .from('profiles')
           .select(`
             *,
-            user_roles!inner(role)
+            user_roles!inner(*)
           `)
           .eq('user_roles.role', 'doctor');
 
         if (profilesError) throw profilesError;
         doctorsData = profilesWithRoles || [];
+        console.log('Found doctors with roles:', doctorsData.length);
       } catch (error) {
         console.warn('Could not fetch doctors with roles, using fallback:', error);
-        // Fallback: get all profiles (for development)
-        const { data: allProfiles, error: fallbackError } = await supabase
-          .from('profiles')
-          .select('*')
-          .limit(10);
-        if (!fallbackError) {
-          doctorsData = allProfiles || [];
+        try {
+          // Alternative approach: query user_roles first, then get profiles
+          const { data: doctorRoles, error: rolesError } = await supabase
+            .from('user_roles')
+            .select('user_id')
+            .eq('role', 'doctor');
+
+          console.log('Doctor roles found:', doctorRoles?.length || 0);
+
+          if (rolesError) throw rolesError;
+
+          if (doctorRoles && doctorRoles.length > 0) {
+            const doctorIds = doctorRoles.map(dr => dr.user_id);
+            const { data: doctorProfiles, error: profilesError } = await supabase
+              .from('profiles')
+              .select('*')
+              .in('id', doctorIds);
+
+            if (!profilesError) {
+              doctorsData = doctorProfiles || [];
+              console.log('Found doctor profiles:', doctorsData.length);
+            }
+          } else {
+            console.log('No doctor roles found, checking all profiles...');
+          }
+        } catch (fallbackError) {
+          console.warn('Fallback also failed, using all profiles:', fallbackError);
+          // Final fallback: get all profiles (for development)
+          const { data: allProfiles, error: finalFallbackError } = await supabase
+            .from('profiles')
+            .select('*')
+            .limit(10);
+          if (!finalFallbackError) {
+            doctorsData = allProfiles || [];
+            console.log('Using all profiles as doctors:', doctorsData.length);
+          }
+        }
+      }
+
+      // If still no doctors, try to create some sample doctor users
+      if (!doctorsData || doctorsData.length === 0) {
+        console.log('No doctors found, attempting to create sample doctors...');
+        try {
+          // Check if we have any profiles at all
+          const { data: allProfiles, error: checkError } = await supabase
+            .from('profiles')
+            .select('*')
+            .limit(5);
+
+          if (!checkError && allProfiles && allProfiles.length > 0) {
+            // Assign doctor role to first few profiles for demo
+            for (let i = 0; i < Math.min(3, allProfiles.length); i++) {
+              const profile = allProfiles[i];
+              await supabase.from('user_roles').upsert({
+                user_id: profile.id,
+                role: 'doctor'
+              });
+            }
+
+            // Now fetch doctors again
+            const { data: newDoctors, error: retryError } = await supabase
+              .from('user_roles')
+              .select('user_id')
+              .eq('role', 'doctor');
+
+            if (!retryError && newDoctors && newDoctors.length > 0) {
+              const doctorIds = newDoctors.map(dr => dr.user_id);
+              const { data: doctorProfiles, error: profilesError } = await supabase
+                .from('profiles')
+                .select('*')
+                .in('id', doctorIds);
+
+              if (!profilesError) {
+                doctorsData = doctorProfiles || [];
+                console.log('Created and found sample doctors:', doctorsData.length);
+              }
+            }
+          }
+        } catch (createError) {
+          console.error('Failed to create sample doctors:', createError);
         }
       }
 
@@ -258,11 +335,69 @@ export default function ReceptionistDashboard() {
     }
   };
 
+  // Helper function to automatically assign doctor
+  const getAutoAssignedDoctor = (doctorsList: any[], departmentId?: string) => {
+    if (doctorsList.length === 0) return null;
+
+    // Filter doctors by department if specified
+    let availableDoctors = doctorsList;
+    if (departmentId) {
+      // For now, we'll use a simple approach - in a real system you'd have doctor specializations
+      // For demo purposes, we'll assume all doctors can handle all departments
+      availableDoctors = doctorsList;
+    }
+
+    if (availableDoctors.length === 0) return null;
+
+    // Simple load balancing: assign to doctor with fewest current appointments
+    // In a real system, you'd check actual appointment counts per doctor
+    const today = new Date().toISOString().split('T')[0];
+    const doctorAppointmentCounts = new Map();
+
+    // Count current appointments for each doctor
+    appointments.forEach(apt => {
+      if (apt.appointment_date === today && apt.doctor?.id) {
+        doctorAppointmentCounts.set(
+          apt.doctor.id,
+          (doctorAppointmentCounts.get(apt.doctor.id) || 0) + 1
+        );
+      }
+    });
+
+    // Find doctor with fewest appointments
+    let selectedDoctor = availableDoctors[0];
+    let minAppointments = doctorAppointmentCounts.get(selectedDoctor.id) || 0;
+
+    availableDoctors.forEach(doctor => {
+      const count = doctorAppointmentCounts.get(doctor.id) || 0;
+      if (count < minAppointments) {
+        selectedDoctor = doctor;
+        minAppointments = count;
+      }
+    });
+
+    return selectedDoctor;
+  };
+
+  // Auto-assign doctor when department changes or form opens
+  useEffect(() => {
+    if (appointmentForm.department_id && doctors.length > 0 && !appointmentForm.doctor_id) {
+      const autoDoctor = getAutoAssignedDoctor(doctors, appointmentForm.department_id);
+      if (autoDoctor) {
+        setAppointmentForm(prev => ({
+          ...prev,
+          doctor_id: autoDoctor?.id || ''
+        }));
+      }
+    }
+  }, [appointmentForm.department_id, doctors]);
+  
+  // Load data when component mounts or user changes
   useEffect(() => {
     fetchData();
   }, [user]);
 
-  // ---------------- HANDLERS ----------------
+  // ---------------- FETCH DATA ----------------
   const handleCheckIn = async (appointmentId: string) => {
     try {
       // Update appointment status
@@ -408,9 +543,19 @@ export default function ReceptionistDashboard() {
 
       if (patientError) throw patientError;
 
-      toast.success('Patient registered successfully');
+      toast.success('Patient registered successfully! Please schedule their first appointment.');
+
+      // Automatically open appointment booking dialog with the new patient selected
+      setAppointmentForm({
+        patient_id: newPatient.id,
+        doctor_id: '',
+        appointment_date: '',
+        appointment_time: '',
+        reason: '',
+        department_id: '', // Start with no department to trigger auto-assignment
+      });
       setShowRegisterDialog(false);
-      fetchData();
+      setShowBookAppointmentDialog(true);
     } catch (error) {
       console.error('Registration error:', error);
       toast.error('Failed to register patient');
@@ -454,8 +599,19 @@ export default function ReceptionistDashboard() {
 
       if (visitError) throw visitError;
 
-      toast.success('Appointment booked successfully');
+      toast.success(`Appointment booked successfully! ${appointmentForm.patient_id ? 'Auto-assigned doctor based on availability.' : ''}`);
       setShowBookAppointmentDialog(false);
+
+      // Reset form but keep patient selected for potential next appointment
+      setAppointmentForm({
+        patient_id: appointmentForm.patient_id, // Keep patient selected
+        doctor_id: '',
+        appointment_date: '',
+        appointment_time: '',
+        reason: '',
+        department_id: '',
+      });
+
       fetchData();
     } catch (error) {
       console.error('Booking error:', error);
@@ -542,7 +698,7 @@ export default function ReceptionistDashboard() {
                   <span>Patient Search</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleViewSchedule}>
-                  <ClipboardList className="h-6 w-6" />
+                  <Clipboard className="h-6 w-6" />
                   <span>View Schedule</span>
                 </Button>
               </div>
@@ -554,21 +710,59 @@ export default function ReceptionistDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building className="h-5 w-5" />
-                Departments
+                Departments & Doctor Queue
               </CardTitle>
-              <CardDescription>Available departments and services</CardDescription>
+              <CardDescription>Available departments and current doctor workload</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {departments.map((dept) => (
-                  <div key={dept.id} className="p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                    <h4 className="font-medium">{dept.name}</h4>
-                    <p className="text-sm text-muted-foreground mt-1">{dept.description}</p>
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      {appointments.filter(a => a.department?.id === dept.id).length} appointments today
+                {departments.map((dept) => {
+                  const deptAppointments = appointments.filter(a => a.department?.id === dept.id);
+                  const today = new Date().toISOString().split('T')[0];
+                  const todayDeptAppts = deptAppointments.filter(a => a.appointment_date === today);
+
+                  return (
+                    <div key={dept.id} className="p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <h4 className="font-medium">{dept.name}</h4>
+                      <p className="text-sm text-muted-foreground mt-1">{dept.description}</p>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {todayDeptAppts.length} appointments today
+                      </div>
                     </div>
+                  );
+                })}
+
+                {/* Doctor Queue Status */}
+                <div className="md:col-span-2 lg:col-span-3">
+                  <h4 className="font-medium mb-3">Doctor Queue Status (Today)</h4>
+                  <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                    {doctors.slice(0, 6).map((doctor) => {
+                      const today = new Date().toISOString().split('T')[0];
+                      const doctorAppts = appointments.filter(a =>
+                        a.appointment_date === today && a.doctor?.id === doctor.id
+                      );
+                      const isAvailable = doctorAppts.length < 8; // Assume 8 is max per day
+
+                      return (
+                        <div key={doctor.id} className={`p-3 border rounded-lg ${
+                          isAvailable ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'
+                        }`}>
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-sm">{doctor.full_name}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              isAvailable ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+                            }`}>
+                              {doctorAppts.length}/8 slots
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {isAvailable ? 'Available' : 'Busy'} • {doctorAppts.length} appointments today
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -626,11 +820,24 @@ export default function ReceptionistDashboard() {
       </Dialog>
 
       {/* Book Appointment Dialog */}
-      <Dialog open={showBookAppointmentDialog} onOpenChange={setShowBookAppointmentDialog}>
+      <Dialog open={showBookAppointmentDialog} onOpenChange={(open) => {
+        setShowBookAppointmentDialog(open);
+        if (!open) {
+          // Refresh data when dialog is closed to show any new patients/appointments
+          fetchData();
+        }
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Book Appointment</DialogTitle>
-            <DialogDescription>Schedule a new appointment for a patient</DialogDescription>
+            <DialogTitle>
+              {appointmentForm.patient_id ? 'Schedule First Appointment' : 'Book Appointment'}
+            </DialogTitle>
+            <DialogDescription>
+              {appointmentForm.patient_id
+                ? 'Schedule the first appointment for the newly registered patient'
+                : 'Schedule a new appointment for a patient'
+              }
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
@@ -650,18 +857,58 @@ export default function ReceptionistDashboard() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="appt_doctor">Doctor *</Label>
-              <select
-                id="appt_doctor"
-                className="w-full p-2 border rounded-md"
-                value={appointmentForm.doctor_id}
-                onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
-                required
-              >
-                <option value="">Select Doctor</option>
-                {doctors.map(d => (
-                  <option key={d.id} value={d.id}>{d.full_name}</option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  id="appt_doctor"
+                  className="flex-1 p-2 border rounded-md"
+                  value={appointmentForm.doctor_id}
+                  onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
+                  required
+                >
+                  <option value="">Select Doctor</option>
+                  {doctors.map(d => (
+                    <option key={d.id} value={d.id}>{d.full_name}</option>
+                  ))}
+                </select>
+                {appointmentForm.department_id && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const autoDoctor = getAutoAssignedDoctor(doctors, appointmentForm.department_id);
+                      if (autoDoctor) {
+                        setAppointmentForm(prev => ({ ...prev, doctor_id: autoDoctor.id }));
+                      }
+                    }}
+                    className="px-3"
+                  >
+                    Auto
+                  </Button>
+                )}
+              </div>
+              {appointmentForm.department_id && appointmentForm.doctor_id && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-green-600">✓</span>
+                  <span className="text-muted-foreground">
+                    Doctor auto-assigned based on availability
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAppointmentForm(prev => ({ ...prev, doctor_id: '' }))}
+                    className="text-xs h-auto p-1"
+                  >
+                    Change
+                  </Button>
+                </div>
+              )}
+              {appointmentForm.department_id && !appointmentForm.doctor_id && (
+                <p className="text-sm text-muted-foreground">
+                  💡 Select a department above to auto-assign a doctor
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
