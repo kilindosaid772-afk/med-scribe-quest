@@ -22,7 +22,7 @@ export default function DoctorDashboard() {
     fetchData();
   }, [user]);
 
-  const fetchData = async () => {
+const fetchData = async () => {
     if (!user) return;
 
     try {
@@ -31,7 +31,7 @@ export default function DoctorDashboard() {
         .from('patient_visits')
         .select(`
           *,
-          patient:patients(full_name, phone, blood_group, date_of_birth, gender, allergies, medical_history)
+          patient:patients(id, full_name, phone, blood_group, date_of_birth, gender, allergies, medical_history)
         `)
         .eq('current_stage', 'doctor')
         .eq('overall_status', 'Active')
@@ -72,18 +72,38 @@ export default function DoctorDashboard() {
         .order('created_at', { ascending: false })
         .limit(10);
 
+      // Fetch lab tests and results for patients in visits
+      const visitsWithLabTests = await Promise.all(
+        (visitsData || []).map(async (visit) => {
+          const { data: labTests } = await supabase
+            .from('lab_tests')
+            .select(`
+              *,
+              lab_results(*)
+            `)
+            .eq('patient_id', visit.patient.id)
+            .eq('status', 'Completed')
+            .order('completed_date', { ascending: false });
+          
+          return {
+            ...visit,
+            labTests: labTests || []
+          };
+        })
+      );
+
       // Calculate stats
       const today = new Date().toISOString().split('T')[0];
       const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
 
-      setPendingVisits(visitsData || []);
+      setPendingVisits(visitsWithLabTests);
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
       setStats({
         totalAppointments: appointmentsData?.length || 0,
         todayAppointments,
         totalPatients: patientsData?.length || 0,
-        pendingConsultations: visitsData?.length || 0
+        pendingConsultations: visitsWithLabTests.length
       });
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -187,6 +207,38 @@ export default function DoctorDashboard() {
                         )}
                         {visit.patient?.allergies && (
                           <p className="text-sm text-red-600"><strong>Allergies:</strong> {visit.patient.allergies}</p>
+                        )}
+                        {visit.labTests && visit.labTests.length > 0 && (
+                          <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
+                            <strong className="text-green-800">Lab Results:</strong>
+                            <div className="mt-2 space-y-2">
+                              {visit.labTests.map((test: any) => (
+                                <div key={test.id} className="bg-white p-2 rounded border">
+                                  <div className="font-medium">{test.test_name} ({test.test_type})</div>
+                                  {test.lab_results && test.lab_results.length > 0 && (
+                                    <div className="mt-1 text-xs space-y-1">
+                                      {test.lab_results.map((result: any) => (
+                                        <div key={result.id} className="flex justify-between">
+                                          <span>{result.result_value} {result.unit}</span>
+                                          {result.reference_range && (
+                                            <span className="text-muted-foreground">
+                                              (Ref: {result.reference_range})
+                                            </span>
+                                          )}
+                                          {result.abnormal_flag && (
+                                            <span className="text-red-600 font-medium">⚠ Abnormal</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {test.notes && (
+                                    <p className="text-xs text-muted-foreground mt-1">Note: {test.notes}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                       <EnhancedDoctorFeatures 
