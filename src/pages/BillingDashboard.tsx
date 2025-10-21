@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment, useMemo, useCallback, memo } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,12 +43,96 @@ export default function BillingDashboard() {
   const [paymentMethod, setPaymentMethod] = useState<string>('');
   const [mobilePaymentProcessing, setMobilePaymentProcessing] = useState<boolean>(false);
 
+  // Store raw data for memoization
+  const [rawInvoicesData, setRawInvoicesData] = useState<any[]>([]);
+  const [rawPatientsData, setRawPatientsData] = useState<any[]>([]);
+  const [rawInsuranceData, setRawInsuranceData] = useState<any[]>([]);
+  const [rawClaimsData, setRawClaimsData] = useState<any[]>([]);
+
   useEffect(() => {
     fetchData();
   }, []);
 
+  // Memoize expensive computations at component level
+  const groupedPatients = useMemo(() => {
+    if (!rawInvoicesData.length) return {};
+
+    return rawInvoicesData.reduce((acc, invoice) => {
+      const patientId = invoice.patient_id;
+      if (!acc[patientId]) {
+        acc[patientId] = {
+          patient: invoice.patient,
+          invoices: [],
+          totalAmount: 0,
+          totalPaid: 0,
+          unpaidAmount: 0,
+          invoiceCount: 0,
+          latestInvoiceDate: invoice.invoice_date,
+          status: 'Unpaid'
+        };
+      }
+      acc[patientId].invoices.push(invoice);
+      acc[patientId].totalAmount += Number(invoice.total_amount);
+      acc[patientId].totalPaid += Number(invoice.paid_amount || 0);
+      acc[patientId].invoiceCount += 1;
+
+      if (new Date(invoice.invoice_date) > new Date(acc[patientId].latestInvoiceDate)) {
+        acc[patientId].latestInvoiceDate = invoice.invoice_date;
+      }
+
+      return acc;
+    }, {} as Record<string, any>);
+  }, [rawInvoicesData]);
+
+  const processedPatients = useMemo(() => {
+    if (!Object.keys(groupedPatients).length) return [];
+
+    const patientsArray = Object.values(groupedPatients);
+    patientsArray.forEach((patient: any) => {
+      patient.unpaidAmount = patient.totalAmount - patient.totalPaid;
+
+      if (patient.totalPaid === 0) {
+        patient.status = 'Unpaid';
+      } else if (patient.totalPaid >= patient.totalAmount) {
+        patient.status = 'Paid';
+      } else {
+        patient.status = 'Partially Paid';
+      }
+    });
+
+    return patientsArray;
+  }, [groupedPatients]);
+
+  const calculatedStats = useMemo(() => {
+    if (!processedPatients.length) {
+      return { unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0 };
+    }
+
+    const unpaid = processedPatients.filter((p: any) => p.status === 'Unpaid').length;
+    const partiallyPaid = processedPatients.filter((p: any) => p.status === 'Partially Paid').length;
+
+    const totalRevenue: number = processedPatients
+      .filter((p: any) => p.totalPaid > 0)
+      .reduce((sum: number, p: any) => {
+        const paidAmount: number = typeof p.totalPaid === 'number' ? p.totalPaid : 0;
+        return sum + paidAmount;
+      }, 0);
+
+    const pendingClaims: number = rawClaimsData?.filter(c => c.status === 'Pending').length || 0;
+
+    return { unpaid, partiallyPaid, totalRevenue, pendingClaims };
+  }, [processedPatients, rawClaimsData]);
+
+  // Update state when memoized values change
+  useEffect(() => {
+    setInvoices(processedPatients);
+    setStats(calculatedStats);
+  }, [processedPatients, calculatedStats]);
+
   const fetchData = async () => {
     try {
+      setLoading(true);
+
       // Fetch invoices with patient details
       const { data: invoicesData } = await supabase
         .from('invoices')
@@ -58,7 +142,7 @@ export default function BillingDashboard() {
           invoice_items(*)
         `)
         .order('invoice_date', { ascending: false })
-        .limit(100); // Increased limit to ensure we get all relevant invoices
+        .limit(100);
 
       // Fetch patients for invoice creation
       const { data: patientsData } = await supabase
@@ -83,84 +167,17 @@ export default function BillingDashboard() {
         `)
         .order('submission_date', { ascending: false });
 
-      // Group invoices by patient and calculate totals
-      const groupedPatients = invoicesData?.reduce((acc, invoice) => {
-        const patientId = invoice.patient_id;
-        if (!acc[patientId]) {
-          acc[patientId] = {
-            patient: invoice.patient,
-            invoices: [],
-            totalAmount: 0,
-            totalPaid: 0,
-            unpaidAmount: 0,
-            invoiceCount: 0,
-            latestInvoiceDate: invoice.invoice_date,
-            status: 'Unpaid' // Will be updated based on payment status
-          };
-        }
-        acc[patientId].invoices.push(invoice);
-        const previousTotalPaid = acc[patientId].totalPaid;
-        acc[patientId].totalAmount += Number(invoice.total_amount);
-        acc[patientId].totalPaid += Number(invoice.paid_amount || 0);
-        console.log(`Invoice ${invoice.invoice_number}: total_amount=${invoice.total_amount}, paid_amount=${invoice.paid_amount}, previous totalPaid=${previousTotalPaid}, new totalPaid=${acc[patientId].totalPaid}`);
-        acc[patientId].invoiceCount += 1;
+      // Update raw data state to trigger memoized computations
+      setRawInvoicesData(invoicesData || []);
+      setRawPatientsData(patientsData || []);
+      setRawInsuranceData(insuranceData || []);
+      setRawClaimsData(claimsData || []);
 
-        // Update latest invoice date
-        if (new Date(invoice.invoice_date) > new Date(acc[patientId].latestInvoiceDate)) {
-          acc[patientId].latestInvoiceDate = invoice.invoice_date;
-        }
-
-        return acc;
-      }, {});
-
-      // Calculate unpaid amount and status for each patient
-      Object.values(groupedPatients).forEach((patient: any) => {
-        patient.unpaidAmount = patient.totalAmount - patient.totalPaid;
-        console.log(`Patient ${patient.patient?.full_name}: totalAmount=${patient.totalAmount}, totalPaid=${patient.totalPaid}, unpaidAmount=${patient.unpaidAmount}`);
-
-        if (patient.totalPaid === 0) {
-          patient.status = 'Unpaid';
-          console.log(`Setting status to Unpaid`);
-        } else if (patient.totalPaid >= patient.totalAmount) {
-          patient.status = 'Paid';
-          console.log(`Setting status to Paid`);
-        } else {
-          patient.status = 'Partially Paid';
-          console.log(`Setting status to Partially Paid`);
-        }
-      });
-
-      setInvoices(Object.values(groupedPatients) || []);
+      // Update other state
       setPatients(patientsData || []);
       setInsuranceCompanies(insuranceData || []);
       setInsuranceClaims(claimsData || []);
 
-      // Update stats based on grouped data
-      const unpaid: number = Object.values(groupedPatients).filter((p: any) => p.status === 'Unpaid').length;
-      const partiallyPaid: number = Object.values(groupedPatients).filter((p: any) => p.status === 'Partially Paid').length;
-
-      // Debug logging for totalRevenue calculation
-      console.log('Total patients in groupedPatients:', Object.keys(groupedPatients).length);
-      const paidPatients = Object.values(groupedPatients).filter((p: any) => p.status === 'Paid');
-      console.log('Patients with Paid status:', paidPatients.length);
-      paidPatients.forEach((p: any) => {
-        console.log(`Patient ${p.patient?.full_name}: totalPaid=${p.totalPaid}, totalAmount=${p.totalAmount}`);
-      });
-
-      // Calculate accumulated revenue from ALL payments made (not just fully paid patients)
-      // Sums totalPaid across all patients who have made any payments
-      const totalRevenue: number = (Object.values(groupedPatients) as any[])
-        .filter((p: any) => p.totalPaid > 0)
-        .reduce((sum: number, p: any) => {
-          const patientRevenue = Number(p?.totalPaid) || 0;
-          console.log(`Adding revenue for ${p?.patient?.full_name}: ${patientRevenue}`);
-          return sum + patientRevenue;
-        }, 0);
-
-      console.log('Calculated totalRevenue:', totalRevenue);
-      const pendingClaims: number = claimsData?.filter(c => c.status === 'Pending').length || 0;
-
-      setStats({ unpaid, partiallyPaid, totalRevenue, pendingClaims });
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load billing data');
@@ -414,8 +431,58 @@ export default function BillingDashboard() {
   if (loading) {
     return (
       <DashboardLayout title="Billing Dashboard">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-8">
+          {/* Stats Cards Skeleton */}
+          <div className="grid gap-4 md:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="border-destructive/20 shadow-lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <div className="h-4 bg-gray-200 rounded animate-pulse w-24" />
+                  <div className="h-4 w-4 bg-gray-200 rounded animate-pulse" />
+                </CardHeader>
+                <CardContent>
+                  <div className="h-8 bg-gray-200 rounded animate-pulse w-16" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Tabs Skeleton */}
+          <div className="space-y-4">
+            <div className="grid w-full grid-cols-2 gap-2">
+              <div className="h-10 bg-gray-200 rounded animate-pulse" />
+              <div className="h-10 bg-gray-200 rounded animate-pulse" />
+            </div>
+
+            {/* Invoices Table Skeleton */}
+            <Card className="shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-2">
+                    <div className="h-6 bg-gray-200 rounded animate-pulse w-32" />
+                    <div className="h-4 bg-gray-200 rounded animate-pulse w-48" />
+                  </div>
+                  <div className="h-10 bg-gray-200 rounded animate-pulse w-32" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex space-x-4 pb-2 border-b">
+                    {Array.from({ length: 9 }).map((_, i) => (
+                      <div key={i} className="h-4 bg-gray-200 rounded animate-pulse flex-1" />
+                    ))}
+                  </div>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex space-x-4 py-2">
+                      {Array.from({ length: 9 }).map((_, j) => (
+                        <div key={j} className="h-4 bg-gray-200 rounded animate-pulse flex-1" />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </DashboardLayout>
     );
@@ -592,9 +659,9 @@ export default function BillingDashboard() {
                       <TableRow key={patientData.patient.id}>
                         <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
                         <TableCell>{patientData.patient.phone}</TableCell>
-                        <TableCell>TSh{Number(patientData.totalAmount).toFixed(2)}</TableCell>
-                        <TableCell>TSh{Number(patientData.totalPaid).toFixed(2)}</TableCell>
-                        <TableCell>TSh{Number(patientData.unpaidAmount).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(patientData.totalAmount as number).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(patientData.totalPaid as number).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(patientData.unpaidAmount as number).toFixed(2)}</TableCell>
                         <TableCell>{patientData.invoiceCount}</TableCell>
                         <TableCell>
                           {format(new Date(patientData.latestInvoiceDate), 'MMM dd, yyyy')}
@@ -670,8 +737,8 @@ export default function BillingDashboard() {
                         <TableCell className="font-medium">{claim.claim_number}</TableCell>
                         <TableCell>{claim.patient?.full_name || 'Unknown'}</TableCell>
                         <TableCell>{claim.insurance_company?.name || 'N/A'}</TableCell>
-                        <TableCell>TSh{Number(claim.claim_amount).toFixed(2)}</TableCell>
-                        <TableCell>TSh{Number(claim.approved_amount).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(claim.claim_amount as number).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(claim.approved_amount as number).toFixed(2)}</TableCell>
                         <TableCell>
                           <Badge
                             variant={
@@ -732,7 +799,7 @@ export default function BillingDashboard() {
                           <div key={index} className="flex justify-between text-sm">
                             <span>{item.description}</span>
                             <span>
-                              {item.quantity} × TSh{Number(item.unit_price).toFixed(2)} = TSh{Number(item.total_price).toFixed(2)}
+                              {item.quantity} × TSh{Number(item.unit_price as number).toFixed(2)} = TSh{Number(item.total_price as number).toFixed(2)}
                             </span>
                           </div>
                         ))}
@@ -743,23 +810,23 @@ export default function BillingDashboard() {
                   <div className="border-t pt-2 mt-2">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>TSh{(Number(selectedInvoice.total_amount) - Number(selectedInvoice.tax || 0)).toFixed(2)}</span>
+                      <span>TSh{(Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.tax as number || 0)).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Tax (10%):</span>
-                      <span>TSh{Number(selectedInvoice.tax || 0).toFixed(2)}</span>
+                      <span>TSh{Number(selectedInvoice.tax as number || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-semibold text-base">
                       <span>Total:</span>
-                      <span>TSh{Number(selectedInvoice.total_amount).toFixed(2)}</span>
+                      <span>TSh{Number(selectedInvoice.total_amount as number).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Paid:</span>
-                      <span>TSh{Number(selectedInvoice.paid_amount || 0).toFixed(2)}</span>
+                      <span>TSh{Number(selectedInvoice.paid_amount as number || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-semibold text-green-600">
                       <span>Remaining:</span>
-                      <span>TSh{(Number(selectedInvoice.total_amount) - Number(selectedInvoice.paid_amount || 0)).toFixed(2)}</span>
+                      <span>TSh{(Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -774,7 +841,7 @@ export default function BillingDashboard() {
                   name="amount"
                   type="number"
                   step="0.01"
-                  value={selectedInvoice ? (Number(selectedInvoice.total_amount) - Number(selectedInvoice.paid_amount || 0)).toFixed(2) : ''}
+                  value={selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : ''}
                   readOnly
                   className="bg-gray-50"
                 />
@@ -903,7 +970,7 @@ export default function BillingDashboard() {
                   .find(patientData => patientData.invoices.some(inv => inv.id === formData.get('invoiceId')))
                   ?.patient?.id,
                 claim_number: `CLM-${Date.now().toString().slice(-8)}`,
-                claim_amount: Number(formData.get('claimAmount')),
+                claim_amount: Number(formData.get('claimAmount') as string),
                 notes: formData.get('notes') as string,
               };
 
@@ -925,16 +992,17 @@ export default function BillingDashboard() {
                   </SelectTrigger>
                   <SelectContent>
                     {invoices.filter(patientData => patientData.patient?.insurance_company_id && patientData.status !== 'Paid')
-                      .map((patientData) => {
-                        // Show all unpaid invoices for this patient
-                        return patientData.invoices
-                          .filter(inv => inv.status !== 'Paid')
-                          .map(invoice => (
-                            <SelectItem key={invoice.id} value={invoice.id}>
-                              {invoice.invoice_number} - {patientData.patient.full_name} (TSh{Number(invoice.total_amount).toFixed(2)})
-                            </SelectItem>
-                          ));
-                      }).flat()}
+                      .map((patientData, index) => (
+                        <Fragment key={index}>
+                          {patientData.invoices
+                            .filter(inv => inv.status !== 'Paid')
+                            .map(invoice => (
+                              <SelectItem key={invoice.id} value={invoice.id}>
+                                {invoice.invoice_number} - {patientData.patient.full_name} (TSh{Number(invoice.total_amount as number).toFixed(2)})
+                              </SelectItem>
+                            ))}
+                        </Fragment>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
