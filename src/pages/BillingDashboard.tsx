@@ -49,7 +49,7 @@ export default function BillingDashboard() {
 
   const fetchData = async () => {
     try {
-      // Fetch invoices with items
+      // Fetch invoices with patient details
       const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
@@ -58,7 +58,7 @@ export default function BillingDashboard() {
           invoice_items(*)
         `)
         .order('invoice_date', { ascending: false })
-        .limit(50);
+        .limit(100); // Increased limit to ensure we get all relevant invoices
 
       // Fetch patients for invoice creation
       const { data: patientsData } = await supabase
@@ -83,17 +83,82 @@ export default function BillingDashboard() {
         `)
         .order('submission_date', { ascending: false });
 
-      setInvoices(invoicesData || []);
+      // Group invoices by patient and calculate totals
+      const groupedPatients = invoicesData?.reduce((acc, invoice) => {
+        const patientId = invoice.patient_id;
+        if (!acc[patientId]) {
+          acc[patientId] = {
+            patient: invoice.patient,
+            invoices: [],
+            totalAmount: 0,
+            totalPaid: 0,
+            unpaidAmount: 0,
+            invoiceCount: 0,
+            latestInvoiceDate: invoice.invoice_date,
+            status: 'Unpaid' // Will be updated based on payment status
+          };
+        }
+        acc[patientId].invoices.push(invoice);
+        const previousTotalPaid = acc[patientId].totalPaid;
+        acc[patientId].totalAmount += Number(invoice.total_amount);
+        acc[patientId].totalPaid += Number(invoice.paid_amount || 0);
+        console.log(`Invoice ${invoice.invoice_number}: total_amount=${invoice.total_amount}, paid_amount=${invoice.paid_amount}, previous totalPaid=${previousTotalPaid}, new totalPaid=${acc[patientId].totalPaid}`);
+        acc[patientId].invoiceCount += 1;
+
+        // Update latest invoice date
+        if (new Date(invoice.invoice_date) > new Date(acc[patientId].latestInvoiceDate)) {
+          acc[patientId].latestInvoiceDate = invoice.invoice_date;
+        }
+
+        return acc;
+      }, {});
+
+      // Calculate unpaid amount and status for each patient
+      Object.values(groupedPatients).forEach((patient: any) => {
+        patient.unpaidAmount = patient.totalAmount - patient.totalPaid;
+        console.log(`Patient ${patient.patient?.full_name}: totalAmount=${patient.totalAmount}, totalPaid=${patient.totalPaid}, unpaidAmount=${patient.unpaidAmount}`);
+
+        if (patient.totalPaid === 0) {
+          patient.status = 'Unpaid';
+          console.log(`Setting status to Unpaid`);
+        } else if (patient.totalPaid >= patient.totalAmount) {
+          patient.status = 'Paid';
+          console.log(`Setting status to Paid`);
+        } else {
+          patient.status = 'Partially Paid';
+          console.log(`Setting status to Partially Paid`);
+        }
+      });
+
+      setInvoices(Object.values(groupedPatients) || []);
       setPatients(patientsData || []);
       setInsuranceCompanies(insuranceData || []);
       setInsuranceClaims(claimsData || []);
 
-      const unpaid = invoicesData?.filter(i => i.status === 'Unpaid').length || 0;
-      const partiallyPaid = invoicesData?.filter(i => i.status === 'Partially Paid').length || 0;
-      const totalRevenue = invoicesData
-        ?.filter(i => i.status === 'Paid')
-        .reduce((sum, i) => sum + Number(i.total_amount), 0) || 0;
-      const pendingClaims = claimsData?.filter(c => c.status === 'Pending').length || 0;
+      // Update stats based on grouped data
+      const unpaid: number = Object.values(groupedPatients).filter((p: any) => p.status === 'Unpaid').length;
+      const partiallyPaid: number = Object.values(groupedPatients).filter((p: any) => p.status === 'Partially Paid').length;
+
+      // Debug logging for totalRevenue calculation
+      console.log('Total patients in groupedPatients:', Object.keys(groupedPatients).length);
+      const paidPatients = Object.values(groupedPatients).filter((p: any) => p.status === 'Paid');
+      console.log('Patients with Paid status:', paidPatients.length);
+      paidPatients.forEach((p: any) => {
+        console.log(`Patient ${p.patient?.full_name}: totalPaid=${p.totalPaid}, totalAmount=${p.totalAmount}`);
+      });
+
+      // Calculate accumulated revenue from ALL payments made (not just fully paid patients)
+      // Sums totalPaid across all patients who have made any payments
+      const totalRevenue: number = (Object.values(groupedPatients) as any[])
+        .filter((p: any) => p.totalPaid > 0)
+        .reduce((sum: number, p: any) => {
+          const patientRevenue = Number(p?.totalPaid) || 0;
+          console.log(`Adding revenue for ${p?.patient?.full_name}: ${patientRevenue}`);
+          return sum + patientRevenue;
+        }, 0);
+
+      console.log('Calculated totalRevenue:', totalRevenue);
+      const pendingClaims: number = claimsData?.filter(c => c.status === 'Pending').length || 0;
 
       setStats({ unpaid, partiallyPaid, totalRevenue, pendingClaims });
     } catch (error) {
@@ -511,44 +576,52 @@ export default function BillingDashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Invoice #</TableHead>
                       <TableHead>Patient</TableHead>
+                      <TableHead>Phone</TableHead>
                       <TableHead>Total Amount</TableHead>
                       <TableHead>Paid Amount</TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead>Unpaid Amount</TableHead>
+                      <TableHead>Invoice Count</TableHead>
+                      <TableHead>Latest Date</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {invoices.map((invoice) => (
-                      <TableRow key={invoice.id}>
-                        <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
-                        <TableCell>{invoice.patient?.full_name || 'Unknown'}</TableCell>
-                        <TableCell>TSh{Number(invoice.total_amount).toFixed(2)}</TableCell>
-                        <TableCell>TSh{Number(invoice.paid_amount).toFixed(2)}</TableCell>
+                    {invoices.map((patientData) => (
+                      <TableRow key={patientData.patient.id}>
+                        <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
+                        <TableCell>{patientData.patient.phone}</TableCell>
+                        <TableCell>TSh{Number(patientData.totalAmount).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(patientData.totalPaid).toFixed(2)}</TableCell>
+                        <TableCell>TSh{Number(patientData.unpaidAmount).toFixed(2)}</TableCell>
+                        <TableCell>{patientData.invoiceCount}</TableCell>
                         <TableCell>
-                          {format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}
+                          {format(new Date(patientData.latestInvoiceDate), 'MMM dd, yyyy')}
                         </TableCell>
                         <TableCell>
                           <Badge
                             variant={
-                              invoice.status === 'Paid' ? 'default' :
-                              invoice.status === 'Partially Paid' ? 'secondary' :
+                              patientData.status === 'Paid' ? 'default' :
+                              patientData.status === 'Partially Paid' ? 'secondary' :
                               'destructive'
                             }
                           >
-                            {invoice.status}
+                            {patientData.status}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {invoice.status !== 'Paid' && (
+                          {patientData.status !== 'Paid' && (
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                setSelectedInvoice(invoice);
-                                setPaymentDialogOpen(true);
+                                // For now, select the first unpaid invoice for payment
+                                const unpaidInvoice = patientData.invoices.find(inv => inv.status !== 'Paid');
+                                if (unpaidInvoice) {
+                                  setSelectedInvoice(unpaidInvoice);
+                                  setPaymentDialogOpen(true);
+                                }
                               }}
                             >
                               Record Payment
@@ -826,7 +899,9 @@ export default function BillingDashboard() {
               const claimData = {
                 invoice_id: formData.get('invoiceId') as string,
                 insurance_company_id: formData.get('insuranceCompanyId') as string,
-                patient_id: invoices.find(inv => inv.id === formData.get('invoiceId'))?.patient_id,
+                patient_id: invoices
+                  .find(patientData => patientData.invoices.some(inv => inv.id === formData.get('invoiceId')))
+                  ?.patient?.id,
                 claim_number: `CLM-${Date.now().toString().slice(-8)}`,
                 claim_amount: Number(formData.get('claimAmount')),
                 notes: formData.get('notes') as string,
@@ -849,11 +924,17 @@ export default function BillingDashboard() {
                     <SelectValue placeholder="Select invoice" />
                   </SelectTrigger>
                   <SelectContent>
-                    {invoices.filter(inv => inv.patient?.insurance_company_id).map((invoice) => (
-                      <SelectItem key={invoice.id} value={invoice.id}>
-                        {invoice.invoice_number} - {invoice.patient?.full_name}
-                      </SelectItem>
-                    ))}
+                    {invoices.filter(patientData => patientData.patient?.insurance_company_id && patientData.status !== 'Paid')
+                      .map((patientData) => {
+                        // Show all unpaid invoices for this patient
+                        return patientData.invoices
+                          .filter(inv => inv.status !== 'Paid')
+                          .map(invoice => (
+                            <SelectItem key={invoice.id} value={invoice.id}>
+                              {invoice.invoice_number} - {patientData.patient.full_name} (TSh{Number(invoice.total_amount).toFixed(2)})
+                            </SelectItem>
+                          ));
+                      }).flat()}
                   </SelectContent>
                 </Select>
               </div>
