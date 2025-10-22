@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Calendar, Users, Activity, Loader2 } from 'lucide-react';
+import { Calendar, Users, Activity, Loader2, FlaskConical, Pill } from 'lucide-react';
 import { format } from 'date-fns';
 import { EnhancedDoctorFeatures } from '@/components/EnhancedDoctorFeatures';
 
@@ -27,7 +27,7 @@ export default function DoctorDashboard() {
     if (!user) return;
 
     try {
-      // Fetch visits waiting for doctor
+      // Fetch visits waiting for doctor (including those from lab workflow)
       const { data: visitsData } = await supabase
         .from('patient_visits')
         .select(`
@@ -36,23 +36,42 @@ export default function DoctorDashboard() {
         `)
         .eq('current_stage', 'doctor')
         .eq('overall_status', 'Active')
-        .order('nurse_completed_at', { ascending: true });
+        .eq('doctor_status', 'Pending')
+        .order('lab_completed_at', { ascending: true, nullsFirst: false });
 
       console.log('Doctor Dashboard Debug:', {
         visitsQuery: {
           current_stage_doctor: visitsData?.length || 0,
           total_visits: 'N/A'
         },
-        labWorkflowCheck: 'Check if visits are created when lab tests are completed'
+        labWorkflowCheck: 'Check if visits are created when lab tests are completed',
+        samplePatients: visitsData?.map(v => ({
+          id: v.id,
+          patient: v.patient?.full_name,
+          current_stage: v.current_stage,
+          doctor_status: v.doctor_status,
+          lab_status: v.lab_status,
+          lab_completed_at: v.lab_completed_at,
+          created_at: v.created_at
+        })) || []
       });
 
       // Also check all patient visits to see what's in the database
       const { data: allVisits } = await supabase
         .from('patient_visits')
         .select('*')
-        .limit(5);
+        .eq('current_stage', 'doctor')
+        .limit(20);
 
-      console.log('All patient visits in DB:', allVisits);
+      console.log('All doctor-stage patient visits in DB:', allVisits?.map(v => ({
+        id: v.id,
+        patient_id: v.patient_id,
+        current_stage: v.current_stage,
+        doctor_status: v.doctor_status,
+        lab_status: v.lab_status,
+        lab_completed_at: v.lab_completed_at,
+        created_at: v.created_at
+      })));
 
       // Fetch doctor's appointments
       const { data: appointmentsData } = await supabase
@@ -76,19 +95,71 @@ export default function DoctorDashboard() {
       // Fetch lab tests and results for patients in visits
       const visitsWithLabTests = await Promise.all(
         (visitsData || []).map(async (visit) => {
-          const { data: labTests } = await supabase
-            .from('lab_tests')
-            .select(`
-              *,
-              lab_results(*)
-            `)
-            .eq('patient_id', visit.patient.id)
-            .eq('status', 'Completed')
-            .order('completed_date', { ascending: false });
-          
+          let labTests = [];
+          let allCompletedTests = [];
+          let prescriptions = [];
+
+          try {
+            console.log('Fetching lab tests for patient:', visit.patient.id, visit.patient.full_name);
+
+            const { data: labTestsData, error: labError } = await supabase
+              .from('lab_tests')
+              .select(`
+                *,
+                lab_results(*)
+              `)
+              .eq('patient_id', visit.patient.id)
+              .order('completed_date', { ascending: false });
+
+            if (labError) {
+              console.error('Error fetching lab tests for patient:', visit.patient.id, labError);
+            } else {
+              labTests = labTestsData || [];
+            }
+
+            console.log('Lab tests found for patient:', visit.patient.id, labTests.length);
+
+            // Also get any completed lab tests regardless of completion date
+            const { data: allCompletedTestsData } = await supabase
+              .from('lab_tests')
+              .select(`
+                *,
+                lab_results(*)
+              `)
+              .eq('patient_id', visit.patient.id)
+              .eq('status', 'Completed');
+
+            allCompletedTests = allCompletedTestsData || [];
+            console.log('All completed lab tests for patient:', visit.patient.id, allCompletedTests.length);
+
+            console.log('Fetching prescriptions for patient:', visit.patient.id, visit.patient.full_name);
+
+            const { data: prescriptionsData, error: presError } = await supabase
+              .from('prescriptions')
+              .select(`
+                *,
+                medications(name, strength, dosage_form)
+              `)
+              .eq('patient_id', visit.patient.id)
+              .order('prescribed_date', { ascending: false });
+
+            if (presError) {
+              console.error('Error fetching prescriptions for patient:', visit.patient.id, presError);
+            } else {
+              prescriptions = prescriptionsData || [];
+            }
+
+            console.log('Prescriptions found for patient:', visit.patient.id, prescriptions.length);
+
+          } catch (error) {
+            console.error('Error fetching data for patient:', visit.patient.id, error);
+          }
+
           return {
             ...visit,
-            labTests: labTests || []
+            labTests,
+            allCompletedLabTests: allCompletedTests,
+            prescriptions
           };
         })
       );
@@ -269,24 +340,175 @@ export default function DoctorDashboard() {
           </Card>
         </div>
 
-        {/* Pending Consultations */}
-        {pendingVisits.length > 0 && (
+        {/* Lab Workflow Queue - Highlighted Section */}
+        {pendingVisits.some(v => v.lab_completed_at) && (
+          <Card className="shadow-lg border-green-300 bg-green-50/30">
+            <CardHeader className="bg-green-100/50">
+              <CardTitle className="flex items-center gap-2 text-green-800">
+                <FlaskConical className="h-5 w-5" />
+                Lab Results Queue
+                <Badge variant="default" className="bg-green-600">
+                  {pendingVisits.filter(v => v.lab_completed_at).length} patient{pendingVisits.filter(v => v.lab_completed_at).length !== 1 ? 's' : ''}
+                </Badge>
+              </CardTitle>
+              <CardDescription className="text-green-700">
+                Patients who have completed lab work and are waiting for doctor consultation
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {pendingVisits
+                  .filter(visit => visit.lab_completed_at)
+                  .map((visit) => (
+                  <div key={visit.id} className="p-4 border rounded-lg bg-white border-green-200">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold text-lg text-green-800">{visit.patient?.full_name}</h4>
+                          <Badge variant="default" className="bg-green-100 text-green-800">
+                            Lab → Doctor
+                          </Badge>
+                          {visit.prescriptions && visit.prescriptions.length > 0 && (
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                              <Pill className="h-3 w-3 mr-1" />
+                              Has Rx ({visit.prescriptions.length})
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          DOB: {format(new Date(visit.patient?.date_of_birth), 'MMM dd, yyyy')} •
+                          Gender: {visit.patient?.gender} •
+                          Blood: {visit.patient?.blood_group || 'N/A'}
+                        </p>
+
+                        <div className="text-sm bg-green-50 p-2 rounded border border-green-200">
+                          <strong className="text-green-800">Lab Work Completed:</strong>{' '}
+                          {format(new Date(visit.lab_completed_at), 'MMM dd, yyyy HH:mm')}
+                        </div>
+
+                        {visit.patient?.medical_history && (
+                          <p className="text-sm"><strong>History:</strong> {visit.patient.medical_history}</p>
+                        )}
+                        {visit.patient?.allergies && (
+                          <p className="text-sm text-red-600"><strong>Allergies:</strong> {visit.patient.allergies}</p>
+                        )}
+                      </div>
+                      <EnhancedDoctorFeatures
+                        patients={[visit.patient]}
+                        onSuccess={() => {
+                          fetchData();
+                          toast.success('Consultation completed successfully');
+                        }}
+                        labResults={[
+                          ...(visit.labTests.flatMap((test: any) => test.lab_results || [])),
+                          ...(visit.allCompletedLabTests.flatMap((test: any) => test.lab_results || []))
+                        ]}
+                      />
+                    </div>
+
+                    {/* Lab Results for this patient */}
+                    {(visit.labTests && visit.labTests.length > 0) || (visit.allCompletedLabTests && visit.allCompletedLabTests.length > 0) ? (
+                      <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
+                        <strong className="text-green-800 block mb-2">Available Lab Results:</strong>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {visit.labTests.concat(visit.allCompletedLabTests).map((test: any) => (
+                            <div key={test.id} className="bg-white p-2 rounded border shadow-sm">
+                              <div className="font-medium text-sm">{test.test_name}</div>
+                              {test.lab_results && test.lab_results.length > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                  {test.lab_results.map((result: any) => (
+                                    <span key={result.id} className="mr-2">
+                                      {result.result_value} {result.unit}
+                                      {result.abnormal_flag && <span className="text-red-600 ml-1">⚠</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Prescriptions for this patient */}
+                    {visit.prescriptions && visit.prescriptions.length > 0 ? (
+                      <div className="text-sm bg-blue-50 p-3 rounded border border-blue-200">
+                        <strong className="text-blue-800 block mb-2 flex items-center gap-2">
+                          <Pill className="h-4 w-4" />
+                          Active Prescriptions:
+                        </strong>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {visit.prescriptions.map((prescription: any) => (
+                            <div key={prescription.id} className="bg-white p-3 rounded border shadow-sm">
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="font-medium text-sm text-blue-800">
+                                  {prescription.medication_name}
+                                  {prescription.medications && (
+                                    <span className="text-xs text-muted-foreground ml-1">
+                                      ({prescription.medications.strength} {prescription.medications.dosage_form})
+                                    </span>
+                                  )}
+                                </div>
+                                <Badge
+                                  variant={prescription.status === 'Active' ? 'default' : 'secondary'}
+                                  className="text-xs"
+                                >
+                                  {prescription.status || 'Pending'}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                <div><strong>Dosage:</strong> {prescription.dosage}</div>
+                                <div><strong>Frequency:</strong> {prescription.frequency}</div>
+                                <div><strong>Duration:</strong> {prescription.duration}</div>
+                                <div><strong>Quantity:</strong> {prescription.quantity}</div>
+                                {prescription.instructions && (
+                                  <div><strong>Instructions:</strong> {prescription.instructions}</div>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+                                Prescribed: {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy HH:mm')}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Regular Pending Consultations (non-lab) */}
+        {pendingVisits.filter(v => !v.lab_completed_at).length > 0 && (
           <Card className="shadow-lg border-blue-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-blue-600" />
                 Patients Waiting for Consultation
+                <Badge variant="secondary" className="ml-auto">
+                  {pendingVisits.filter(v => !v.lab_completed_at).length} patient{pendingVisits.filter(v => !v.lab_completed_at).length !== 1 ? 's' : ''}
+                </Badge>
               </CardTitle>
               <CardDescription>Patients ready for doctor consultation</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {pendingVisits.map((visit) => (
+                {pendingVisits
+                  .filter(visit => !visit.lab_completed_at)
+                  .map((visit) => (
                   <div key={visit.id} className="p-4 border rounded-lg bg-blue-50/50">
                     <div className="flex items-start justify-between mb-4">
-                      <div className="space-y-2">
+                      <div className="space-y-2 flex-1">
                         <div>
                           <h4 className="font-semibold text-lg">{visit.patient?.full_name}</h4>
+                          {visit.prescriptions && visit.prescriptions.length > 0 && (
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 mt-1">
+                              <Pill className="h-3 w-3 mr-1" />
+                              Has Prescriptions ({visit.prescriptions.length})
+                            </Badge>
+                          )}
                           <p className="text-sm text-muted-foreground">
                             DOB: {format(new Date(visit.patient?.date_of_birth), 'MMM dd, yyyy')} •
                             Gender: {visit.patient?.gender} •
@@ -310,18 +532,28 @@ export default function DoctorDashboard() {
                       </div>
                       <EnhancedDoctorFeatures
                         patients={[visit.patient]}
-                        onSuccess={fetchData}
+                        onSuccess={() => {
+                          fetchData();
+                          toast.success('Consultation completed successfully');
+                        }}
+                        labResults={[
+                          ...(visit.labTests.flatMap((test: any) => test.lab_results || [])),
+                          ...(visit.allCompletedLabTests.flatMap((test: any) => test.lab_results || []))
+                        ]}
                       />
                     </div>
 
-                    {/* Lab Results - Full Width */}
-                    {visit.labTests && visit.labTests.length > 0 && (
+                    {/* Lab Results - Full Width (for non-lab patients who might still have results) */}
+                    {(visit.labTests && visit.labTests.length > 0) || (visit.allCompletedLabTests && visit.allCompletedLabTests.length > 0) ? (
                       <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
                         <strong className="text-green-800 block mb-2">Lab Results:</strong>
                         <div className="space-y-3 max-h-48 overflow-y-auto">
-                          {visit.labTests.map((test: any) => (
+                          {visit.labTests.concat(visit.allCompletedLabTests).map((test: any) => (
                             <div key={test.id} className="bg-white p-3 rounded border shadow-sm">
                               <div className="font-medium text-sm mb-2">{test.test_name} ({test.test_type})</div>
+                              <div className="text-xs text-muted-foreground mb-2">
+                                Status: <Badge variant={test.status === 'Completed' ? 'default' : 'outline'}>{test.status}</Badge>
+                              </div>
                               {test.lab_results && test.lab_results.length > 0 && (
                                 <div className="space-y-1">
                                   {test.lab_results.map((result: any) => (
@@ -348,9 +580,66 @@ export default function DoctorDashboard() {
                           ))}
                         </div>
                       </div>
-                    )}
+                    ) : null}
+
+                    {/* Prescriptions for this patient */}
+                    {visit.prescriptions && visit.prescriptions.length > 0 ? (
+                      <div className="text-sm bg-blue-50 p-3 rounded border border-blue-200">
+                        <strong className="text-blue-800 block mb-2 flex items-center gap-2">
+                          <Pill className="h-4 w-4" />
+                          Active Prescriptions:
+                        </strong>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {visit.prescriptions.map((prescription: any) => (
+                            <div key={prescription.id} className="bg-white p-3 rounded border shadow-sm">
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="font-medium text-sm text-blue-800">
+                                  {prescription.medication_name}
+                                  {prescription.medications && (
+                                    <span className="text-xs text-muted-foreground ml-1">
+                                      ({prescription.medications.strength} {prescription.medications.dosage_form})
+                                    </span>
+                                  )}
+                                </div>
+                                <Badge
+                                  variant={prescription.status === 'Active' ? 'default' : 'secondary'}
+                                  className="text-xs"
+                                >
+                                  {prescription.status || 'Pending'}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                <div><strong>Dosage:</strong> {prescription.dosage}</div>
+                                <div><strong>Frequency:</strong> {prescription.frequency}</div>
+                                <div><strong>Duration:</strong> {prescription.duration}</div>
+                                <div><strong>Quantity:</strong> {prescription.quantity}</div>
+                                {prescription.instructions && (
+                                  <div><strong>Instructions:</strong> {prescription.instructions}</div>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+                                Prescribed: {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy HH:mm')}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Show message when no patients are waiting */}
+        {pendingVisits.length === 0 && !loading && (
+          <Card className="shadow-lg">
+            <CardContent className="py-8">
+              <div className="text-center text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No patients waiting for consultation</p>
+                <p className="text-sm">Patients will appear here when they complete lab work or are ready for doctor consultation</p>
               </div>
             </CardContent>
           </Card>

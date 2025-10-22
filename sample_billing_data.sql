@@ -36,12 +36,18 @@ INSERT INTO insurance_claims (id, claim_number, patient_id, insurance_company_id
 ('990e8400-e29b-41d4-a716-446655440003', 'CLM-003', '550e8400-e29b-41d4-a716-446655440004', '660e8400-e29b-41d4-a716-446655440001', '770e8400-e29b-41d4-a716-446655440004', 132000.00, 132000.00, 'Approved', '2024-10-26', 'Full coverage approved', NOW(), NOW());
 
 -- 6. Insert sample patient visits (for workflow completion testing)
-INSERT INTO patient_visits (id, patient_id, visit_date, current_stage, overall_status, billing_status, created_at, updated_at) VALUES
-('aa0e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', '2024-10-15', 'completed', 'Completed', NULL, NOW(), NOW()),
-('aa0e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440002', '2024-10-20', 'completed', 'Completed', 'Paid', NOW(), NOW()),
-('aa0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', '2024-10-10', 'completed', 'Completed', 'Paid', NOW(), NOW()),
-('aa0e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440004', '2024-10-25', 'completed', 'Completed', NULL, NOW(), NOW()),
-('aa0e8400-e29b-41d4-a716-446655440005', '550e8400-e29b-41d4-a716-446655440001', '2024-11-01', 'billing', 'Active', NULL, NOW(), NOW());
+-- Updated to show proper workflow progression: reception -> nurse -> lab -> doctor -> pharmacy
+INSERT INTO patient_visits (id, patient_id, visit_date, current_stage, overall_status, reception_status, nurse_status, lab_status, doctor_status, pharmacy_status, created_at, updated_at) VALUES
+-- Patient 1: In LAB stage (waiting for lab results)
+('aa0e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', '2024-10-15', 'lab', 'Active', 'Checked In', 'Completed', 'In Progress', 'Pending', NULL, NOW(), NOW()),
+-- Patient 2: Completed workflow (for reference)
+('aa0e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440002', '2024-10-20', 'completed', 'Completed', 'Checked In', 'Completed', 'Completed', 'Completed', 'Completed', NOW(), NOW()),
+-- Patient 3: In DOCTOR stage (waiting for doctor consultation after lab)
+('aa0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', '2024-10-10', 'doctor', 'Active', 'Checked In', 'Completed', 'Completed', 'Pending', NULL, NOW(), NOW()),
+-- Patient 4: Just started (reception stage)
+('aa0e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440004', '2024-10-25', 'reception', 'Active', 'In Progress', NULL, NULL, NULL, NULL, NOW(), NOW()),
+-- Patient 1: Second visit in billing stage
+('aa0e8400-e29b-41d4-a716-446655440005', '550e8400-e29b-41d4-a716-446655440001', '2024-11-01', 'billing', 'Active', 'Checked In', 'Completed', 'Completed', 'Completed', 'In Progress', NOW(), NOW());
 
 -- 7. Insert sample invoice items for detailed invoice view
 INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total_price, created_at) VALUES
@@ -57,9 +63,19 @@ INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, to
 ('bb0e8400-e29b-41d4-a716-446655440010', '770e8400-e29b-41d4-a716-446655440005', 'Follow-up Consultation', 1, 60000.00, 60000.00, NOW()),
 ('bb0e8400-e29b-41d4-a716-446655440011', '770e8400-e29b-41d4-a716-446655440005', 'Specialist Referral', 1, 30000.00, 30000.00, NOW());
 
--- Expected Results:
--- - Total Unpaid Invoices: 2 (inv-1 and inv-5)
--- - Total Partially Paid: 2 (inv-2 and inv-4)
--- - Total Paid: 1 (inv-3)
--- - Total Revenue: 228000.00 (from all completed payments)
--- - Pending Claims: 1 (claim-1)
+-- Insert sample lab tests for workflow testing
+INSERT INTO lab_tests (id, patient_id, test_name, test_type, priority, status, ordered_date, description, notes, ordered_by_doctor_id) VALUES
+-- Lab test for Patient 1 (in lab stage)
+('cc0e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', 'Complete Blood Count', 'Blood Test', 'Normal', 'In Progress', '2024-10-15T08:00:00Z', 'CBC ordered by doctor for routine check', 'Check for anemia and infection', 'doctor-123'),
+-- Lab test for Patient 1 (completed - should trigger doctor workflow)
+('cc0e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440001', 'Blood Glucose', 'Blood Test', 'Normal', 'Completed', '2024-10-15T08:30:00Z', 'Fasting blood glucose test', 'Diabetes screening', 'doctor-123'),
+-- Lab test for Patient 3 (in doctor stage - already completed)
+('cc0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', 'Lipid Profile', 'Blood Test', 'Normal', 'Completed', '2024-10-10T09:00:00Z', 'Cholesterol and lipid panel', 'Cardiac risk assessment', 'doctor-456');
+
+-- Insert sample lab results for completed tests
+INSERT INTO lab_results (id, lab_test_id, result_value, reference_range, unit, abnormal_flag, notes) VALUES
+-- Results for Patient 1's completed glucose test
+('dd0e8400-e29b-41d4-a716-446655440001', 'cc0e8400-e29b-41d4-a716-446655440002', '95', '70-100', 'mg/dL', false, 'Normal fasting glucose level'),
+-- Results for Patient 3's completed lipid profile
+('dd0e8400-e29b-41d4-a716-446655440002', 'cc0e8400-e29b-41d4-a716-446655440003', '180', '<200', 'mg/dL', false, 'Total cholesterol within normal range'),
+('dd0e8400-e29b-41d4-a716-446655440003', 'cc0e8400-e29b-41d4-a716-446655440003', '45', '<100', 'mg/dL', false, 'LDL cholesterol normal');
