@@ -44,11 +44,15 @@ export default function ReceptionistDashboard() {
     pendingAppointments: number;
     completedCheckins: number;
     totalPatients: number;
+    nurseQueuePatients: number;
+    receptionQueuePatients: number;
   }>({
     todayAppointments: 0,
     pendingAppointments: 0,
     completedCheckins: 0,
     totalPatients: 0,
+    nurseQueuePatients: 0,
+    receptionQueuePatients: 0,
   });
 
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
@@ -232,9 +236,29 @@ export default function ReceptionistDashboard() {
         }
       }
 
+      // Fetch patient visits to get accurate workflow stats
+      const { data: patientVisits, error: visitsError } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .eq('overall_status', 'Active');
+
+      if (visitsError) {
+        console.error('Error fetching patient visits:', visitsError);
+      }
+
       const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
       const pendingAppointments = appointmentsData?.filter(a => a.status === 'Scheduled').length || 0;
-      const completedCheckins = appointmentsData?.filter(a => a.status === 'Confirmed').length || 0;
+      const confirmedAppointments = appointmentsData?.filter(a => a.status === 'Confirmed').length || 0;
+
+      // Calculate nurse queue patients (from new registrations)
+      const nurseQueuePatients = patientVisits?.filter(v =>
+        v.current_stage === 'nurse' && v.nurse_status === 'Pending'
+      ).length || 0;
+
+      // Calculate reception queue patients (from appointments waiting for check-in)
+      const receptionQueuePatients = patientVisits?.filter(v =>
+        v.current_stage === 'reception' && v.reception_status === 'Pending'
+      ).length || 0;
 
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
@@ -249,14 +273,19 @@ export default function ReceptionistDashboard() {
         doctors: doctorsData?.length || 0,
         todayAppointments,
         pendingAppointments,
-        completedCheckins
+        confirmedAppointments,
+        patientVisits: patientVisits?.length || 0,
+        nurseQueuePatients,
+        receptionQueuePatients
       });
 
       setStats({
         todayAppointments,
         pendingAppointments,
-        completedCheckins,
+        completedCheckins: confirmedAppointments, // Confirmed appointments that were checked in
         totalPatients: patientsData?.length || 0,
+        nurseQueuePatients,
+        receptionQueuePatients,
       });
     } catch (error) {
       console.error('Error fetching receptionist data:', error);
@@ -277,6 +306,8 @@ export default function ReceptionistDashboard() {
         pendingAppointments: 0,
         completedCheckins: 0,
         totalPatients: 0,
+        nurseQueuePatients: 0,
+        receptionQueuePatients: 0,
       });
 
       toast.error(`Failed to load dashboard data: ${error.message}`);
@@ -419,23 +450,24 @@ export default function ReceptionistDashboard() {
 
       if (appointmentError) throw appointmentError;
 
-      // Update patient visit workflow
+      // Update patient visit workflow for appointment check-in
       const { error: visitError } = await supabase
         .from('patient_visits')
         .update({
           reception_status: 'Checked In',
           reception_completed_at: new Date().toISOString(),
-          current_stage: 'nurse'
+          current_stage: 'nurse',
+          nurse_status: 'Pending'
         })
         .eq('appointment_id', appointmentId);
 
       if (visitError) throw visitError;
 
-      toast.success('Patient checked in successfully');
+      toast.success('Appointment patient checked in and sent to nurse queue');
       fetchData();
     } catch (error) {
       console.error('Check-in error:', error);
-      toast.error('Failed to check in patient');
+      toast.error('Failed to check in appointment patient');
     }
   };
 
@@ -555,21 +587,32 @@ export default function ReceptionistDashboard() {
       if (patientError) throw patientError;
 
       // Success message
-      toast.success('Patient registered successfully! Auto-scheduling appointment for this patient...');
+      toast.success('Patient registered successfully! Adding to nurse queue...');
 
-      // Automatically open appointment booking dialog with the new patient selected
-      setAppointmentForm({
-        patient_id: newPatient.id,
-        doctor_id: '',
-        appointment_date: '',
-        appointment_time: '',
-        reason: '',
-        department_id: '', // Start with no department to trigger auto-assignment
-      });
+      // Create patient visit workflow directly to nurse stage (for new registrations)
+      const { error: visitError } = await supabase
+        .from('patient_visits')
+        .insert({
+          patient_id: newPatient.id,
+          visit_date: new Date().toISOString().split('T')[0],
+          reception_status: 'Checked In',
+          reception_completed_at: new Date().toISOString(),
+          current_stage: 'nurse',
+          nurse_status: 'Pending',
+          overall_status: 'Active'
+        });
+
+      if (visitError) {
+        console.error('Error creating patient visit:', visitError);
+        toast.error('Patient registered but failed to add to nurse queue');
+      } else {
+        toast.success('Patient registered and added to nurse queue successfully!');
+      }
+
+      // Close registration dialog and refresh data
       setShowRegisterDialog(false);
-      setShowBookAppointmentDialog(true);
 
-      // Refresh data to show the new patient
+      // Refresh data to show the new patient and visit
       fetchData();
     } catch (error) {
       console.error('Registration error:', error);
@@ -602,19 +645,20 @@ export default function ReceptionistDashboard() {
 
       if (appointmentError) throw appointmentError;
 
-      // Create patient visit workflow for appointment
+      // Create patient visit workflow for appointment (starts at reception for check-in)
       const { error: visitError } = await supabase
         .from('patient_visits')
         .insert({
           patient_id: appointmentForm.patient_id,
           appointment_id: newAppointment.id,
           reception_status: 'Pending',
-          current_stage: 'reception'
+          current_stage: 'reception',
+          overall_status: 'Active'
         });
 
       if (visitError) throw visitError;
 
-      toast.success(`Appointment booked successfully! ${appointmentForm.patient_id ? 'Auto-assigned doctor based on availability.' : ''}`);
+      toast.success(`Follow-up appointment booked successfully! ${appointmentForm.patient_id ? 'Patient will be notified of their scheduled visit.' : ''}`);
       setShowBookAppointmentDialog(false);
 
       // Reset form but keep patient selected for potential next appointment
@@ -678,13 +722,51 @@ export default function ReceptionistDashboard() {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <StatCard title="Today's Schedule" value={stats.todayAppointments} icon={Calendar} color="green" sub="Appointments today" />
-            <StatCard title="Pending" value={stats.pendingAppointments} icon={Clock} color="blue" sub="Awaiting check-in" />
-            <StatCard title="Checked In" value={stats.completedCheckins} icon={CheckCircle} color="purple" sub="Patients checked in" />
-            <StatCard title="Total Patients" value={stats.totalPatients} icon={Users} color="orange" sub="Registered patients" />
-          </div>
+          {/* Workflow Queue Status */}
+          <Card className="shadow-lg border-green-200 bg-green-50/30">
+            <CardHeader className="bg-green-100/50">
+              <CardTitle className="flex items-center gap-2 text-green-800">
+                <Users className="h-5 w-5" />
+                Current Patient Workflow Status
+              </CardTitle>
+              <CardDescription className="text-green-700">
+                Real-time view of where patients are in the hospital workflow
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="p-4 bg-white rounded-lg border border-green-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-green-800">Nurse Queue</h4>
+                    <Badge variant="default" className="bg-green-600">
+                      {stats.nurseQueuePatients} patient{stats.nurseQueuePatients !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Patients waiting for vital signs (from new registrations)
+                  </p>
+                  <div className="text-xs text-green-600">
+                    ✓ Auto-assigned from patient registration
+                  </div>
+                </div>
+
+                <div className="p-4 bg-white rounded-lg border border-blue-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-blue-800">Reception Queue</h4>
+                    <Badge variant="default" className="bg-blue-600">
+                      {stats.receptionQueuePatients} patient{stats.receptionQueuePatients !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Patients waiting for check-in (from appointments)
+                  </p>
+                  <div className="text-xs text-blue-600">
+                    ✓ Requires check-in before nurse visit
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Today's Appointments & Recent Patients */}
           <div className="grid gap-8 lg:grid-cols-2">
@@ -702,11 +784,13 @@ export default function ReceptionistDashboard() {
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleRegisterPatient}>
                   <UserPlus className="h-6 w-6" />
-                  <span>Register Patient</span>
+                  <span>Register New Patient</span>
+                  <span className="text-xs text-muted-foreground">→ Goes to Nurse</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleBookAppointment}>
                   <Calendar className="h-6 w-6" />
-                  <span>Book Appointment</span>
+                  <span>Book Follow-up Appointment</span>
+                  <span className="text-xs text-muted-foreground">→ Scheduled Visit</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handlePatientSearch}>
                   <Phone className="h-6 w-6" />
@@ -845,12 +929,12 @@ export default function ReceptionistDashboard() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {appointmentForm.patient_id ? 'Schedule First Appointment' : 'Book Appointment'}
+              {appointmentForm.patient_id ? 'Book Follow-up Appointment' : 'Book Appointment'}
             </DialogTitle>
             <DialogDescription>
               {appointmentForm.patient_id
-                ? 'Schedule the first appointment for the newly registered patient'
-                : 'Schedule a new appointment for a patient'
+                ? 'Schedule a follow-up appointment for an existing patient'
+                : 'Schedule a new appointment for a patient (Note: New patients should be registered first)'
               }
             </DialogDescription>
           </DialogHeader>
