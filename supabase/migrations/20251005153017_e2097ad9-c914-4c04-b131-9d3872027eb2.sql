@@ -55,13 +55,18 @@ CREATE TABLE public.prescriptions (
   duration TEXT NOT NULL,
   quantity INTEGER NOT NULL,
   instructions TEXT,
+  notes TEXT,
   status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Dispensed', 'Cancelled')),
   prescribed_date TIMESTAMPTZ DEFAULT now() NOT NULL,
   dispensed_date TIMESTAMPTZ,
   dispensed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  lab_result_id UUID,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
+
+-- Add lab_result_id to prescriptions for linking to lab results
+ALTER TABLE public.prescriptions ADD COLUMN lab_result_id UUID REFERENCES public.lab_results(id) ON DELETE SET NULL;
 
 -- Billing Module
 CREATE TABLE public.invoices (
@@ -205,6 +210,10 @@ CREATE POLICY "Billing staff can manage invoices"
   ON public.invoices FOR ALL
   USING (public.has_role(auth.uid(), 'billing') OR public.has_role(auth.uid(), 'admin'));
 
+CREATE POLICY "Pharmacists can create invoices for dispensing"
+  ON public.invoices FOR INSERT
+  WITH CHECK (public.has_role(auth.uid(), 'pharmacist') OR public.has_role(auth.uid(), 'admin'));
+
 -- RLS Policies for Invoice Items
 CREATE POLICY "Billing staff can view all invoice items"
   ON public.invoice_items FOR SELECT
@@ -224,6 +233,10 @@ CREATE POLICY "Patients can view their own invoice items"
 CREATE POLICY "Billing staff can manage invoice items"
   ON public.invoice_items FOR ALL
   USING (public.has_role(auth.uid(), 'billing') OR public.has_role(auth.uid(), 'admin'));
+
+CREATE POLICY "Pharmacists can create invoice items for dispensing"
+  ON public.invoice_items FOR INSERT
+  WITH CHECK (public.has_role(auth.uid(), 'pharmacist') OR public.has_role(auth.uid(), 'admin'));
 
 -- RLS Policies for Payments
 CREATE POLICY "Billing staff can view all payments"
@@ -252,6 +265,7 @@ CREATE INDEX idx_lab_results_lab_test_id ON public.lab_results(lab_test_id);
 CREATE INDEX idx_prescriptions_patient_id ON public.prescriptions(patient_id);
 CREATE INDEX idx_prescriptions_doctor_id ON public.prescriptions(doctor_id);
 CREATE INDEX idx_prescriptions_status ON public.prescriptions(status);
+CREATE INDEX idx_prescriptions_notes ON public.prescriptions(notes) WHERE notes IS NOT NULL;
 CREATE INDEX idx_invoices_patient_id ON public.invoices(patient_id);
 CREATE INDEX idx_invoices_status ON public.invoices(status);
 CREATE INDEX idx_invoice_items_invoice_id ON public.invoice_items(invoice_id);

@@ -115,6 +115,8 @@ CREATE TABLE public.patients (
   medical_history TEXT,
   allergies TEXT,
   current_medications TEXT,
+  insurance_company_id UUID,
+  insurance_policy_number TEXT,
   status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Discharged', 'Deceased')),
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
@@ -252,6 +254,7 @@ CREATE INDEX idx_user_roles_user_id ON public.user_roles(user_id);
 CREATE INDEX idx_user_roles_role ON public.user_roles(role);
 CREATE INDEX idx_patients_user_id ON public.patients(user_id);
 CREATE INDEX idx_patients_status ON public.patients(status);
+CREATE INDEX idx_patients_insurance_company_id ON public.patients(insurance_company_id);
 CREATE INDEX idx_appointments_patient_id ON public.appointments(patient_id);
 CREATE INDEX idx_appointments_doctor_id ON public.appointments(doctor_id);
 CREATE INDEX idx_appointments_date ON public.appointments(appointment_date);

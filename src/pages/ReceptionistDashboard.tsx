@@ -25,6 +25,7 @@ import {
   UserPlus,
   Phone,
   Clipboard,
+  HeartHandshake,
 } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
@@ -799,6 +800,11 @@ export default function ReceptionistDashboard() {
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleViewSchedule}>
                   <Clipboard className="h-6 w-6" />
                   <span>View Schedule</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.open('/discharge', '_blank')}>
+                  <HeartHandshake className="h-6 w-6" />
+                  <span>Process Discharge</span>
+                  <span className="text-xs text-muted-foreground">For completed patients</span>
                 </Button>
               </div>
             </CardContent>

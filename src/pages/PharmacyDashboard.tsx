@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Upload, FileText, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
+import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function PharmacyDashboard() {
@@ -831,7 +831,7 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
                         onClick={downloadCSVTemplate}
                         className="text-xs"
                       >
-                        <FileText className="mr-1 h-3 w-3" />
+                        <File className="mr-1 h-3 w-3" />
                         Download Template
                       </Button>
                     </div>

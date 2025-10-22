@@ -402,7 +402,9 @@ export default function DoctorDashboard() {
                         labResults={[
                           ...(visit.labTests.flatMap((test: any) => test.lab_results || [])),
                           ...(visit.allCompletedLabTests.flatMap((test: any) => test.lab_results || []))
-                        ]}
+                        ].filter((result: any, index: number, self: any[]) => 
+                          index === self.findIndex((r: any) => r.id === result.id)
+                        )}
                       />
                     </div>
 
@@ -411,11 +413,20 @@ export default function DoctorDashboard() {
                       <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
                         <strong className="text-green-800 block mb-2">Available Lab Results:</strong>
                         <div className="space-y-2 max-h-32 overflow-y-auto">
-                          {visit.labTests.concat(visit.allCompletedLabTests).map((test: any) => (
+                          {visit.labTests.concat(visit.allCompletedLabTests)
+                            .filter((test: any, index: number, self: any[]) => 
+                              index === self.findIndex((t: any) => t.id === test.id)
+                            )
+                            .map((test: any) => (
                             <div key={test.id} className="bg-white p-2 rounded border shadow-sm">
-                              <div className="font-medium text-sm">{test.test_name}</div>
+                              <div className="font-medium text-sm flex items-center justify-between">
+                                <span>{test.test_name}</span>
+                                <Badge variant={test.status === 'Completed' ? 'default' : 'outline'} className="text-xs">
+                                  {test.status}
+                                </Badge>
+                              </div>
                               {test.lab_results && test.lab_results.length > 0 && (
-                                <div className="text-xs text-muted-foreground">
+                                <div className="text-xs text-muted-foreground mt-1">
                                   {test.lab_results.map((result: any) => (
                                     <span key={result.id} className="mr-2">
                                       {result.result_value} {result.unit}
@@ -539,7 +550,9 @@ export default function DoctorDashboard() {
                         labResults={[
                           ...(visit.labTests.flatMap((test: any) => test.lab_results || [])),
                           ...(visit.allCompletedLabTests.flatMap((test: any) => test.lab_results || []))
-                        ]}
+                        ].filter((result: any, index: number, self: any[]) => 
+                          index === self.findIndex((r: any) => r.id === result.id)
+                        )}
                       />
                     </div>
 
@@ -548,7 +561,11 @@ export default function DoctorDashboard() {
                       <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
                         <strong className="text-green-800 block mb-2">Lab Results:</strong>
                         <div className="space-y-3 max-h-48 overflow-y-auto">
-                          {visit.labTests.concat(visit.allCompletedLabTests).map((test: any) => (
+                          {visit.labTests.concat(visit.allCompletedLabTests)
+                            .filter((test: any, index: number, self: any[]) => 
+                              index === self.findIndex((t: any) => t.id === test.id)
+                            )
+                            .map((test: any) => (
                             <div key={test.id} className="bg-white p-3 rounded border shadow-sm">
                               <div className="font-medium text-sm mb-2">{test.test_name} ({test.test_type})</div>
                               <div className="text-xs text-muted-foreground mb-2">

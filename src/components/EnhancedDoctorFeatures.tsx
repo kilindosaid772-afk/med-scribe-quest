@@ -259,11 +259,9 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess, labResults = [] }:
                               if (form) {
                                 const medicationField = form.querySelector('[name="medicationName"]') as HTMLInputElement;
                                 const notesField = form.querySelector('[name="clinicalNotes"]') as HTMLTextAreaElement;
-                                const labResultField = form.querySelector('[name="labResultId"]') as HTMLInputElement;
 
                                 if (medicationField) medicationField.value = `Based on ${result.test_name} results`;
                                 if (notesField) notesField.value = `Prescribed based on abnormal ${result.test_name} results: ${result.result_value} ${result.unit}`;
-                                if (labResultField) labResultField.value = result.id || '';
 
                                 toast.success('Prescription form pre-filled based on lab results');
                               }
@@ -333,8 +331,6 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess, labResults = [] }:
               <Textarea id="clinicalNotes" name="clinicalNotes" placeholder="Notes about why this prescription was written..." />
             </div>
 
-            {/* Hidden field to track lab result association */}
-            <input type="hidden" name="labResultId" />
 
             <Button type="submit" className="w-full">
               Create Prescription

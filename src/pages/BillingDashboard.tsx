@@ -24,7 +24,8 @@ import {
   AlertCircle,
   CreditCard,
   Shield,
-  DollarSign
+  DollarSign,
+  File
 } from 'lucide-react';
 
 export default function BillingDashboard() {
@@ -114,7 +115,7 @@ export default function BillingDashboard() {
     const totalRevenue: number = processedPatients
       .filter((p: any) => p.totalPaid > 0)
       .reduce((sum: number, p: any) => {
-        const paidAmount: number = typeof p.totalPaid === 'number' ? p.totalPaid : 0;
+        const paidAmount: number = typeof p.totalPaid === 'number' ? p.totalPaid : Number(p.totalPaid) || 0;
         return sum + paidAmount;
       }, 0);
 
@@ -162,7 +163,7 @@ export default function BillingDashboard() {
         .select(`
           *,
           patient:patients(full_name),
-          insurance_company:insurance_companies(name),
+          insurance_company:insurance_companies(name, coverage_percentage),
           invoice:invoices(invoice_number)
         `)
         .order('submission_date', { ascending: false });
@@ -173,10 +174,17 @@ export default function BillingDashboard() {
       setRawInsuranceData(insuranceData || []);
       setRawClaimsData(claimsData || []);
 
-      // Update other state
+      // Update other state with safety checks
       setPatients(patientsData || []);
       setInsuranceCompanies(insuranceData || []);
       setInsuranceClaims(claimsData || []);
+
+      console.log('Billing Dashboard - Data loaded:', {
+        invoices: invoicesData?.length || 0,
+        patients: patientsData?.length || 0,
+        insuranceCompanies: insuranceData?.length || 0,
+        claims: claimsData?.length || 0
+      });
 
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -199,7 +207,6 @@ export default function BillingDashboard() {
       invoice_number: generateInvoiceNumber(),
       patient_id: formData.get('patientId') as string,
       total_amount: totalAmount,
-      tax: totalAmount * 0.1, // 10% tax
       due_date: formData.get('dueDate') as string,
       notes: formData.get('notes') as string,
     };
@@ -332,12 +339,12 @@ export default function BillingDashboard() {
           .update({ paid_amount: newPaidAmount, status: newStatus })
           .eq('id', invoiceId);
 
-        // If fully paid, complete the workflow
+        // If fully paid, move to discharge stage instead of completing
         if (newStatus === 'Paid') {
           const { data: visits } = await supabase
             .from('patient_visits')
             .select('*')
-            .eq('patient_id', selectedInvoice?.patient_id)
+            .eq('patient_id', invoice.patient_id)
             .eq('current_stage', 'billing')
             .eq('overall_status', 'Active')
             .order('created_at', { ascending: false })
@@ -349,10 +356,12 @@ export default function BillingDashboard() {
               .update({
                 billing_status: 'Paid',
                 billing_completed_at: new Date().toISOString(),
-                current_stage: 'completed',
-                overall_status: 'Completed'
+                current_stage: 'discharge_ready',
+                discharge_status: 'Pending'
               })
               .eq('id', visits[0].id);
+
+            toast.success('Payment completed! Patient ready for discharge processing');
           }
         }
       }
@@ -397,12 +406,12 @@ export default function BillingDashboard() {
       .update({ paid_amount: newPaidAmount, status: newStatus })
       .eq('id', selectedInvoice.id);
 
-    // If fully paid, complete the workflow
+    // If fully paid, move to discharge stage instead of completing
     if (newStatus === 'Paid') {
       const { data: visits } = await supabase
         .from('patient_visits')
         .select('*')
-        .eq('patient_id', selectedInvoice.patient_id)
+        .eq('patient_id', selectedInvoice?.patient_id)
         .eq('current_stage', 'billing')
         .eq('overall_status', 'Active')
         .order('created_at', { ascending: false })
@@ -414,10 +423,12 @@ export default function BillingDashboard() {
           .update({
             billing_status: 'Paid',
             billing_completed_at: new Date().toISOString(),
-            current_stage: 'completed',
-            overall_status: 'Completed'
+            current_stage: 'discharge_ready',
+            discharge_status: 'Pending'
           })
           .eq('id', visits[0].id);
+
+        toast.success('Payment completed! Patient ready for discharge processing');
       }
     }
 
@@ -762,7 +773,60 @@ export default function BillingDashboard() {
           </TabsContent>
         </Tabs>
 
-        {/* Payment Dialog */}
+        {/* Quick Actions */}
+        <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+              <CardDescription>Common billing and discharge tasks</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2"
+                  onClick={() => setDialogOpen(true)}
+                >
+                  <Plus className="h-6 w-6" />
+                  <span>Create Invoice</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2"
+                  onClick={() => {
+                    // Find patients with completed payments
+                    const paidPatients = invoices.filter(p => p.status === 'Paid');
+                    if (paidPatients.length === 0) {
+                      toast.info('No patients with completed payments ready for discharge');
+                    } else {
+                      window.open('/discharge', '_blank');
+                    }
+                  }}
+                >
+                  <CheckCircle className="h-6 w-6" />
+                  <span>Process Discharge</span>
+                  <span className="text-xs text-muted-foreground">For paid patients</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2"
+                  onClick={() => window.open('/discharge', '_blank')}
+                >
+                  <File className="h-6 w-6" />
+                  <span>View Discharges</span>
+                  <span className="text-xs text-muted-foreground">Recent discharges</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2"
+                  onClick={() => setClaimDialogOpen(true)}
+                >
+                  <Shield className="h-6 w-6" />
+                  <span>Submit Claim</span>
+                  <span className="text-xs text-muted-foreground">Insurance claims</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -808,14 +872,6 @@ export default function BillingDashboard() {
                   )}
 
                   <div className="border-t pt-2 mt-2">
-                    <div className="flex justify-between">
-                      <span>Subtotal:</span>
-                      <span>TSh{(Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.tax as number || 0)).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Tax (10%):</span>
-                      <span>TSh{Number(selectedInvoice.tax as number || 0).toFixed(2)}</span>
-                    </div>
                     <div className="flex justify-between font-semibold text-base">
                       <span>Total:</span>
                       <span>TSh{Number(selectedInvoice.total_amount as number).toFixed(2)}</span>
@@ -998,7 +1054,7 @@ export default function BillingDashboard() {
                             .filter(inv => inv.status !== 'Paid')
                             .map(invoice => (
                               <SelectItem key={invoice.id} value={invoice.id}>
-                                {invoice.invoice_number} - {patientData.patient.full_name} (TSh{Number(invoice.total_amount as number).toFixed(2)})
+                                {invoice.invoice_number} - {patientData.patient?.full_name || 'Unknown'} (TSh{Number(invoice.total_amount as number).toFixed(2)})
                               </SelectItem>
                             ))}
                         </Fragment>
@@ -1013,11 +1069,17 @@ export default function BillingDashboard() {
                     <SelectValue placeholder="Select insurance company" />
                   </SelectTrigger>
                   <SelectContent>
-                    {insuranceCompanies.map((company) => (
-                      <SelectItem key={company.id} value={company.id}>
-                        {company.name} ({company.coverage_percentage}% coverage)
+                    {insuranceCompanies && insuranceCompanies.length > 0 ? (
+                      insuranceCompanies.map((company) => (
+                        <SelectItem key={company.id} value={company.id}>
+                          {company.name} ({company.coverage_percentage || 100}% coverage)
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="" disabled>
+                        No insurance companies available
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
               </div>
