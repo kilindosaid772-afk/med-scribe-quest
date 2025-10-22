@@ -598,57 +598,100 @@ export default function BillingDashboard() {
                     <CardTitle>Invoices</CardTitle>
                     <CardDescription>Manage patient invoices and payments</CardDescription>
                   </div>
-                  <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Create Invoice
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Create New Invoice</DialogTitle>
-                        <DialogDescription>Generate a new invoice for a patient</DialogDescription>
-                      </DialogHeader>
-                      <form onSubmit={handleCreateInvoice} className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="patientId">Patient</Label>
-                          <Select name="patientId" required>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select patient" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {patients.map((patient) => (
-                                <SelectItem key={patient.id} value={patient.id}>
-                                  {patient.full_name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
-                          <Input
-                            id="totalAmount"
-                            name="totalAmount"
-                            type="number"
-                            step="0.01"
-                            required
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="dueDate">Due Date</Label>
-                          <Input id="dueDate" name="dueDate" type="date" required />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="notes">Notes</Label>
-                          <Input id="notes" name="notes" />
-                        </div>
-                        <Button type="submit" className="w-full">Create Invoice</Button>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
+                  <div className="flex gap-2">
+                    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Create Invoice
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Create New Invoice</DialogTitle>
+                          <DialogDescription>Generate a new invoice for a patient</DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleCreateInvoice} className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="patientId">Patient</Label>
+                            <Select name="patientId" required>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select patient" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {patients.map((patient) => (
+                                  <SelectItem key={patient.id} value={patient.id}>
+                                    {patient.full_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
+                            <Input
+                              id="totalAmount"
+                              name="totalAmount"
+                              type="number"
+                              step="0.01"
+                              placeholder="Enter amount or leave for default consultation fee"
+                              defaultValue="50000"
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">Default: TSh 50,000 (standard consultation)</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="dueDate">Due Date</Label>
+                            <Input
+                              id="dueDate"
+                              name="dueDate"
+                              type="date"
+                              defaultValue={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">Auto-set to 30 days from today</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="notes">Notes</Label>
+                            <Input id="notes" name="notes" />
+                          </div>
+                          <Button type="submit" className="w-full">Create Invoice</Button>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      if (patients.length === 0) {
+                        toast.error('No patients available');
+                        return;
+                      }
+
+                      const patientId = patients[0].id; // Use first patient as default
+                      const totalAmount = 50000; // Default consultation fee
+                      const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+                      const invoiceData = {
+                        invoice_number: generateInvoiceNumber(),
+                        patient_id: patientId,
+                        total_amount: totalAmount,
+                        due_date: dueDate,
+                        notes: 'Quick invoice - Standard consultation'
+                      };
+
+                      const { error } = await supabase.from('invoices').insert([invoiceData]);
+
+                      if (error) {
+                        toast.error('Failed to create quick invoice');
+                      } else {
+                        toast.success('Quick invoice created successfully');
+                        fetchData();
+                      }
+                    }}
+                  >
+                  </Button>
                 </div>
+              </div>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -784,10 +827,37 @@ export default function BillingDashboard() {
                 <Button
                   variant="outline"
                   className="h-20 flex-col gap-2"
-                  onClick={() => setDialogOpen(true)}
+                  onClick={async () => {
+                    if (patients.length === 0) {
+                      toast.error('No patients available');
+                      return;
+                    }
+
+                    const patientId = patients[0].id; // Use first patient as default
+                    const totalAmount = 50000; // Default consultation fee
+                    const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+                    const invoiceData = {
+                      invoice_number: generateInvoiceNumber(),
+                      patient_id: patientId,
+                      total_amount: totalAmount,
+                      due_date: dueDate,
+                      notes: 'Quick invoice - Standard consultation'
+                    };
+
+                    const { error } = await supabase.from('invoices').insert([invoiceData]);
+
+                    if (error) {
+                      toast.error('Failed to create quick invoice');
+                    } else {
+                      toast.success('Quick invoice created successfully');
+                      fetchData();
+                    }
+                  }}
                 >
                   <Plus className="h-6 w-6" />
-                  <span>Create Invoice</span>
+                  <span>⚡ Quick Invoice</span>
+                  <span className="text-xs text-muted-foreground">Auto-fill defaults</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -798,7 +868,8 @@ export default function BillingDashboard() {
                     if (paidPatients.length === 0) {
                       toast.info('No patients with completed payments ready for discharge');
                     } else {
-                      window.open('/discharge', '_blank');
+                      // Navigate to discharge page in same tab
+                      window.location.href = '/discharge';
                     }
                   }}
                 >
@@ -809,7 +880,7 @@ export default function BillingDashboard() {
                 <Button
                   variant="outline"
                   className="h-20 flex-col gap-2"
-                  onClick={() => window.open('/discharge', '_blank')}
+                  onClick={() => window.location.href = '/discharge'}
                 >
                   <File className="h-6 w-6" />
                   <span>View Discharges</span>
