@@ -14,6 +14,7 @@ import { mobilePaymentService, MobilePaymentRequest } from '@/lib/mobilePaymentS
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { generateInvoiceNumber } from '@/lib/utils';
 import {
   Loader2,
   CheckCircle,
@@ -235,8 +236,13 @@ export default function BillingDashboard() {
     }
   };
 
-  const generateInvoiceNumber = () => {
-    return `INV-${Date.now().toString().slice(-8)}`;
+  const handleOpenPaymentDialog = (invoice: any) => {
+    setSelectedInvoice(invoice);
+    setPaymentMethod('');
+    setPaymentStatus('');
+    setTransactionId('');
+    setMobilePaymentProcessing(false);
+    setPaymentDialogOpen(true);
   };
 
   const handleCreateInvoice = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -245,8 +251,10 @@ export default function BillingDashboard() {
 
     const calculatedCost = patientCosts[selectedPatientId] || 50000; // Fallback to default if no services
 
+    const invoiceNumber = await generateInvoiceNumber();
+
     const invoiceData = {
-      invoice_number: generateInvoiceNumber(),
+      invoice_number: invoiceNumber,
       patient_id: selectedPatientId,
       total_amount: calculatedCost,
       due_date: formData.get('dueDate') as string,
@@ -583,7 +591,7 @@ export default function BillingDashboard() {
       <div className="space-y-8">
         {/* Payment Status Notification */}
         {paymentStatus && (
-          <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm ${
+          <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm animate-in slide-in-from-right-2 ${
             paymentStatus === 'completed' ? 'bg-green-100 border border-green-500' :
             paymentStatus === 'failed' ? 'bg-red-100 border border-red-500' :
             'bg-blue-100 border border-blue-500'
@@ -599,9 +607,10 @@ export default function BillingDashboard() {
                   paymentStatus === 'failed' ? 'text-red-800' :
                   'text-blue-800'
                 }`}>
-                  {paymentStatus === 'completed' && 'Payment Completed!'}
-                  {paymentStatus === 'failed' && 'Payment Failed'}
-                  {paymentStatus === 'pending' && 'Payment Pending Confirmation'}
+                  {paymentStatus === 'completed' && '✅ Payment Completed Successfully!'}
+                  {paymentStatus === 'failed' && '❌ Payment Failed'}
+                  {paymentStatus === 'pending' && '⏳ Payment Request Sent - Waiting for Confirmation'}
+                  {paymentStatus === 'processing' && '🔄 Processing Payment...'}
                 </p>
                 {transactionId && (
                   <p className={`text-xs mt-1 ${
@@ -610,6 +619,11 @@ export default function BillingDashboard() {
                     'text-blue-600'
                   }`}>
                     Transaction ID: {transactionId.slice(-8)}
+                  </p>
+                )}
+                {paymentStatus === 'pending' && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Customer will receive payment request on their phone
                   </p>
                 )}
               </div>
@@ -629,15 +643,14 @@ export default function BillingDashboard() {
             {/* Main button */}
             <Button
               size="lg"
-              className="relative bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-2xl hover:shadow-green-500/25 transition-all duration-200 transform hover:scale-105 border-0 h-12 md:h-14 px-4 md:px-6 rounded-full w-auto"
+              className="relative bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-2xl hover:shadow-green-500/25 transition-all duration-200 transform hover:scale-105 border-0 h-12 px-4 rounded-full w-auto"
               onClick={() => {
                 // Find first unpaid patient with invoices
                 const unpaidPatient = invoices.find(patient => patient.status !== 'Paid');
                 if (unpaidPatient) {
                   const unpaidInvoice = unpaidPatient.invoices.find(inv => inv.status !== 'Paid');
                   if (unpaidInvoice) {
-                    setSelectedInvoice(unpaidInvoice);
-                    setPaymentDialogOpen(true);
+                    handleOpenPaymentDialog(unpaidInvoice);
                   } else {
                     toast.error('No unpaid invoices found');
                   }
@@ -646,12 +659,12 @@ export default function BillingDashboard() {
                 }
               }}
             >
-              <div className="flex items-center gap-2 md:gap-3">
-                <div className="bg-white/20 rounded-full p-1.5 md:p-2">
-                  <CreditCard className="h-4 w-4 md:h-5 md:w-5" />
+              <div className="flex items-center gap-2">
+                <div className="bg-white/20 rounded-full p-1.5">
+                  <CreditCard className="h-4 w-4" />
                 </div>
                 <div className="text-left">
-                  <div className="font-semibold text-xs md:text-sm">Make Payment</div>
+                  <div className="font-semibold text-sm">Make Payment</div>
                   <div className="text-xs opacity-90 hidden sm:block">Quick payment</div>
                 </div>
               </div>
@@ -665,7 +678,7 @@ export default function BillingDashboard() {
             )}
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-destructive/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
@@ -725,7 +738,7 @@ export default function BillingDashboard() {
                     <CardTitle>Invoices</CardTitle>
                     <CardDescription>Manage patient invoices and payments</CardDescription>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <Dialog open={dialogOpen} onOpenChange={(open) => {
                       setDialogOpen(open);
                       if (!open) {
@@ -733,12 +746,12 @@ export default function BillingDashboard() {
                       }
                     }}>
                       <DialogTrigger asChild>
-                        <Button>
+                        <Button className="w-full sm:w-auto">
                           <Plus className="mr-2 h-4 w-4" />
                           Create Invoice
                         </Button>
                       </DialogTrigger>
-                      <DialogContent>
+                      <DialogContent className="max-w-lg w-[95vw] max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>Create New Invoice</DialogTitle>
                           <DialogDescription>Generate a new invoice for a patient</DialogDescription>
@@ -769,35 +782,37 @@ export default function BillingDashboard() {
                               </div>
                             )}
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
-                            <Input
-                              id="totalAmount"
-                              name="totalAmount"
-                              type="number"
-                              step="0.01"
-                              value={selectedPatientId ? (patientCosts[selectedPatientId] || 0).toFixed(2) : ''}
-                              readOnly
-                              className="bg-gray-50"
-                              required
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              {selectedPatientId
-                                ? 'Amount automatically calculated from patient services'
-                                : 'Select a patient to see calculated amount'
-                              }
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="dueDate">Due Date</Label>
-                            <Input
-                              id="dueDate"
-                              name="dueDate"
-                              type="date"
-                              defaultValue={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                              required
-                            />
-                            <p className="text-xs text-muted-foreground">Auto-set to 30 days from today</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
+                              <Input
+                                id="totalAmount"
+                                name="totalAmount"
+                                type="number"
+                                step="0.01"
+                                value={selectedPatientId ? (patientCosts[selectedPatientId] || 0).toFixed(2) : ''}
+                                readOnly
+                                className="bg-gray-50"
+                                required
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                {selectedPatientId
+                                  ? 'Amount automatically calculated from patient services'
+                                  : 'Select a patient to see calculated amount'
+                                }
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="dueDate">Due Date</Label>
+                              <Input
+                                id="dueDate"
+                                name="dueDate"
+                                type="date"
+                                defaultValue={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                                required
+                              />
+                              <p className="text-xs text-muted-foreground">Auto-set to 30 days from today</p>
+                            </div>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="notes">Notes</Label>
@@ -809,6 +824,7 @@ export default function BillingDashboard() {
                     </Dialog>
                   <Button
                     variant="outline"
+                    className="w-full sm:w-auto"
                     onClick={async () => {
                       if (patients.length === 0) {
                         toast.error('No patients available');
@@ -819,8 +835,10 @@ export default function BillingDashboard() {
                       const totalAmount = patientCosts[patientId] || 50000; // Use calculated cost or fallback
                       const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+                      const invoiceNumber = await generateInvoiceNumber();
+
                       const invoiceData = {
-                        invoice_number: generateInvoiceNumber(),
+                        invoice_number: invoiceNumber,
                         patient_id: patientId,
                         total_amount: totalAmount,
                         due_date: dueDate,
@@ -842,70 +860,71 @@ export default function BillingDashboard() {
               </div>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Calculated Cost</TableHead>
-                      <TableHead>Total Amount</TableHead>
-                      <TableHead>Paid Amount</TableHead>
-                      <TableHead>Unpaid Amount</TableHead>
-                      <TableHead>Invoice Count</TableHead>
-                      <TableHead>Latest Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invoices.map((patientData) => (
-                      <TableRow key={patientData.patient.id}>
-                        <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
-                        <TableCell>{patientData.patient.phone}</TableCell>
-                        <TableCell className="font-semibold text-blue-600">
-                          TSh{(patientCosts[patientData.patient.id] || 0).toFixed(2)}
-                        </TableCell>
-                        <TableCell>TSh{Number(patientData.totalAmount as number).toFixed(2)}</TableCell>
-                        <TableCell>TSh{Number(patientData.totalPaid as number).toFixed(2)}</TableCell>
-                        <TableCell>TSh{Number(patientData.unpaidAmount as number).toFixed(2)}</TableCell>
-                        <TableCell>{patientData.invoiceCount}</TableCell>
-                        <TableCell>
-                          {format(new Date(patientData.latestInvoiceDate), 'MMM dd, yyyy')}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              patientData.status === 'Paid' ? 'default' :
-                              patientData.status === 'Partially Paid' ? 'secondary' :
-                              'destructive'
-                            }
-                          >
-                            {patientData.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {(patientData.status === 'Unpaid' || patientData.status === 'Partially Paid') && (
-                            <Button
-                              size="sm"
-                              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
-                              onClick={() => {
-                                // For now, select the first unpaid invoice for payment
-                                const unpaidInvoice = patientData.invoices.find(inv => inv.status !== 'Paid');
-                                if (unpaidInvoice) {
-                                  setSelectedInvoice(unpaidInvoice);
-                                  setPaymentDialogOpen(true);
-                                }
-                              }}
-                            >
-                              <CreditCard className="mr-1 h-3 w-3" />
-                              Pay Now
-                            </Button>
-                          )}
-                        </TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[120px]">Patient</TableHead>
+                        <TableHead className="min-w-[100px]">Phone</TableHead>
+                        <TableHead className="min-w-[120px]">Calculated Cost</TableHead>
+                        <TableHead className="min-w-[100px]">Total Amount</TableHead>
+                        <TableHead className="min-w-[100px]">Paid Amount</TableHead>
+                        <TableHead className="min-w-[100px]">Unpaid Amount</TableHead>
+                        <TableHead className="min-w-[80px]">Invoice Count</TableHead>
+                        <TableHead className="min-w-[100px]">Latest Date</TableHead>
+                        <TableHead className="min-w-[80px]">Status</TableHead>
+                        <TableHead className="min-w-[100px]">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {invoices.map((patientData) => (
+                        <TableRow key={patientData.patient.id}>
+                          <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
+                          <TableCell className="text-sm">{patientData.patient.phone}</TableCell>
+                          <TableCell className="font-semibold text-blue-600">
+                            TSh{(patientCosts[patientData.patient.id] || 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell>TSh{Number(patientData.totalAmount as number).toFixed(2)}</TableCell>
+                          <TableCell>TSh{Number(patientData.totalPaid as number).toFixed(2)}</TableCell>
+                          <TableCell>TSh{Number(patientData.unpaidAmount as number).toFixed(2)}</TableCell>
+                          <TableCell>{patientData.invoiceCount}</TableCell>
+                          <TableCell className="text-sm">
+                            {format(new Date(patientData.latestInvoiceDate), 'MMM dd, yyyy')}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                patientData.status === 'Paid' ? 'default' :
+                                patientData.status === 'Partially Paid' ? 'secondary' :
+                                'destructive'
+                              }
+                            >
+                              {patientData.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {(patientData.status === 'Unpaid' || patientData.status === 'Partially Paid') && (
+                              <Button
+                                size="sm"
+                                className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                onClick={() => {
+                                  // For now, select the first unpaid invoice for payment
+                                  const unpaidInvoice = patientData.invoices.find(inv => inv.status !== 'Paid');
+                                  if (unpaidInvoice) {
+                                    handleOpenPaymentDialog(unpaidInvoice);
+                                  }
+                                }}
+                              >
+                                <CreditCard className="mr-1 h-3 w-3" />
+                                Pay Now
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -926,44 +945,46 @@ export default function BillingDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Claim #</TableHead>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Insurance</TableHead>
-                      <TableHead>Claim Amount</TableHead>
-                      <TableHead>Approved Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {insuranceClaims.map((claim) => (
-                      <TableRow key={claim.id}>
-                        <TableCell className="font-medium">{claim.claim_number}</TableCell>
-                        <TableCell>{claim.patient?.full_name || 'Unknown'}</TableCell>
-                        <TableCell>{claim.insurance_company?.name || 'N/A'}</TableCell>
-                        <TableCell>TSh{Number(claim.claim_amount as number).toFixed(2)}</TableCell>
-                        <TableCell>TSh{Number(claim.approved_amount as number).toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              claim.status === 'Approved' ? 'default' :
-                              claim.status === 'Pending' ? 'secondary' :
-                              'destructive'
-                            }
-                          >
-                            {claim.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(claim.submission_date), 'MMM dd, yyyy')}
-                        </TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[100px]">Claim #</TableHead>
+                        <TableHead className="min-w-[120px]">Patient</TableHead>
+                        <TableHead className="min-w-[120px]">Insurance</TableHead>
+                        <TableHead className="min-w-[120px]">Claim Amount</TableHead>
+                        <TableHead className="min-w-[120px]">Approved Amount</TableHead>
+                        <TableHead className="min-w-[80px]">Status</TableHead>
+                        <TableHead className="min-w-[100px]">Date</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {insuranceClaims.map((claim) => (
+                        <TableRow key={claim.id}>
+                          <TableCell className="font-medium">{claim.claim_number}</TableCell>
+                          <TableCell className="text-sm">{claim.patient?.full_name || 'Unknown'}</TableCell>
+                          <TableCell className="text-sm">{claim.insurance_company?.name || 'N/A'}</TableCell>
+                          <TableCell>TSh{Number(claim.claim_amount as number).toFixed(2)}</TableCell>
+                          <TableCell>TSh{Number(claim.approved_amount as number).toFixed(2)}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                claim.status === 'Approved' ? 'default' :
+                                claim.status === 'Pending' ? 'secondary' :
+                                'destructive'
+                              }
+                            >
+                              {claim.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {format(new Date(claim.submission_date), 'MMM dd, yyyy')}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -976,7 +997,7 @@ export default function BillingDashboard() {
               <CardDescription>Common billing and discharge tasks</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 <Button
                   variant="outline"
                   className="h-20 flex-col gap-2"
@@ -990,8 +1011,10 @@ export default function BillingDashboard() {
                     const totalAmount = patientCosts[patientId] || 50000; // Use calculated cost or fallback
                     const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+                    const invoiceNumber = await generateInvoiceNumber();
+
                     const invoiceData = {
-                      invoice_number: generateInvoiceNumber(),
+                      invoice_number: invoiceNumber,
                       patient_id: patientId,
                       total_amount: totalAmount,
                       due_date: dueDate,
@@ -1051,8 +1074,17 @@ export default function BillingDashboard() {
               </div>
             </CardContent>
           </Card>
-        <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-          <DialogContent className="max-w-2xl">
+        <Dialog open={paymentDialogOpen} onOpenChange={(open) => {
+          setPaymentDialogOpen(open);
+          if (!open) {
+            // Reset form state when dialog closes
+            setPaymentStatus('');
+            setTransactionId('');
+            setPaymentMethod('');
+            setMobilePaymentProcessing(false);
+          }
+        }}>
+          <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Record Payment</DialogTitle>
               <DialogDescription>
@@ -1084,7 +1116,7 @@ export default function BillingDashboard() {
                       <h5 className="font-medium mb-2">Items:</h5>
                       <div className="space-y-1">
                         {selectedInvoice.invoice_items.map((item: any, index: number) => (
-                          <div key={index} className="flex justify-between text-sm">
+                          <div key={item.id || index} className="flex justify-between text-sm">
                             <span>{item.description}</span>
                             <span>
                               {item.quantity} × TSh{Number(item.unit_price as number).toFixed(2)} = TSh{Number(item.total_price as number).toFixed(2)}
@@ -1114,6 +1146,17 @@ export default function BillingDashboard() {
             )}
 
             <form onSubmit={handleRecordPayment} className="space-y-4">
+              {/* Form validation helper */}
+              {(() => {
+                const form = document.querySelector('form');
+                const isFormValid = form?.checkValidity();
+                return !isFormValid ? (
+                  <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                    <p className="text-sm text-red-600">⚠️ Please fill in all required fields</p>
+                  </div>
+                ) : null;
+              })()}
+
               <div className="space-y-2">
                 <Label htmlFor="amount">Payment Amount (TSh)</Label>
                 <Input
@@ -1124,17 +1167,27 @@ export default function BillingDashboard() {
                   min="0.01"
                   max={selectedInvoice ? Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0) : undefined}
                   defaultValue={selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : ''}
-                  className="bg-white"
+                  className={`bg-white ${selectedInvoice ? 'border-green-300 focus:border-green-500' : 'border-red-300'}`}
                   required
                 />
                 <p className="text-sm text-muted-foreground">
-                  Enter payment amount (max: TSh{selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : '0.00'})
+                  💰 Enter payment amount (max: TSh{selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : '0.00'})
                 </p>
+                {selectedInvoice && (
+                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-700">Remaining Balance:</span>
+                      <span className="font-semibold text-green-800">
+                        TSh{(Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
                 <Select name="paymentMethod" value={paymentMethod} onValueChange={setPaymentMethod} required>
-                  <SelectTrigger>
+                  <SelectTrigger className={paymentMethod ? 'border-green-500' : 'border-red-500'}>
                     <SelectValue placeholder="Select payment method" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1149,32 +1202,41 @@ export default function BillingDashboard() {
                     <SelectItem value="Insurance">🛡️ Insurance</SelectItem>
                   </SelectContent>
                 </Select>
+                {!paymentMethod && (
+                  <p className="text-sm text-red-600">Please select a payment method</p>
+                )}
               </div>
 
               {/* Mobile Money Fields */}
               {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) && (
-                <div className="space-y-2">
-                  <Label htmlFor="phoneNumber">
-                    <Smartphone className="inline h-4 w-4 mr-1" />
-                    Phone Number *
-                  </Label>
+                <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4 text-blue-600" />
+                    <Label htmlFor="phoneNumber" className="text-blue-800 font-medium">
+                      Phone Number *
+                    </Label>
+                  </div>
                   <Input
                     id="phoneNumber"
                     name="phoneNumber"
                     placeholder="0712345678"
                     pattern="^0[67][0-9]{8}$"
                     title="Please enter a valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)"
+                    className="border-blue-300 focus:border-blue-500"
                     required
                   />
-                  <p className="text-sm text-muted-foreground">
-                    Customer will receive payment request on this number
+                  <p className="text-sm text-blue-600">
+                    💡 Customer will receive payment request on this number
+                  </p>
+                  <p className="text-xs text-blue-500">
+                    Format: 07xxxxxxxx or 06xxxxxxxx
                   </p>
                 </div>
               )}
 
               {/* Bank Transfer Fields */}
               {paymentMethod === 'Bank Transfer' && (
-                <>
+                <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="bankName">Bank Name</Label>
                     <Input id="bankName" name="bankName" placeholder="e.g., CRDB Bank" required />
@@ -1183,7 +1245,7 @@ export default function BillingDashboard() {
                     <Label htmlFor="accountNumber">Account Number</Label>
                     <Input id="accountNumber" name="accountNumber" placeholder="Account number" required />
                   </div>
-                </>
+                </div>
               )}
 
               {/* Cheque Fields */}
@@ -1213,16 +1275,17 @@ export default function BillingDashboard() {
                 </div>
               )}
 
+              {/* Mobile Payment Button */}
               {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) ? (
                 <Button
                   type="submit"
-                  className="w-full"
+                  className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
                   disabled={mobilePaymentProcessing || !paymentMethod || !selectedInvoice}
                 >
                   {mobilePaymentProcessing ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing...
+                      Processing Payment...
                     </>
                   ) : (
                     <>
@@ -1232,11 +1295,13 @@ export default function BillingDashboard() {
                   )}
                 </Button>
               ) : (
+                /* Regular Payment Button */
                 <Button
                   type="submit"
-                  className="w-full"
+                  className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
                   disabled={!paymentMethod || !selectedInvoice}
                 >
+                  <CreditCard className="mr-2 h-4 w-4" />
                   Record Payment
                 </Button>
               )}
@@ -1246,7 +1311,7 @@ export default function BillingDashboard() {
 
         {/* Insurance Claim Dialog */}
         <Dialog open={claimDialogOpen} onOpenChange={setClaimDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md w-[95vw] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Submit Insurance Claim</DialogTitle>
               <DialogDescription>
@@ -1287,7 +1352,7 @@ export default function BillingDashboard() {
                   <SelectContent>
                     {invoices.filter(patientData => patientData.patient?.insurance_company_id && patientData.status !== 'Paid')
                       .map((patientData, index) => (
-                        <Fragment key={index}>
+                        <Fragment key={patientData.patient.id || index}>
                           {patientData.invoices
                             .filter(inv => inv.status !== 'Paid')
                             .map(invoice => (

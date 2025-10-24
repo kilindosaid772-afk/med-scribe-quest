@@ -348,51 +348,53 @@ export default function AdminDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Roles (★ = Active)</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.full_name}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1 flex-wrap">
-                        {user.roles.map((roleObj: any) => (
-                          <Badge 
-                            key={roleObj.id}
-                            variant={roleObj.is_primary ? "default" : "secondary"} 
-                            className="capitalize cursor-pointer"
-                            onClick={() => !roleObj.is_primary && handleSetPrimaryRole(user.id, roleObj.id)}
-                          >
-                            {roleObj.is_primary && '★ '}
-                            {roleObj.role.replace('_', ' ')}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedUserId(user.id);
-                          setRoleDialogOpen(true);
-                        }}
-                      >
-                        Assign Role
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Roles (★ = Active)</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {users.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium">{user.full_name}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 flex-wrap">
+                          {user.roles.map((roleObj: any) => (
+                            <Badge 
+                              key={roleObj.id}
+                              variant={roleObj.is_primary ? "default" : "secondary"} 
+                              className="capitalize cursor-pointer"
+                              onClick={() => !roleObj.is_primary && handleSetPrimaryRole(user.id, roleObj.id)}
+                            >
+                              {roleObj.is_primary && '★ '}
+                              {roleObj.role.replace('_', ' ')}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUserId(user.id);
+                            setRoleDialogOpen(true);
+                          }}
+                        >
+                          Assign Role
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
@@ -466,30 +468,32 @@ export default function AdminDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Blood Group</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {patients.map((patient) => (
-                  <TableRow key={patient.id}>
-                    <TableCell className="font-medium">{patient.full_name}</TableCell>
-                    <TableCell>{patient.phone}</TableCell>
-                    <TableCell>{patient.blood_group || 'N/A'}</TableCell>
-                    <TableCell>
-                      <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                        {patient.status}
-                      </Badge>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Blood Group</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {patients.map((patient) => (
+                    <TableRow key={patient.id}>
+                      <TableCell className="font-medium">{patient.full_name}</TableCell>
+                      <TableCell>{patient.phone}</TableCell>
+                      <TableCell>{patient.blood_group || 'N/A'}</TableCell>
+                      <TableCell>
+                        <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
+                          {patient.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 

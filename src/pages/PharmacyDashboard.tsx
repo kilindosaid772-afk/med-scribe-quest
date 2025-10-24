@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { generateInvoiceNumber } from '@/lib/utils';
 
 export default function PharmacyDashboard() {
   const { user } = useAuth();
@@ -30,9 +31,6 @@ export default function PharmacyDashboard() {
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const generateInvoiceNumber = () => {
-    return `INV-${Date.now().toString().slice(-8)}`;
-  };
 
   const loadPharmacyData = async () => {
     try {
@@ -520,8 +518,9 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
       console.log(`Calculated amounts - Subtotal: ${subtotal}, Tax: ${tax}, Total: ${totalAmount}`);
 
       // Create invoice
+      const invoiceNumber = await generateInvoiceNumber();
       const invoiceData = {
-        invoice_number: generateInvoiceNumber(),
+        invoice_number: invoiceNumber,
         patient_id: prescription.patient_id,
         total_amount: totalAmount,
         tax: tax,
@@ -631,72 +630,74 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
                 <CardDescription>Manage and dispense prescriptions</CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Medication</TableHead>
-                      <TableHead>Dosage</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Doctor</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {prescriptions.length === 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                          {loading ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Loading prescriptions...
-                            </div>
-                          ) : (
-                            'No prescriptions found. Create a prescription from the doctor dashboard first.'
-                          )}
-                        </TableCell>
+                        <TableHead>Patient</TableHead>
+                        <TableHead>Medication</TableHead>
+                        <TableHead>Dosage</TableHead>
+                        <TableHead>Quantity</TableHead>
+                        <TableHead>Doctor</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ) : (
-                      prescriptions.map((prescription) => (
-                        <TableRow key={prescription.id}>
-                          <TableCell className="font-medium">
-                            {prescription.patient?.full_name || 'Unknown'}
-                          </TableCell>
-                          <TableCell>{prescription.medications?.name || prescription.medication_name || 'Unknown'}</TableCell>
-                          <TableCell>{prescription.dosage}</TableCell>
-                          <TableCell>{prescription.quantity}</TableCell>
-                          <TableCell>{prescription.doctor_profile?.full_name || 'Unknown'}</TableCell>
-                          <TableCell>
-                            {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy')}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                prescription.status === 'Dispensed' ? 'default' :
-                                prescription.status === 'Pending' ? 'secondary' :
-                                'outline'
-                              }
-                            >
-                              {prescription.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {prescription.status === 'Pending' && (
-                              <Button
-                                size="sm"
-                                onClick={() => handleDispensePrescription(prescription.id, prescription.patient_id)}
-                              >
-                                Dispense
-                              </Button>
+                    </TableHeader>
+                    <TableBody>
+                      {prescriptions.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                            {loading ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Loading prescriptions...
+                              </div>
+                            ) : (
+                              'No prescriptions found. Create a prescription from the doctor dashboard first.'
                             )}
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : (
+                        prescriptions.map((prescription) => (
+                          <TableRow key={prescription.id}>
+                            <TableCell className="font-medium">
+                              {prescription.patient?.full_name || 'Unknown'}
+                            </TableCell>
+                            <TableCell>{prescription.medications?.name || prescription.medication_name || 'Unknown'}</TableCell>
+                            <TableCell>{prescription.dosage}</TableCell>
+                            <TableCell>{prescription.quantity}</TableCell>
+                            <TableCell>{prescription.doctor_profile?.full_name || 'Unknown'}</TableCell>
+                            <TableCell>
+                              {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy')}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  prescription.status === 'Dispensed' ? 'default' :
+                                  prescription.status === 'Pending' ? 'secondary' :
+                                  'outline'
+                                }
+                              >
+                                {prescription.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {prescription.status === 'Pending' && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleDispensePrescription(prescription.id, prescription.patient_id)}
+                                >
+                                  Dispense
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -709,289 +710,286 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
                   <CardDescription>Track and manage medication stock levels</CardDescription>
                 </div>
                 <div className="flex gap-2">
-                  <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Import Medications
-                      </Button>
-                    </DialogTrigger>
-                  </Dialog>
-                  <Dialog open={medicationDialogOpen} onOpenChange={(open) => {
-                    setMedicationDialogOpen(open);
-                    if (!open) setEditingMedication(null);
-                  }}>
-                    <DialogTrigger asChild>
-                      <Button>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Medication
-                      </Button>
-                    </DialogTrigger>
-                  </Dialog>
+                  <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import Medications
+                  </Button>
+                  <Button onClick={() => setMedicationDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Medication
+                  </Button>
+                  <Button variant="outline" onClick={() => setStockDialogOpen(true)}>
+                    Update Stock
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Generic Name</TableHead>
-                      <TableHead>Strength</TableHead>
-                      <TableHead>Form</TableHead>
-                      <TableHead>Stock</TableHead>
-                      <TableHead>Reorder Level</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {medications.map((med) => {
-                      const isLowStock = med.quantity_in_stock <= med.reorder_level;
-                      return (
-                        <TableRow key={med.id}>
-                          <TableCell className="font-medium">{med.name}</TableCell>
-                          <TableCell>{med.generic_name}</TableCell>
-                          <TableCell>{med.strength}</TableCell>
-                          <TableCell>{med.dosage_form}</TableCell>
-                          <TableCell>{med.quantity_in_stock}</TableCell>
-                          <TableCell>{med.reorder_level}</TableCell>
-                          <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
-                          <TableCell>
-                            <Badge variant={isLowStock ? 'destructive' : 'default'}>
-                              {isLowStock ? 'Low Stock' : 'In Stock'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="outline" onClick={() => openEditDialog(med)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" onClick={() => openStockDialog(med)}>
-                                Update Stock
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-                
-                <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Update Stock</DialogTitle>
-                      <DialogDescription>
-                        Update stock quantity for {selectedMedication?.name}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleUpdateStock} className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="currentStock">Current Stock</Label>
-                        <Input 
-                          id="currentStock" 
-                          value={selectedMedication?.quantity_in_stock || 0} 
-                          disabled 
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="quantity">New Stock Quantity *</Label>
-                        <Input 
-                          id="quantity" 
-                          name="quantity" 
-                          type="number" 
-                          defaultValue={selectedMedication?.quantity_in_stock || 0}
-                          required 
-                        />
-                      </div>
-                      <Button type="submit" className="w-full">Update Stock</Button>
-                    </form>
-                  </DialogContent>
-                </Dialog>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Generic Name</TableHead>
+                        <TableHead>Strength</TableHead>
+                        <TableHead>Form</TableHead>
+                        <TableHead>Stock</TableHead>
+                        <TableHead>Reorder Level</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {medications.map((med) => {
+                        const isLowStock = med.quantity_in_stock <= med.reorder_level;
+                        return (
+                          <TableRow key={med.id}>
+                            <TableCell className="font-medium">{med.name}</TableCell>
+                            <TableCell>{med.generic_name}</TableCell>
+                            <TableCell>{med.strength}</TableCell>
+                            <TableCell>{med.dosage_form}</TableCell>
+                            <TableCell>{med.quantity_in_stock}</TableCell>
+                            <TableCell>{med.reorder_level}</TableCell>
+                            <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
+                            <TableCell>
+                              <Badge variant={isLowStock ? 'destructive' : 'default'}>
+                                {isLowStock ? 'Low Stock' : 'In Stock'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => openEditDialog(med)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" onClick={() => openStockDialog(med)}>
+                                  Update Stock
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
-            </Card>
 
-            {/* Import Medications Dialog */}
-            <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-              <DialogContent className="max-w-4xl">
-                <DialogHeader>
-                  <DialogTitle>Bulk Import Medications</DialogTitle>
-                  <DialogDescription>
-                    Upload a CSV file to import multiple medications at once
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label htmlFor="csvFile">CSV File</Label>
+              {/* Import Medications Dialog */}
+              <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+                <DialogContent className="max-w-4xl">
+                  <DialogHeader>
+                    <DialogTitle>Bulk Import Medications</DialogTitle>
+                    <DialogDescription>
+                      Upload a CSV file to import multiple medications at once
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label htmlFor="csvFile">CSV File</Label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={downloadCSVTemplate}
+                          className="text-xs"
+                        >
+                          <File className="mr-1 h-3 w-3" />
+                          Download Template
+                        </Button>
+                      </div>
+                      <Input
+                        id="csvFile"
+                        type="file"
+                        accept=".csv"
+                        onChange={handleFileUpload}
+                        disabled={importLoading}
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Upload a CSV file with columns: name, generic_name, strength, dosage_form, manufacturer, quantity_in_stock, reorder_level, unit_price, expiry_date
+                      </p>
+                    </div>
+
+                    {importPreview.length > 0 && (
+                      <div className="space-y-2">
+                        <Label>Preview ({importPreview.length} medications)</Label>
+                        <div className="border rounded-lg max-h-60 overflow-y-auto">
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Name</TableHead>
+                                  <TableHead>Strength</TableHead>
+                                  <TableHead>Stock</TableHead>
+                                  <TableHead>Price</TableHead>
+                                  <TableHead>Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {importPreview.slice(0, 10).map((med, index) => (
+                                  <TableRow key={med.name + med.strength || index}>
+                                    <TableCell className="font-medium">{med.name}</TableCell>
+                                    <TableCell>{med.strength}</TableCell>
+                                    <TableCell>{med.quantity_in_stock}</TableCell>
+                                    <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
+                                    <TableCell>
+                                      <CheckCircle className="h-4 w-4 text-green-500" />
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                                {importPreview.length > 10 && (
+                                  <TableRow>
+                                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                                      ... and {importPreview.length - 10} more medications
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2">
                       <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={downloadCSVTemplate}
-                        className="text-xs"
+                        variant="outline"
+                        onClick={() => {
+                          setImportDialogOpen(false);
+                          setImportFile(null);
+                          setImportPreview([]);
+                        }}
+                        disabled={importLoading}
                       >
-                        <File className="mr-1 h-3 w-3" />
-                        Download Template
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleBulkImport}
+                        disabled={importPreview.length === 0 || importLoading}
+                      >
+                        {importLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Importing...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Import {importPreview.length} Medications
+                          </>
+                        )}
                       </Button>
                     </div>
-                    <Input
-                      id="csvFile"
-                      type="file"
-                      accept=".csv"
-                      onChange={handleFileUpload}
-                      disabled={importLoading}
-                    />
-                    <p className="text-sm text-muted-foreground">
-                      Upload a CSV file with columns: name, generic_name, strength, dosage_form, manufacturer, quantity_in_stock, reorder_level, unit_price, expiry_date
-                    </p>
                   </div>
+                </DialogContent>
+              </Dialog>
 
-                  {importPreview.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>Preview ({importPreview.length} medications)</Label>
-                      <div className="border rounded-lg max-h-60 overflow-y-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Name</TableHead>
-                              <TableHead>Strength</TableHead>
-                              <TableHead>Stock</TableHead>
-                              <TableHead>Price</TableHead>
-                              <TableHead>Status</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {importPreview.slice(0, 10).map((med, index) => (
-                              <TableRow key={index}>
-                                <TableCell className="font-medium">{med.name}</TableCell>
-                                <TableCell>{med.strength}</TableCell>
-                                <TableCell>{med.quantity_in_stock}</TableCell>
-                                <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
-                                <TableCell>
-                                  <CheckCircle className="h-4 w-4 text-green-500" />
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                            {importPreview.length > 10 && (
-                              <TableRow>
-                                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                                  ... and {importPreview.length - 10} more medications
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </TableBody>
-                        </Table>
+              {/* Add/Edit Medication Dialog */}
+              <Dialog open={medicationDialogOpen} onOpenChange={(open) => {
+                setMedicationDialogOpen(open);
+                if (!open) setEditingMedication(null);
+              }}>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>{editingMedication ? 'Edit' : 'Add'} Medication</DialogTitle>
+                    <DialogDescription>
+                      {editingMedication ? 'Update' : 'Enter'} medication details
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleSaveMedication} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Medication Name *</Label>
+                        <Input id="name" name="name" defaultValue={editingMedication?.name} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="genericName">Generic Name</Label>
+                        <Input id="genericName" name="genericName" defaultValue={editingMedication?.generic_name} />
                       </div>
                     </div>
-                  )}
-
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setImportDialogOpen(false);
-                        setImportFile(null);
-                        setImportPreview([]);
-                      }}
-                      disabled={importLoading}
-                    >
-                      Cancel
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="strength">Strength *</Label>
+                        <Input id="strength" name="strength" placeholder="e.g., 500mg" defaultValue={editingMedication?.strength} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="dosageForm">Dosage Form *</Label>
+                        <Select name="dosageForm" defaultValue={editingMedication?.dosage_form || "Tablet"}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Tablet">Tablet</SelectItem>
+                            <SelectItem value="Capsule">Capsule</SelectItem>
+                            <SelectItem value="Syrup">Syrup</SelectItem>
+                            <SelectItem value="Injection">Injection</SelectItem>
+                            <SelectItem value="Cream">Cream</SelectItem>
+                            <SelectItem value="Drops">Drops</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="manufacturer">Manufacturer</Label>
+                      <Input id="manufacturer" name="manufacturer" defaultValue={editingMedication?.manufacturer} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="quantity">Quantity in Stock *</Label>
+                        <Input id="quantity" name="quantity" type="number" defaultValue={editingMedication?.quantity_in_stock} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="reorderLevel">Reorder Level *</Label>
+                        <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue={editingMedication?.reorder_level || 10} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="unitPrice">Unit Price *</Label>
+                        <Input id="unitPrice" name="unitPrice" type="number" step="0.01" defaultValue={editingMedication?.unit_price} required />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="expiryDate">Expiry Date</Label>
+                      <Input id="expiryDate" name="expiryDate" type="date" defaultValue={editingMedication?.expiry_date} />
+                    </div>
+                    <Button type="submit" className="w-full">
+                      {editingMedication ? 'Update' : 'Add'} Medication
                     </Button>
-                    <Button
-                      onClick={handleBulkImport}
-                      disabled={importPreview.length === 0 || importLoading}
-                    >
-                      {importLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Importing...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="mr-2 h-4 w-4" />
-                          Import {importPreview.length} Medications
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+                  </form>
+                </DialogContent>
+              </Dialog>
 
-            {/* Add/Edit Medication Dialog */}
-            <Dialog open={medicationDialogOpen} onOpenChange={(open) => {
-              setMedicationDialogOpen(open);
-              if (!open) setEditingMedication(null);
-            }}>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>{editingMedication ? 'Edit' : 'Add'} Medication</DialogTitle>
-                  <DialogDescription>
-                    {editingMedication ? 'Update' : 'Enter'} medication details
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSaveMedication} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+              {/* Update Stock Dialog */}
+              <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Update Stock</DialogTitle>
+                    <DialogDescription>
+                      Update stock quantity for {selectedMedication?.name}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleUpdateStock} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Medication Name *</Label>
-                      <Input id="name" name="name" defaultValue={editingMedication?.name} required />
+                      <Label htmlFor="currentStock">Current Stock</Label>
+                      <Input
+                        id="currentStock"
+                        value={selectedMedication?.quantity_in_stock || 0}
+                        disabled
+                      />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="genericName">Generic Name</Label>
-                      <Input id="genericName" name="genericName" defaultValue={editingMedication?.generic_name} />
+                      <Label htmlFor="quantity">New Stock Quantity *</Label>
+                      <Input
+                        id="quantity"
+                        name="quantity"
+                        type="number"
+                        defaultValue={selectedMedication?.quantity_in_stock || 0}
+                        required
+                      />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="strength">Strength *</Label>
-                      <Input id="strength" name="strength" placeholder="e.g., 500mg" defaultValue={editingMedication?.strength} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="dosageForm">Dosage Form *</Label>
-                      <Select name="dosageForm" defaultValue={editingMedication?.dosage_form || "Tablet"}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Tablet">Tablet</SelectItem>
-                          <SelectItem value="Capsule">Capsule</SelectItem>
-                          <SelectItem value="Syrup">Syrup</SelectItem>
-                          <SelectItem value="Injection">Injection</SelectItem>
-                          <SelectItem value="Cream">Cream</SelectItem>
-                          <SelectItem value="Drops">Drops</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="manufacturer">Manufacturer</Label>
-                    <Input id="manufacturer" name="manufacturer" defaultValue={editingMedication?.manufacturer} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="quantity">Quantity in Stock *</Label>
-                      <Input id="quantity" name="quantity" type="number" defaultValue={editingMedication?.quantity_in_stock} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="reorderLevel">Reorder Level *</Label>
-                      <Input id="reorderLevel" name="reorderLevel" type="number" defaultValue={editingMedication?.reorder_level || 10} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="unitPrice">Unit Price *</Label>
-                      <Input id="unitPrice" name="unitPrice" type="number" step="0.01" defaultValue={editingMedication?.unit_price} required />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="expiryDate">Expiry Date</Label>
-                    <Input id="expiryDate" name="expiryDate" type="date" defaultValue={editingMedication?.expiry_date} />
-                  </div>
-                  <Button type="submit" className="w-full">
-                    {editingMedication ? 'Update' : 'Add'} Medication
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
+                    <Button type="submit" className="w-full">Update Stock</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

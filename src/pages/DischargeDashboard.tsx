@@ -410,59 +410,61 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
             {visits.filter(v => v.overall_status === 'Completed').length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No completed discharges</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Patient</TableHead>
-                    <TableHead>Discharge Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Follow-up</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visits
-                    .filter(v => v.overall_status === 'Completed')
-                    .slice(0, 10)
-                    .map((visit) => (
-                      <TableRow key={visit.id}>
-                        <TableCell className="font-medium">{visit.patient?.full_name}</TableCell>
-                        <TableCell>
-                          {visit.discharge_date && visit.discharge_time
-                            ? format(new Date(visit.discharge_date + 'T' + visit.discharge_time), 'MMM dd, yyyy HH:mm')
-                            : 'N/A'
-                          }
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{visit.discharge_type || 'Regular'}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {visit.follow_up_date ? (
-                            <Badge variant="secondary">
-                              {format(new Date(visit.follow_up_date), 'MMM dd, yyyy')}
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">No follow-up</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const summary = generateVisitSummary(visit);
-                              navigator.clipboard.writeText(summary);
-                              toast.success('Discharge summary copied to clipboard');
-                            }}
-                          >
-                            <Download className="h-4 w-4 mr-1" />
-                            Summary
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Discharge Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Follow-up</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visits
+                      .filter(v => v.overall_status === 'Completed')
+                      .slice(0, 10)
+                      .map((visit) => (
+                        <TableRow key={visit.id}>
+                          <TableCell className="font-medium">{visit.patient?.full_name}</TableCell>
+                          <TableCell>
+                            {visit.discharge_date && visit.discharge_time
+                              ? format(new Date(visit.discharge_date + 'T' + visit.discharge_time), 'MMM dd, yyyy HH:mm')
+                              : 'N/A'
+                            }
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{visit.discharge_type || 'Regular'}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {visit.follow_up_date ? (
+                              <Badge variant="secondary">
+                                {format(new Date(visit.follow_up_date), 'MMM dd, yyyy')}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">No follow-up</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const summary = generateVisitSummary(visit);
+                                navigator.clipboard.writeText(summary);
+                                toast.success('Discharge summary copied to clipboard');
+                              }}
+                            >
+                              <Download className="h-4 w-4 mr-1" />
+                              Summary
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

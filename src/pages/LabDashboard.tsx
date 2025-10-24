@@ -487,79 +487,81 @@ export default function LabDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>Test Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Ordered Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {labTests.map((test) => (
-                  <TableRow key={test.id}>
-                    <TableCell className="font-medium">
-                      {test.patient?.full_name || 'Unknown'}
-                    </TableCell>
-                    <TableCell>{test.test_name}</TableCell>
-                    <TableCell>{test.test_type}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          test.priority === 'STAT' ? 'destructive' :
-                          test.priority === 'Urgent' ? 'default' :
-                          'secondary'
-                        }
-                      >
-                        {test.priority}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {format(new Date(test.ordered_date), 'MMM dd, yyyy')}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          test.status === 'Completed' ? 'default' :
-                          test.status === 'In Progress' ? 'secondary' :
-                          'outline'
-                        }
-                      >
-                        {test.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        {test.status === 'Pending' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleUpdateStatus(test.id, 'In Progress')}
-                          >
-                            Start
-                          </Button>
-                        )}
-                        {test.status === 'In Progress' && (
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              setSelectedTest(test);
-                              setDialogOpen(true);
-                            }}
-                          >
-                            Submit Result
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Patient</TableHead>
+                    <TableHead>Test Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Ordered Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {labTests.map((test) => (
+                    <TableRow key={test.id}>
+                      <TableCell className="font-medium">
+                        {test.patient?.full_name || 'Unknown'}
+                      </TableCell>
+                      <TableCell>{test.test_name}</TableCell>
+                      <TableCell>{test.test_type}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            test.priority === 'STAT' ? 'destructive' :
+                            test.priority === 'Urgent' ? 'default' :
+                            'secondary'
+                          }
+                        >
+                          {test.priority}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {format(new Date(test.ordered_date), 'MMM dd, yyyy')}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            test.status === 'Completed' ? 'default' :
+                            test.status === 'In Progress' ? 'secondary' :
+                            'outline'
+                          }
+                        >
+                          {test.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {test.status === 'Pending' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUpdateStatus(test.id, 'In Progress')}
+                            >
+                              Start
+                            </Button>
+                          )}
+                          {test.status === 'In Progress' && (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setSelectedTest(test);
+                                setDialogOpen(true);
+                              }}
+                            >
+                              Submit Result
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 

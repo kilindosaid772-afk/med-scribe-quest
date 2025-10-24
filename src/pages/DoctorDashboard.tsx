@@ -677,42 +677,44 @@ export default function DoctorDashboard() {
             {appointments.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No appointments scheduled</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Patient</TableHead>
-                    <TableHead>Date & Time</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {appointments.map((appointment) => (
-                    <TableRow key={appointment.id}>
-                      <TableCell className="font-medium">
-                        {appointment.patient?.full_name || 'Unknown'}
-                      </TableCell>
-                      <TableCell>
-                        {format(new Date(appointment.appointment_date), 'MMM dd, yyyy')} {appointment.appointment_time}
-                      </TableCell>
-                      <TableCell>{appointment.department?.name || 'N/A'}</TableCell>
-                      <TableCell className="max-w-xs truncate">{appointment.reason}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            appointment.status === 'Confirmed' ? 'default' :
-                            appointment.status === 'Scheduled' ? 'secondary' :
-                            'outline'
-                          }
-                        >
-                          {appointment.status}
-                        </Badge>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Date & Time</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {appointments.map((appointment) => (
+                      <TableRow key={appointment.id}>
+                        <TableCell className="font-medium">
+                          {appointment.patient?.full_name || 'Unknown'}
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(appointment.appointment_date), 'MMM dd, yyyy')} {appointment.appointment_time}
+                        </TableCell>
+                        <TableCell>{appointment.department?.name || 'N/A'}</TableCell>
+                        <TableCell className="max-w-xs truncate">{appointment.reason}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              appointment.status === 'Confirmed' ? 'default' :
+                              appointment.status === 'Scheduled' ? 'secondary' :
+                              'outline'
+                            }
+                          >
+                            {appointment.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -724,32 +726,34 @@ export default function DoctorDashboard() {
             <CardDescription>Latest patient records in the system</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Blood Group</TableHead>
-                  <TableHead>Gender</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {patients.map((patient) => (
-                  <TableRow key={patient.id}>
-                    <TableCell className="font-medium">{patient.full_name}</TableCell>
-                    <TableCell>{patient.phone}</TableCell>
-                    <TableCell>{patient.blood_group || 'N/A'}</TableCell>
-                    <TableCell>{patient.gender}</TableCell>
-                    <TableCell>
-                      <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                        {patient.status}
-                      </Badge>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Blood Group</TableHead>
+                    <TableHead>Gender</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {patients.map((patient) => (
+                    <TableRow key={patient.id}>
+                      <TableCell className="font-medium">{patient.full_name}</TableCell>
+                      <TableCell>{patient.phone}</TableCell>
+                      <TableCell>{patient.blood_group || 'N/A'}</TableCell>
+                      <TableCell>{patient.gender}</TableCell>
+                      <TableCell>
+                        <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
+                          {patient.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </div>
