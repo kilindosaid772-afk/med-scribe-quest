@@ -39,16 +39,30 @@ export default function BillingDashboard() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [paymentStatus, setPaymentStatus] = useState<string>('');
   const [transactionId, setTransactionId] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('');
   const [mobilePaymentProcessing, setMobilePaymentProcessing] = useState<boolean>(false);
+  const [showFloatingButton, setShowFloatingButton] = useState(false);
+  const [scrollY, setScrollY] = useState(0);
 
-  // Store raw data for memoization
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+      // Show floating button when scrolled down more than 300px
+      setShowFloatingButton(window.scrollY > 300);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
   const [rawInvoicesData, setRawInvoicesData] = useState<any[]>([]);
   const [rawPatientsData, setRawPatientsData] = useState<any[]>([]);
   const [rawInsuranceData, setRawInsuranceData] = useState<any[]>([]);
   const [rawClaimsData, setRawClaimsData] = useState<any[]>([]);
+  const [patientServices, setPatientServices] = useState<any[]>([]);
+  const [patientCosts, setPatientCosts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetchData();
@@ -168,11 +182,38 @@ export default function BillingDashboard() {
         `)
         .order('submission_date', { ascending: false });
 
+      // Fetch patient services for cost calculations
+      const { data: servicesData } = await supabase
+        .from('patient_services')
+        .select(`
+          *,
+          service:medical_services(*)
+        `)
+        .eq('status', 'Completed');
+
       // Update raw data state to trigger memoized computations
       setRawInvoicesData(invoicesData || []);
       setRawPatientsData(patientsData || []);
       setRawInsuranceData(insuranceData || []);
       setRawClaimsData(claimsData || []);
+      setPatientServices(servicesData || []);
+
+      // Calculate patient costs
+      const costs: Record<string, number> = {};
+      if (patientsData) {
+        for (const patient of patientsData) {
+          try {
+            const { data: costData } = await supabase.rpc('calculate_patient_total_cost', {
+              _patient_id: patient.id
+            });
+            costs[patient.id] = costData || 0;
+          } catch (error) {
+            console.error(`Error calculating cost for patient ${patient.id}:`, error);
+            costs[patient.id] = 0;
+          }
+        }
+      }
+      setPatientCosts(costs);
 
       // Update other state with safety checks
       setPatients(patientsData || []);
@@ -202,13 +243,14 @@ export default function BillingDashboard() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
 
-    const totalAmount = Number(formData.get('totalAmount'));
+    const calculatedCost = patientCosts[selectedPatientId] || 50000; // Fallback to default if no services
+
     const invoiceData = {
       invoice_number: generateInvoiceNumber(),
-      patient_id: formData.get('patientId') as string,
-      total_amount: totalAmount,
+      patient_id: selectedPatientId,
+      total_amount: calculatedCost,
       due_date: formData.get('dueDate') as string,
-      notes: formData.get('notes') as string,
+      notes: formData.get('notes') as string || `Invoice based on medical services - Total: TSh${calculatedCost.toFixed(2)}`,
     };
 
     const { error } = await supabase.from('invoices').insert([invoiceData]);
@@ -216,8 +258,9 @@ export default function BillingDashboard() {
     if (error) {
       toast.error('Failed to create invoice');
     } else {
-      toast.success('Invoice created successfully');
+      toast.success(`Invoice created successfully for TSh${calculatedCost.toFixed(2)}`);
       setDialogOpen(false);
+      setSelectedPatientId('');
       fetchData();
     }
   };
@@ -229,6 +272,25 @@ export default function BillingDashboard() {
     const formData = new FormData(e.currentTarget);
     const phoneNumber = formData.get('phoneNumber') as string;
     const amount = Number(formData.get('amount'));
+
+    // Validate amount
+    if (!amount || amount <= 0) {
+      toast.error('Please enter a valid payment amount');
+      return;
+    }
+
+    const maxAmount = Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0);
+    if (amount > maxAmount) {
+      toast.error(`Payment amount cannot exceed remaining balance of TSh${maxAmount.toFixed(2)}`);
+      return;
+    }
+
+    // Validate phone number format for Tanzania
+    const phoneRegex = /^0[67][0-9]{8}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      toast.error('Please enter a valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)');
+      return;
+    }
 
     setMobilePaymentProcessing(true);
     setPaymentStatus('processing');
@@ -381,13 +443,30 @@ export default function BillingDashboard() {
     const formData = new FormData(e.currentTarget);
     const amount = Number(formData.get('amount'));
 
+    // Validate amount
+    if (!amount || amount <= 0) {
+      toast.error('Please enter a valid payment amount');
+      return;
+    }
+
+    if (!selectedInvoice) {
+      toast.error('No invoice selected');
+      return;
+    }
+
+    const maxAmount = Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0);
+    if (amount > maxAmount) {
+      toast.error(`Payment amount cannot exceed remaining balance of TSh${maxAmount.toFixed(2)}`);
+      return;
+    }
+
     const paymentData = {
       invoice_id: selectedInvoice.id,
       amount,
       payment_method: paymentMethod,
       reference_number: formData.get('referenceNumber') as string || null,
       notes: formData.get('notes') as string || null,
-      status: paymentMethod.includes('M-Pesa') || paymentMethod.includes('Airtel Money') || paymentMethod.includes('Tigo Pesa') || paymentMethod.includes('Halopesa') ? 'pending' : 'completed',
+      status: 'completed',
     };
 
     const { error } = await supabase.from('payments').insert([paymentData]);
@@ -432,7 +511,7 @@ export default function BillingDashboard() {
       }
     }
 
-    toast.success('Payment recorded successfully');
+    toast.success(`Payment of TSh${amount.toFixed(2)} recorded successfully`);
     setPaymentDialogOpen(false);
     setSelectedInvoice(null);
     setPaymentMethod('');
@@ -537,7 +616,55 @@ export default function BillingDashboard() {
             </div>
           </div>
         )}
-        {/* Stats Cards */}
+        {/* Floating Payment Button */}
+        <div className={`fixed bottom-4 right-4 md:bottom-6 md:right-6 z-40 transition-all duration-300 ease-in-out transform ${
+          (stats.unpaid > 0 || stats.partiallyPaid > 0)
+            ? 'translate-y-0 opacity-100 scale-100'
+            : 'translate-y-20 opacity-0 scale-95 pointer-events-none'
+        }`}>
+          <div className="relative">
+            {/* Pulse animation ring */}
+            <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-20"></div>
+
+            {/* Main button */}
+            <Button
+              size="lg"
+              className="relative bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-2xl hover:shadow-green-500/25 transition-all duration-200 transform hover:scale-105 border-0 h-12 md:h-14 px-4 md:px-6 rounded-full w-auto"
+              onClick={() => {
+                // Find first unpaid patient with invoices
+                const unpaidPatient = invoices.find(patient => patient.status !== 'Paid');
+                if (unpaidPatient) {
+                  const unpaidInvoice = unpaidPatient.invoices.find(inv => inv.status !== 'Paid');
+                  if (unpaidInvoice) {
+                    setSelectedInvoice(unpaidInvoice);
+                    setPaymentDialogOpen(true);
+                  } else {
+                    toast.error('No unpaid invoices found');
+                  }
+                } else {
+                  toast.info('All patients are paid up! 🎉');
+                }
+              }}
+            >
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="bg-white/20 rounded-full p-1.5 md:p-2">
+                  <CreditCard className="h-4 w-4 md:h-5 md:w-5" />
+                </div>
+                <div className="text-left">
+                  <div className="font-semibold text-xs md:text-sm">Make Payment</div>
+                  <div className="text-xs opacity-90 hidden sm:block">Quick payment</div>
+                </div>
+              </div>
+            </Button>
+
+            {/* Floating badge showing unpaid count */}
+            {stats.unpaid > 0 && (
+              <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 md:h-6 md:w-6 flex items-center justify-center animate-bounce">
+                <span className="text-xs">{stats.unpaid}</span>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="border-destructive/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -599,7 +726,12 @@ export default function BillingDashboard() {
                     <CardDescription>Manage patient invoices and payments</CardDescription>
                   </div>
                   <div className="flex gap-2">
-                    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                    <Dialog open={dialogOpen} onOpenChange={(open) => {
+                      setDialogOpen(open);
+                      if (!open) {
+                        setSelectedPatientId('');
+                      }
+                    }}>
                       <DialogTrigger asChild>
                         <Button>
                           <Plus className="mr-2 h-4 w-4" />
@@ -614,7 +746,7 @@ export default function BillingDashboard() {
                         <form onSubmit={handleCreateInvoice} className="space-y-4">
                           <div className="space-y-2">
                             <Label htmlFor="patientId">Patient</Label>
-                            <Select name="patientId" required>
+                            <Select name="patientId" value={selectedPatientId} onValueChange={setSelectedPatientId} required>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select patient" />
                               </SelectTrigger>
@@ -626,6 +758,16 @@ export default function BillingDashboard() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            {selectedPatientId && (
+                              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                <p className="text-sm font-medium text-blue-800">
+                                  Calculated Cost: TSh{(patientCosts[selectedPatientId] || 0).toFixed(2)}
+                                </p>
+                                <p className="text-xs text-blue-600 mt-1">
+                                  Based on patient's medical services and treatments
+                                </p>
+                              </div>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="totalAmount">Total Amount (TSh)</Label>
@@ -634,11 +776,17 @@ export default function BillingDashboard() {
                               name="totalAmount"
                               type="number"
                               step="0.01"
-                              placeholder="Enter amount or leave for default consultation fee"
-                              defaultValue="50000"
+                              value={selectedPatientId ? (patientCosts[selectedPatientId] || 0).toFixed(2) : ''}
+                              readOnly
+                              className="bg-gray-50"
                               required
                             />
-                            <p className="text-xs text-muted-foreground">Default: TSh 50,000 (standard consultation)</p>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedPatientId
+                                ? 'Amount automatically calculated from patient services'
+                                : 'Select a patient to see calculated amount'
+                              }
+                            </p>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="dueDate">Due Date</Label>
@@ -668,7 +816,7 @@ export default function BillingDashboard() {
                       }
 
                       const patientId = patients[0].id; // Use first patient as default
-                      const totalAmount = 50000; // Default consultation fee
+                      const totalAmount = patientCosts[patientId] || 50000; // Use calculated cost or fallback
                       const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
                       const invoiceData = {
@@ -676,7 +824,7 @@ export default function BillingDashboard() {
                         patient_id: patientId,
                         total_amount: totalAmount,
                         due_date: dueDate,
-                        notes: 'Quick invoice - Standard consultation'
+                        notes: `Quick invoice - Based on medical services (TSh${totalAmount.toFixed(2)})`
                       };
 
                       const { error } = await supabase.from('invoices').insert([invoiceData]);
@@ -684,7 +832,7 @@ export default function BillingDashboard() {
                       if (error) {
                         toast.error('Failed to create quick invoice');
                       } else {
-                        toast.success('Quick invoice created successfully');
+                        toast.success(`Quick invoice created successfully for TSh${totalAmount.toFixed(2)}`);
                         fetchData();
                       }
                     }}
@@ -699,6 +847,7 @@ export default function BillingDashboard() {
                     <TableRow>
                       <TableHead>Patient</TableHead>
                       <TableHead>Phone</TableHead>
+                      <TableHead>Calculated Cost</TableHead>
                       <TableHead>Total Amount</TableHead>
                       <TableHead>Paid Amount</TableHead>
                       <TableHead>Unpaid Amount</TableHead>
@@ -713,6 +862,9 @@ export default function BillingDashboard() {
                       <TableRow key={patientData.patient.id}>
                         <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
                         <TableCell>{patientData.patient.phone}</TableCell>
+                        <TableCell className="font-semibold text-blue-600">
+                          TSh{(patientCosts[patientData.patient.id] || 0).toFixed(2)}
+                        </TableCell>
                         <TableCell>TSh{Number(patientData.totalAmount as number).toFixed(2)}</TableCell>
                         <TableCell>TSh{Number(patientData.totalPaid as number).toFixed(2)}</TableCell>
                         <TableCell>TSh{Number(patientData.unpaidAmount as number).toFixed(2)}</TableCell>
@@ -732,10 +884,10 @@ export default function BillingDashboard() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {patientData.status !== 'Paid' && (
+                          {(patientData.status === 'Unpaid' || patientData.status === 'Partially Paid') && (
                             <Button
                               size="sm"
-                              variant="outline"
+                              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
                               onClick={() => {
                                 // For now, select the first unpaid invoice for payment
                                 const unpaidInvoice = patientData.invoices.find(inv => inv.status !== 'Paid');
@@ -745,7 +897,8 @@ export default function BillingDashboard() {
                                 }
                               }}
                             >
-                              Record Payment
+                              <CreditCard className="mr-1 h-3 w-3" />
+                              Pay Now
                             </Button>
                           )}
                         </TableCell>
@@ -834,7 +987,7 @@ export default function BillingDashboard() {
                     }
 
                     const patientId = patients[0].id; // Use first patient as default
-                    const totalAmount = 50000; // Default consultation fee
+                    const totalAmount = patientCosts[patientId] || 50000; // Use calculated cost or fallback
                     const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
                     const invoiceData = {
@@ -842,7 +995,7 @@ export default function BillingDashboard() {
                       patient_id: patientId,
                       total_amount: totalAmount,
                       due_date: dueDate,
-                      notes: 'Quick invoice - Standard consultation'
+                      notes: `Quick invoice - Based on medical services (TSh${totalAmount.toFixed(2)})`
                     };
 
                     const { error } = await supabase.from('invoices').insert([invoiceData]);
@@ -850,14 +1003,14 @@ export default function BillingDashboard() {
                     if (error) {
                       toast.error('Failed to create quick invoice');
                     } else {
-                      toast.success('Quick invoice created successfully');
+                      toast.success(`Quick invoice created successfully for TSh${totalAmount.toFixed(2)}`);
                       fetchData();
                     }
                   }}
                 >
                   <Plus className="h-6 w-6" />
                   <span>⚡ Quick Invoice</span>
-                  <span className="text-xs text-muted-foreground">Auto-fill defaults</span>
+                  <span className="text-xs text-muted-foreground">Auto-calculate from services</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -968,12 +1121,14 @@ export default function BillingDashboard() {
                   name="amount"
                   type="number"
                   step="0.01"
-                  value={selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : ''}
-                  readOnly
-                  className="bg-gray-50"
+                  min="0.01"
+                  max={selectedInvoice ? Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0) : undefined}
+                  defaultValue={selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : ''}
+                  className="bg-white"
+                  required
                 />
                 <p className="text-sm text-muted-foreground">
-                  Payment amount is automatically set to the remaining balance
+                  Enter payment amount (max: TSh{selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : '0.00'})
                 </p>
               </div>
               <div className="space-y-2">
@@ -1007,6 +1162,8 @@ export default function BillingDashboard() {
                     id="phoneNumber"
                     name="phoneNumber"
                     placeholder="0712345678"
+                    pattern="^0[67][0-9]{8}$"
+                    title="Please enter a valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)"
                     required
                   />
                   <p className="text-sm text-muted-foreground">
@@ -1057,7 +1214,11 @@ export default function BillingDashboard() {
               )}
 
               {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) ? (
-                <Button type="submit" className="w-full" disabled={mobilePaymentProcessing}>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={mobilePaymentProcessing || !paymentMethod || !selectedInvoice}
+                >
                   {mobilePaymentProcessing ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1071,7 +1232,13 @@ export default function BillingDashboard() {
                   )}
                 </Button>
               ) : (
-                <Button type="submit" className="w-full">Record Payment</Button>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!paymentMethod || !selectedInvoice}
+                >
+                  Record Payment
+                </Button>
               )}
             </form>
           </DialogContent>
@@ -1125,7 +1292,7 @@ export default function BillingDashboard() {
                             .filter(inv => inv.status !== 'Paid')
                             .map(invoice => (
                               <SelectItem key={invoice.id} value={invoice.id}>
-                                {invoice.invoice_number} - {patientData.patient?.full_name || 'Unknown'} (TSh{Number(invoice.total_amount as number).toFixed(2)})
+                                {invoice.invoice_number} - {patientData.patient?.full_name || 'Unknown'} (TSh{Number(invoice.total_amount).toFixed(2)})
                               </SelectItem>
                             ))}
                         </Fragment>
