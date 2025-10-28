@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Users, UserPlus, Activity, Calendar, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus } from 'lucide-react';
+import { logActivity } from '@/lib/utils';
 import { EnhancedAppointmentBooking } from '@/components/EnhancedAppointmentBooking';
 
 export default function AdminDashboard() {
@@ -143,7 +144,10 @@ export default function AdminDashboard() {
     };
 
     try {
-      // First create a user account for the patient
+      let newUserId: string | null = null;
+
+      // Only attempt to create an auth user if an email is provided
+      if (patientData.email && patientData.email.trim().length > 0) {
       const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: patientData.email,
@@ -153,43 +157,74 @@ export default function AdminDashboard() {
             full_name: patientData.full_name,
             phone: patientData.phone,
           },
-          emailRedirectTo: undefined, // Disable email confirmation for admin-created accounts
+            emailRedirectTo: undefined,
         },
       });
 
       if (authError) {
-        // If email already exists, try to find the existing user
-        if (authError.message.includes('already registered')) {
-          toast.error('A user with this email already exists. Please use a different email or contact support.');
-          return;
+          // If email already exists, try to find the existing user profile by email
+          if (authError.message?.toLowerCase().includes('already')) {
+            const { data: existingProfile } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('email', patientData.email)
+              .maybeSingle();
+            if (existingProfile?.id) {
+              newUserId = existingProfile.id;
+            } else {
+              // Proceed without linking if we cannot resolve the user id
+              toast.warning('Email already exists. Patient will be created without linking to user account.');
+            }
+          } else {
+            // Other signup errors: proceed without linking
+            toast.warning('Could not create user account. Creating patient without account.');
+          }
+        } else if (authData?.user?.id) {
+          // Use newly created auth user id
+          newUserId = authData.user.id;
         }
-        toast.error('Failed to create patient account: ' + authError.message);
-        return;
       }
 
-      // If user creation succeeded but email confirmation is required,
-      // we need to handle this differently for admin-created patients
-      if (authData.user && !authData.session) {
-        // Email confirmation required - for admin-created patients, we'll create
-        // the patient record anyway and link it to the unconfirmed user
-        console.log('User created but email confirmation required:', authData.user.id);
+      // If we think a user exists but the profile trigger may be eventual, double-check via profiles when email present
+      if (!newUserId && patientData.email) {
+        const { data: profileCheck } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', patientData.email)
+          .maybeSingle();
+        if (profileCheck?.id) {
+          newUserId = profileCheck.id;
+        }
       }
 
-      // Create the patient record
+      // Validate user id via profiles before linking to avoid FK violations
+      let finalUserId: string | null = null;
+      if (newUserId) {
+        const { data: profileById } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', newUserId)
+          .maybeSingle();
+        if (profileById?.id) {
+          finalUserId = profileById.id;
+        }
+      }
+
+      // Create the patient record (link only if verified)
       const { error: patientError } = await supabase.from('patients').insert([{
         ...patientData,
-        user_id: authData.user?.id || null,
+        user_id: finalUserId,
       }]);
 
       if (patientError) {
         toast.error('Failed to add patient: ' + patientError.message);
       } else {
         // Assign the patient role if we have a user ID
-        if (authData.user?.id) {
+        if (finalUserId) {
           const { error: roleError } = await supabase
             .from('user_roles')
             .insert([{
-              user_id: authData.user.id,
+              user_id: finalUserId,
               role: 'patient',
               is_primary: true,
             }]);
@@ -198,11 +233,13 @@ export default function AdminDashboard() {
             toast.error('Patient created but failed to assign role: ' + roleError.message);
           } else {
             toast.success('Patient added successfully with user account');
+            logActivity('patient.create', { full_name: patientData.full_name, linked_user: true });
             setDialogOpen(false);
             fetchData();
           }
         } else {
           toast.success('Patient created successfully (no user account created)');
+          logActivity('patient.create', { full_name: patientData.full_name, linked_user: false });
           setDialogOpen(false);
           fetchData();
         }
@@ -400,8 +437,7 @@ export default function AdminDashboard() {
       fetchData();
     } catch (error) {
       console.error('Error assigning role:', error);
-      // @ts-expect-error Supabase error type
-      const message = error?.message || 'Failed to assign role';
+      const message = (error as { message?: string })?.message || 'Failed to assign role';
       toast.error(message);
     }
   };
@@ -498,72 +534,7 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  // Helper function to create sample data for testing
-  const createSampleData = async () => {
-    try {
-      // Create sample departments if none exist
-      const { data: existingDepts } = await supabase.from('departments').select('id').limit(1);
-      if (!existingDepts || existingDepts.length === 0) {
-        await supabase.from('departments').insert([
-          { name: 'General Medicine', description: 'General medical care' },
-          { name: 'Cardiology', description: 'Heart and cardiovascular system' },
-          { name: 'Pediatrics', description: 'Children and infants' }
-        ]);
-      }
-
-      // Create sample patients if none exist
-      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
-      if (!existingPatients || existingPatients.length === 0) {
-        await supabase.from('patients').insert([
-          {
-            full_name: 'John Doe',
-            date_of_birth: '1990-01-01',
-            gender: 'Male',
-            phone: '+255700000001',
-            email: 'john@example.com',
-            blood_group: 'O+',
-            status: 'Active'
-          },
-          {
-            full_name: 'Jane Smith',
-            date_of_birth: '1985-05-15',
-            gender: 'Female',
-            phone: '+255700000002',
-            email: 'jane@example.com',
-            blood_group: 'A+',
-            status: 'Active'
-          }
-        ]);
-      }
-
-      // Create sample appointments if none exist
-      const { data: existingAppointments } = await supabase.from('appointments').select('id').limit(1);
-      if (!existingAppointments || existingAppointments.length === 0) {
-        const { data: patients } = await supabase.from('patients').select('id').limit(2);
-        const { data: departments } = await supabase.from('departments').select('id').limit(1);
-
-        if (patients && patients.length > 0 && departments && departments.length > 0) {
-          await supabase.from('appointments').insert([
-            {
-              patient_id: patients[0].id,
-              doctor_id: '00000000-0000-0000-0000-000000000000', // Placeholder doctor ID
-              department_id: departments[0].id,
-              appointment_date: new Date().toISOString().split('T')[0],
-              appointment_time: '10:00',
-              reason: 'Regular checkup',
-              status: 'Scheduled'
-            }
-          ]);
-        }
-      }
-
-      toast.success('Sample data created');
-      fetchData();
-    } catch (error) {
-      console.error('Error creating sample data:', error);
-      toast.error('Failed to create sample data');
-    }
-  };
+  // Sample data creation removed
 
   if (loading) {
     return (
@@ -618,26 +589,8 @@ export default function AdminDashboard() {
             <CardContent>
               <div className="text-2xl font-bold text-green-600">{stats.totalServices}</div>
               <p className="text-xs text-muted-foreground">Available services</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  resetServiceForm();
-                  setServiceDialogOpen(true);
-                }}
-                className="mt-2 text-green-600 border-green-200 hover:bg-green-50"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Add Service
-              </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImportDialogOpen(true)}
-              className="mt-2 ml-2 text-blue-600 border-blue-200 hover:bg-blue-50"
-            >
-              Import CSV
-            </Button>
+              {/* Add Service action is available in Medical Services page only */}
+            {/* CSV Import moved to Medical Services page */}
             </CardContent>
           </Card>
         </div>
@@ -650,28 +603,21 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => {
-                resetServiceForm();
-                setServiceDialogOpen(true);
-              }}>
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/services'}>
                 <Stethoscope className="h-6 w-6" />
-                <span>Add Medical Service</span>
-                <span className="text-xs text-muted-foreground">Tests, procedures, pricing</span>
+                <span>Medical Services</span>
+                <span className="text-xs text-muted-foreground">Manage catalog & imports</span>
               </Button>
               <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => setDialogOpen(true)}>
                 <UserPlus className="h-6 w-6" />
                 <span>Add Patient</span>
                 <span className="text-xs text-muted-foreground">Register new patient</span>
               </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={createSampleData}>
+              {/* Sample data action removed */}
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.assign('/logs')}>
                 <Activity className="h-6 w-6" />
-                <span>Create Sample Data</span>
-                <span className="text-xs text-muted-foreground">For testing</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/debug'}>
-                <Activity className="h-6 w-6" />
-                <span>Debug Tools</span>
-                <span className="text-xs text-muted-foreground">Troubleshooting</span>
+                <span>Activity Logs</span>
+                <span className="text-xs text-muted-foreground">Audit recent actions</span>
               </Button>
             </div>
           </CardContent>
@@ -837,102 +783,7 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Medical Services Management */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Stethoscope className="h-5 w-5" />
-                  Medical Services Management
-                </CardTitle>
-                <CardDescription>Manage hospital services, tests, and pricing</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <div className="text-sm text-muted-foreground">
-                  {medicalServices.length} services
-                </div>
-                <Button onClick={() => {
-                  resetServiceForm();
-                  setServiceDialogOpen(true);
-                }}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Service
-                </Button>
-                <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-                  Import CSV
-                </Button>
-                <Button variant="ghost" onClick={downloadServicesTemplate}>
-                  Download Template
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Service Code</TableHead>
-                    <TableHead>Service Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {medicalServices.map((service) => (
-                    <TableRow key={service.id}>
-                      <TableCell className="font-mono text-sm">{service.service_code}</TableCell>
-                      <TableCell className="font-medium">{service.service_name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{service.service_type}</Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {service.description || 'No description'}
-                      </TableCell>
-                      <TableCell className="font-semibold">
-                        TSh{service.base_price?.toLocaleString() || '0'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={service.is_active ? 'default' : 'secondary'}>
-                          {service.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditService(service)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDeleteService(service.id, service.service_name)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {medicalServices.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        No medical services found. Click "Add Service" to create your first service.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Medical services management moved to Medical Services page */}
         <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
           <DialogContent>
             <DialogHeader>
@@ -971,136 +822,7 @@ export default function AdminDashboard() {
           </DialogContent>
         </Dialog>
 
-        {/* Medical Services Dialog */}
-        <Dialog open={serviceDialogOpen} onOpenChange={(open) => {
-          setServiceDialogOpen(open);
-          if (!open) resetServiceForm();
-        }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                {editingService ? 'Edit Medical Service' : 'Add New Medical Service'}
-              </DialogTitle>
-              <DialogDescription>
-                {editingService ? 'Update service details and pricing' : 'Add a new medical service with pricing'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="service_type">Service Type *</Label>
-                  <Select
-                    value={serviceForm.service_type}
-                    onValueChange={(value) => {
-                      setServiceForm(prev => ({ ...prev, service_type: value }));
-                      setTimeout(generateServiceCode, 100);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Consultation">Consultation</SelectItem>
-                      <SelectItem value="Procedure">Procedure</SelectItem>
-                      <SelectItem value="Surgery">Surgery</SelectItem>
-                      <SelectItem value="Emergency">Emergency</SelectItem>
-                      <SelectItem value="Ward Stay">Ward Stay</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="service_code">Service Code</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="service_code"
-                      value={serviceForm.service_code}
-                      onChange={(e) => setServiceForm(prev => ({ ...prev, service_code: e.target.value }))}
-                      placeholder="CONS-001"
-                    />
-                    <Button type="button" variant="outline" size="sm" onClick={generateServiceCode}>
-                      Auto
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="service_name">Service Name *</Label>
-                <Input
-                  id="service_name"
-                  value={serviceForm.service_name}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, service_name: e.target.value }))}
-                  placeholder="General Consultation"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Input
-                  id="description"
-                  value={serviceForm.description}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Brief description of the service"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="base_price">Base Price (TSh) *</Label>
-                  <Input
-                    id="base_price"
-                    type="number"
-                    value={serviceForm.base_price}
-                    onChange={(e) => setServiceForm(prev => ({ ...prev, base_price: parseFloat(e.target.value) || 0 }))}
-                    placeholder="50000"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="currency">Currency</Label>
-                  <Select
-                    value={serviceForm.currency}
-                    onValueChange={(value) => setServiceForm(prev => ({ ...prev, currency: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="TSh">TSh (Tanzanian Shilling)</SelectItem>
-                      <SelectItem value="USD">USD (US Dollar)</SelectItem>
-                      <SelectItem value="EUR">EUR (Euro)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  checked={serviceForm.is_active}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, is_active: e.target.checked }))}
-                  className="rounded"
-                />
-                <Label htmlFor="is_active" className="text-sm">
-                  Service is active and available for booking
-                </Label>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => {
-                  setServiceDialogOpen(false);
-                  resetServiceForm();
-                }}>
-                  Cancel
-                </Button>
-                <Button onClick={editingService ? handleUpdateService : handleAddService}>
-                  {editingService ? 'Update Service' : 'Add Service'}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {/* Service dialogs and CSV import moved to Medical Services page */}
       </div>
     </DashboardLayout>
   );

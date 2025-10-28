@@ -17,7 +17,7 @@ import NurseDashboard from "./pages/NurseDashboard";
 import ReceptionistDashboard from "./pages/ReceptionistDashboard";
 import DischargeDashboard from "./pages/DischargeDashboard";
 import MedicalServicesDashboard from "./pages/MedicalServicesDashboard";
-import DebugDashboard from "./pages/DebugDashboard";
+import ActivityLogs from "./pages/ActivityLogs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -113,10 +113,10 @@ const App = () => (
               }
             />
             <Route
-              path="/debug"
+              path="/logs"
               element={
-                <ProtectedRoute>
-                  <DebugDashboard />
+                <ProtectedRoute requiredRole="admin">
+                  <ActivityLogs />
                 </ProtectedRoute>
               }
             />

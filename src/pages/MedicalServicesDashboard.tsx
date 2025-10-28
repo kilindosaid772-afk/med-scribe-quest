@@ -12,7 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Stethoscope, DollarSign, Loader2 } from 'lucide-react';
+import { Plus, Stethoscope, DollarSign, Loader2 } from 'lucide-react';
+import { logActivity } from '@/lib/utils';
 
 interface MedicalService {
   id: string;
@@ -44,10 +45,11 @@ export default function MedicalServicesDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState<string>('');
-  const [selectedService, setSelectedService] = useState<string>('');
-  const [quantity, setQuantity] = useState<number>(1);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const [newService, setNewService] = useState({
     service_code: '',
@@ -66,6 +68,53 @@ export default function MedicalServicesDashboard() {
     'Ward Stay',
     'Other'
   ];
+
+  const parseCSV = (text: string) => {
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length === 0) return [];
+    const header = lines[0].split(',').map(h => h.trim());
+    const required = ['service_code','service_name','service_type','base_price'];
+    for (const r of required) {
+      if (!header.includes(r)) {
+        throw new Error(`Missing required column: ${r}`);
+      }
+    }
+    const idx = (name: string) => header.indexOf(name);
+    const rows: any[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      if (cols.length === 1 && cols[0].trim() === '') continue;
+      const row = {
+        service_code: cols[idx('service_code')]?.trim() || '',
+        service_name: cols[idx('service_name')]?.trim() || '',
+        service_type: cols[idx('service_type')]?.trim() || '',
+        description: header.includes('description') ? (cols[idx('description')]?.trim() || '') : '',
+        base_price: parseFloat(cols[idx('base_price')] || '0') || 0,
+        currency: header.includes('currency') ? (cols[idx('currency')]?.trim() || 'TSh') : 'TSh',
+        is_active: header.includes('is_active') ? ((cols[idx('is_active')]?.trim().toLowerCase() === 'true')) : true,
+      };
+      if (row.service_code && row.service_name && row.service_type && row.base_price > 0) {
+        rows.push(row);
+      }
+    }
+    return rows;
+  };
+
+  const downloadServicesTemplate = () => {
+    const headers = ['service_code','service_name','service_type','description','base_price','currency','is_active'];
+    const sample = [
+      'CONS-0001,General Consultation,Consultation,Initial consultation,50000,TSh,true',
+      'PROC-0001,ECG,Procedure,Electrocardiogram,30000,TSh,true'
+    ];
+    const csv = [headers.join(','), ...sample].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'medical_services_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     fetchData();
@@ -133,6 +182,7 @@ export default function MedicalServicesDashboard() {
       if (error) throw error;
 
       toast.success('Medical service added successfully!');
+      logActivity('service.add', { service_code: newService.service_code, service_name: newService.service_name });
       setShowAddDialog(false);
       setNewService({
         service_code: '',
@@ -149,42 +199,7 @@ export default function MedicalServicesDashboard() {
     }
   };
 
-  const handleAssignService = async () => {
-    if (!selectedPatient || !selectedService || !quantity) {
-      toast.error('Please select patient, service, and quantity');
-      return;
-    }
-
-    try {
-      const service = services.find(s => s.id === selectedService);
-      if (!service) throw new Error('Service not found');
-
-      const totalPrice = service.base_price * quantity;
-
-      const { error } = await supabase
-        .from('patient_services')
-        .insert({
-          patient_id: selectedPatient,
-          service_id: selectedService,
-          quantity,
-          unit_price: service.base_price,
-          total_price: totalPrice,
-          status: 'Completed'
-        });
-
-      if (error) throw error;
-
-      toast.success(`Service assigned to patient successfully! Total: TSh${totalPrice.toFixed(2)}`);
-      setShowAssignDialog(false);
-      setSelectedPatient('');
-      setSelectedService('');
-      setQuantity(1);
-      fetchData();
-    } catch (error) {
-      console.error('Error assigning service:', error);
-      toast.error('Failed to assign service to patient');
-    }
-  };
+  // Removed assign-to-patient flow from this page per requirements
 
   const generateServiceCode = () => {
     const type = newService.service_type;
@@ -232,14 +247,12 @@ export default function MedicalServicesDashboard() {
             <p className="text-muted-foreground">Manage medical problems, tests, and their pricing</p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => setShowAssignDialog(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Assign to Patient
-            </Button>
             <Button onClick={() => setShowAddDialog(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add New Service
             </Button>
+            <Button variant="outline" onClick={() => setImportDialogOpen(true)}>Import CSV</Button>
+            <Button variant="ghost" onClick={downloadServicesTemplate}>Download Template</Button>
           </div>
         </div>
 
@@ -468,76 +481,111 @@ export default function MedicalServicesDashboard() {
           </DialogContent>
         </Dialog>
 
-        {/* Assign Service Dialog */}
-        <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
-          <DialogContent className="max-w-md">
+        {/* Import Services Dialog */}
+        <Dialog open={importDialogOpen} onOpenChange={(open) => {
+          setImportDialogOpen(open);
+          if (!open) {
+            setImportFile(null);
+            setImportPreview([]);
+            setImportError(null);
+          }
+        }}>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Assign Service to Patient</DialogTitle>
-              <DialogDescription>Add a medical service to a patient's visit</DialogDescription>
+              <DialogTitle>Import Medical Services (CSV)</DialogTitle>
+              <DialogDescription>
+                Upload a CSV file with columns: service_code, service_name, service_type, description, base_price, currency, is_active
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="patient">Patient *</Label>
-                <Select value={selectedPatient} onValueChange={setSelectedPatient}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select patient" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {patients.map(patient => (
-                      <SelectItem key={patient.id} value={patient.id}>
-                        {patient.full_name} - {patient.phone}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-3">
+                <Input type="file" accept=".csv" onChange={async (e) => {
+                  setImportError(null);
+                  const file = e.target.files?.[0] || null;
+                  setImportFile(file);
+                  setImportPreview([]);
+                  if (!file) return;
+                  try {
+                    const text = await file.text();
+                    const rows = parseCSV(text);
+                    setImportPreview(rows.slice(0, 10));
+                  } catch (err: any) {
+                    setImportError(err?.message || 'Failed to read CSV file');
+                  }
+                }} />
+                <Button type="button" variant="ghost" onClick={downloadServicesTemplate}>
+                  Download Template
+                </Button>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="service">Medical Service *</Label>
-                <Select value={selectedService} onValueChange={setSelectedService}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select service" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {services.filter(s => s.is_active).map(service => (
-                      <SelectItem key={service.id} value={service.id}>
-                        {service.service_name} - TSh{service.base_price.toLocaleString()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity *</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  min="1"
-                  value={quantity}
-                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                />
-              </div>
-
-              {selectedService && (
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="flex justify-between text-sm">
-                    <span>Unit Price:</span>
-                    <span>TSh{services.find(s => s.id === selectedService)?.base_price.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between font-semibold text-base">
-                    <span>Total:</span>
-                    <span>TSh{(services.find(s => s.id === selectedService)?.base_price * quantity).toLocaleString()}</span>
+              {importError && (
+                <div className="text-sm text-red-600">{importError}</div>
+              )}
+              {importPreview.length > 0 && (
+                <div className="border rounded-md overflow-hidden">
+                  <div className="px-3 py-2 text-sm font-medium bg-muted">Preview (first 10 rows)</div>
+                  <div className="max-h-64 overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Code</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Price</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {importPreview.map((row, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell className="font-mono text-xs">{row.service_code}</TableCell>
+                            <TableCell className="text-sm">{row.service_name}</TableCell>
+                            <TableCell><Badge variant="outline">{row.service_type}</Badge></TableCell>
+                            <TableCell className="font-semibold">TSh{Number(row.base_price || 0).toLocaleString()}</TableCell>
+                            <TableCell>
+                              <Badge variant={row.is_active ? 'default' : 'secondary'}>
+                                {row.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               )}
-
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAssignService}>
-                  Assign Service
+                <Button variant="outline" onClick={() => setImportDialogOpen(false)}>Cancel</Button>
+                <Button onClick={async () => {
+                  if (!importFile) {
+                    setImportError('Please choose a CSV file');
+                    return;
+                  }
+                  setImporting(true);
+                  setImportError(null);
+                  try {
+                    const text = await importFile.text();
+                    const rows = parseCSV(text);
+                    if (rows.length === 0) {
+                      setImportError('No valid rows found in CSV');
+                      setImporting(false);
+                      return;
+                    }
+                    const { error } = await supabase.from('medical_services').insert(rows);
+                    if (error) throw error;
+                    toast.success(`Imported ${rows.length} services successfully`);
+                    logActivity('service.import', { count: rows.length });
+                    setImportDialogOpen(false);
+                    setImportFile(null);
+                    setImportPreview([]);
+                    fetchData();
+                  } catch (err: any) {
+                    console.error('CSV import error:', err);
+                    setImportError(err?.message || 'Failed to import CSV');
+                  } finally {
+                    setImporting(false);
+                  }
+                }} disabled={importing || !importFile}>
+                  {importing ? 'Importing…' : 'Import Services'}
                 </Button>
               </div>
             </div>

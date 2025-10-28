@@ -15,6 +15,7 @@ import { PatientsCard } from '@/components/PatientsCard';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { logActivity } from '@/lib/utils';
 import {
   Loader2,
   Building,
@@ -465,6 +466,7 @@ export default function ReceptionistDashboard() {
       if (visitError) throw visitError;
 
       toast.success('Appointment patient checked in and sent to nurse queue');
+      logActivity('appointment.check_in', { appointment_id: appointmentId });
       fetchData();
     } catch (error) {
       console.error('Check-in error:', error);
@@ -494,6 +496,7 @@ export default function ReceptionistDashboard() {
       if (visitError) throw visitError;
 
       toast.success('Appointment cancelled');
+      logActivity('appointment.cancel', { appointment_id: appointmentId });
       fetchData();
     } catch (error) {
       console.error('Cancel error:', error);
@@ -615,6 +618,7 @@ export default function ReceptionistDashboard() {
 
       // Refresh data to show the new patient and visit
       fetchData();
+      logActivity('patient.register', { patient_id: newPatient.id, full_name: registerForm.full_name });
     } catch (error) {
       console.error('Registration error:', error);
       toast.error('Failed to register patient');
@@ -712,14 +716,7 @@ export default function ReceptionistDashboard() {
                   </p>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={createSampleData}
-                className="text-green-600 border-green-200 hover:bg-green-50"
-              >
-                Create Sample Data
-              </Button>
+              {/* Sample data action removed */}
             </div>
           </div>
 

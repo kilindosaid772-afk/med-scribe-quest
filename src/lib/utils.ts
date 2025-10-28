@@ -41,3 +41,19 @@ export async function generateInvoiceNumber(): Promise<string> {
     return `INV-${timestamp.padStart(3, '0')}`;
   }
 }
+
+export async function logActivity(action: string, details?: Record<string, any>) {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData?.user?.id || null;
+    const payload: any = {
+      action,
+      details: details ? JSON.stringify(details) : null,
+      user_id: userId,
+      created_at: new Date().toISOString()
+    };
+    await supabase.from('activity_logs').insert(payload);
+  } catch (error) {
+    console.warn('Failed to log activity', action, error);
+  }
+}

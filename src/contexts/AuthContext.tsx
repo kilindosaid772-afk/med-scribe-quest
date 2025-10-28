@@ -11,6 +11,7 @@ interface AuthContextType {
   roles: AppRole[];
   primaryRole: AppRole | null;
   loading: boolean;
+  rolesLoaded: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signUp: (email: string, password: string, fullName: string, phone?: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
@@ -26,6 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [primaryRole, setPrimaryRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rolesLoaded, setRolesLoaded] = useState(false);
   const navigate = useNavigate();
 
   const fetchUserRoles = async (userId: string) => {
@@ -39,6 +41,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const primary = data.find(r => r.is_primary);
       setPrimaryRole(primary ? primary.role as AppRole : null);
     }
+    setRolesLoaded(true);
   };
 
   useEffect(() => {
@@ -55,6 +58,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }, 0);
         } else {
           setRoles([]);
+          setRolesLoaded(true);
         }
         
         setLoading(false);
@@ -68,6 +72,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       if (session?.user) {
         fetchUserRoles(session.user.id);
+      } else {
+        setRolesLoaded(true);
       }
       setLoading(false);
     });
@@ -118,7 +124,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, roles, primaryRole, loading, signIn, signUp, signOut, hasRole, refreshRoles }}>
+    <AuthContext.Provider value={{ user, session, roles, primaryRole, loading, rolesLoaded, signIn, signUp, signOut, hasRole, refreshRoles }}>
       {children}
     </AuthContext.Provider>
   );
@@ -127,7 +133,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    return {
+      user: null,
+      session: null,
+      roles: [],
+      primaryRole: null,
+      loading: true,
+      rolesLoaded: false,
+      signIn: async () => ({ error: null }),
+      signUp: async () => ({ error: null }),
+      signOut: async () => {},
+      hasRole: () => false,
+      refreshRoles: async () => {},
+    };
   }
   return context;
 };
