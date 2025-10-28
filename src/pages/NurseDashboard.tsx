@@ -455,7 +455,7 @@ export default function NurseDashboard() {
             <CardDescription>Common nursing tasks and shortcuts</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
               <Button
                 variant="outline"
                 className="h-20 flex-col gap-2"
@@ -505,6 +505,15 @@ export default function NurseDashboard() {
               >
                 <Users className="h-6 w-6" />
                 <span>Patient Search</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={() => window.location.href = '/services'}
+              >
+                <Stethoscope className="h-6 w-6" />
+                <span>Medical Services</span>
+                <span className="text-xs text-muted-foreground">Add problems & tests</span>
               </Button>
             </div>
           </CardContent>

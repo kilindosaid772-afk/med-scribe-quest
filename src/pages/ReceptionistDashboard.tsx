@@ -782,7 +782,7 @@ export default function ReceptionistDashboard() {
               <CardDescription>Common receptionist tasks</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleRegisterPatient}>
                   <UserPlus className="h-6 w-6" />
                   <span>Register New Patient</span>
@@ -805,6 +805,11 @@ export default function ReceptionistDashboard() {
                   <HeartHandshake className="h-6 w-6" />
                   <span>Process Discharge</span>
                   <span className="text-xs text-muted-foreground">For completed patients</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/services'}>
+                  <Clipboard className="h-6 w-6" />
+                  <span>Medical Services</span>
+                  <span className="text-xs text-muted-foreground">Add problems & tests</span>
                 </Button>
               </div>
             </CardContent>

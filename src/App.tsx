@@ -16,6 +16,8 @@ import BillingDashboard from "./pages/BillingDashboard";
 import NurseDashboard from "./pages/NurseDashboard";
 import ReceptionistDashboard from "./pages/ReceptionistDashboard";
 import DischargeDashboard from "./pages/DischargeDashboard";
+import MedicalServicesDashboard from "./pages/MedicalServicesDashboard";
+import DebugDashboard from "./pages/DebugDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -99,6 +101,22 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRole="receptionist">
                   <DischargeDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/services"
+              element={
+                <ProtectedRoute>
+                  <MedicalServicesDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/debug"
+              element={
+                <ProtectedRoute>
+                  <DebugDashboard />
                 </ProtectedRoute>
               }
             />

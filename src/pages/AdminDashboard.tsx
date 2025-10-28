@@ -11,17 +11,34 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Users, UserPlus, Activity, Calendar, Loader2 } from 'lucide-react';
+import { Users, UserPlus, Activity, Calendar, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus } from 'lucide-react';
 import { EnhancedAppointmentBooking } from '@/components/EnhancedAppointmentBooking';
 
 export default function AdminDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [stats, setStats] = useState({ totalPatients: 0, activeAppointments: 0, totalUsers: 0 });
+  const [stats, setStats] = useState({ totalPatients: 0, activeAppointments: 0, totalUsers: 0, totalServices: 0 });
   const [loading, setLoading] = useState(true);
+  const [medicalServices, setMedicalServices] = useState<any[]>([]);
+  const [serviceForm, setServiceForm] = useState({
+    service_code: '',
+    service_name: '',
+    service_type: '',
+    description: '',
+    base_price: 0,
+    currency: 'TSh',
+    is_active: true
+  });
+  const [editingService, setEditingService] = useState<any>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -67,12 +84,24 @@ export default function AdminDashboard() {
         .select('*', { count: 'exact', head: true })
         .in('status', ['Scheduled', 'Confirmed']);
 
+      // Fetch medical services
+      const { data: servicesData } = await supabase
+        .from('medical_services')
+        .select('*')
+        .order('service_name');
+
+      const { count: servicesCount } = await supabase
+        .from('medical_services')
+        .select('*', { count: 'exact', head: true });
+
       setPatients(patientsData || []);
       setUsers(usersWithRoles);
+      setMedicalServices(servicesData || []);
       setStats({
         totalPatients: patientCount || 0,
         activeAppointments: appointmentCount || 0,
-        totalUsers: usersData?.length || 0
+        totalUsers: usersData?.length || 0,
+        totalServices: servicesCount || 0
       });
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -89,7 +118,8 @@ export default function AdminDashboard() {
       setStats({
         totalPatients: 0,
         activeAppointments: 0,
-        totalUsers: 0
+        totalUsers: 0,
+        totalServices: 0
       });
 
       toast.error(`Failed to load dashboard data: ${error.message}`);
@@ -183,37 +213,289 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAssignRole = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const role = formData.get('role');
-    const isPrimary = formData.get('isPrimary') === 'on';
+  const handleSetPrimaryRole = async (userId: string, roleId: string) => {
+    try {
+      // First, set all roles for this user to non-primary
+      const { error: clearError } = await supabase
+        .from('user_roles')
+        .update({ is_primary: false })
+        .eq('user_id', userId);
 
-    const { error } = await supabase
-      .from('user_roles')
-      .insert([{ user_id: selectedUserId, role: role as any, is_primary: isPrimary }]);
+      if (clearError) throw clearError;
 
-    if (error) {
-      toast.error('Failed to assign role');
-    } else {
-      toast.success('Role assigned successfully');
-      setRoleDialogOpen(false);
+      // Then set the selected role as primary
+      const { error: setError } = await supabase
+        .from('user_roles')
+        .update({ is_primary: true })
+        .eq('id', roleId);
+
+      if (setError) throw setError;
+
+      toast.success('Primary role updated successfully');
       fetchData();
+    } catch (error) {
+      console.error('Error updating primary role:', error);
+      toast.error('Failed to update primary role');
     }
   };
 
-  const handleSetPrimaryRole = async (userId: string, roleId: string) => {
-    const { error } = await supabase
-      .from('user_roles')
-      .update({ is_primary: true })
-      .eq('id', roleId);
+  const generateServiceCode = () => {
+    const type = serviceForm.service_type;
+    const prefix = type === 'Consultation' ? 'CONS' :
+                   type === 'Procedure' ? 'PROC' :
+                   type === 'Surgery' ? 'SURG' :
+                   type === 'Emergency' ? 'EMER' :
+                   type === 'Ward Stay' ? 'WARD' : 'OTHER';
+    const code = `${prefix}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    setServiceForm(prev => ({ ...prev, service_code: code }));
+  };
 
-    if (error) {
-      toast.error('Failed to set primary role');
-    } else {
-      toast.success('Primary role updated');
-      fetchData();
+  const handleAddService = async () => {
+    if (!serviceForm.service_code || !serviceForm.service_name || !serviceForm.service_type || !serviceForm.base_price) {
+      toast.error('Please fill in all required fields');
+      return;
     }
+
+    try {
+      const { error } = await supabase
+        .from('medical_services')
+        .insert({
+          ...serviceForm,
+          is_active: true
+        });
+
+      if (error) throw error;
+
+      toast.success('Medical service added successfully!');
+      setServiceDialogOpen(false);
+      setServiceForm({
+        service_code: '',
+        service_name: '',
+        service_type: '',
+        description: '',
+        base_price: 0,
+        currency: 'TSh',
+        is_active: true
+      });
+      fetchData();
+    } catch (error) {
+      console.error('Error adding service:', error);
+      toast.error('Failed to add medical service');
+    }
+  };
+
+  const handleEditService = (service: any) => {
+    setEditingService(service);
+    setServiceForm({
+      service_code: service.service_code,
+      service_name: service.service_name,
+      service_type: service.service_type,
+      description: service.description || '',
+      base_price: service.base_price,
+      currency: service.currency || 'TSh',
+      is_active: service.is_active
+    });
+    setServiceDialogOpen(true);
+  };
+
+  const handleUpdateService = async () => {
+    if (!editingService) return;
+
+    try {
+      const { error } = await supabase
+        .from('medical_services')
+        .update(serviceForm)
+        .eq('id', editingService.id);
+
+      if (error) throw error;
+
+      toast.success('Medical service updated successfully!');
+      setServiceDialogOpen(false);
+      setEditingService(null);
+      setServiceForm({
+        service_code: '',
+        service_name: '',
+        service_type: '',
+        description: '',
+        base_price: 0,
+        currency: 'TSh',
+        is_active: true
+      });
+      fetchData();
+    } catch (error) {
+      console.error('Error updating service:', error);
+      toast.error('Failed to update medical service');
+    }
+  };
+
+  const handleDeleteService = async (serviceId: string, serviceName: string) => {
+    if (!confirm(`Are you sure you want to delete "${serviceName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('medical_services')
+        .delete()
+        .eq('id', serviceId);
+
+      if (error) throw error;
+
+      toast.success('Medical service deleted successfully!');
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting service:', error);
+      toast.error('Failed to delete medical service');
+    }
+  };
+
+  const resetServiceForm = () => {
+    setServiceForm({
+      service_code: '',
+      service_name: '',
+      service_type: '',
+      description: '',
+      base_price: 0,
+      currency: 'TSh',
+      is_active: true
+    });
+    setEditingService(null);
+  };
+
+  const handleAssignRole = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!selectedUserId) {
+      toast.error('No user selected for role assignment');
+      return;
+    }
+
+    const formData = new FormData(e.currentTarget);
+    const role = (formData.get('role') as string | null)?.trim();
+    const isPrimary = formData.get('isPrimary') !== null;
+
+    if (!role) {
+      toast.error('Please select a role');
+      return;
+    }
+
+    try {
+      if (isPrimary) {
+        const { error: clearError } = await supabase
+          .from('user_roles')
+          .update({ is_primary: false })
+          .eq('user_id', selectedUserId);
+        if (clearError) throw clearError;
+      }
+
+      const { error: insertError } = await supabase
+        .from('user_roles')
+        .insert([{ user_id: selectedUserId, role, is_primary: isPrimary }]);
+
+      if (insertError) throw insertError;
+
+      toast.success('Role assigned successfully');
+      setRoleDialogOpen(false);
+      setSelectedUserId(null);
+      fetchData();
+    } catch (error) {
+      console.error('Error assigning role:', error);
+      // @ts-expect-error Supabase error type
+      const message = error?.message || 'Failed to assign role';
+      toast.error(message);
+    }
+  };
+
+  const handleCSVFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setImportError(null);
+    const file = e.target.files?.[0] || null;
+    setImportFile(file);
+    setImportPreview([]);
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      setImportPreview(rows.slice(0, 10));
+    } catch (err: any) {
+      setImportError(err?.message || 'Failed to read CSV file');
+    }
+  };
+
+  const parseCSV = (text: string) => {
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length === 0) return [];
+    const header = lines[0].split(',').map(h => h.trim());
+    const required = ['service_code','service_name','service_type','base_price'];
+    for (const r of required) {
+      if (!header.includes(r)) {
+        throw new Error(`Missing required column: ${r}`);
+      }
+    }
+    const idx = (name: string) => header.indexOf(name);
+    const rows: any[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      if (cols.length === 1 && cols[0].trim() === '') continue;
+      const row = {
+        service_code: cols[idx('service_code')]?.trim() || '',
+        service_name: cols[idx('service_name')]?.trim() || '',
+        service_type: cols[idx('service_type')]?.trim() || '',
+        description: header.includes('description') ? (cols[idx('description')]?.trim() || '') : '',
+        base_price: parseFloat(cols[idx('base_price')] || '0') || 0,
+        currency: header.includes('currency') ? (cols[idx('currency')]?.trim() || 'TSh') : 'TSh',
+        is_active: header.includes('is_active') ? ((cols[idx('is_active')]?.trim().toLowerCase() === 'true')) : true,
+      };
+      if (row.service_code && row.service_name && row.service_type && row.base_price > 0) {
+        rows.push(row);
+      }
+    }
+    return rows;
+  };
+
+  const handleImportServices = async () => {
+    if (!importFile) {
+      setImportError('Please choose a CSV file');
+      return;
+    }
+    setImporting(true);
+    setImportError(null);
+    try {
+      const text = await importFile.text();
+      const rows = parseCSV(text);
+      if (rows.length === 0) {
+        setImportError('No valid rows found in CSV');
+        setImporting(false);
+        return;
+      }
+      const { error } = await supabase.from('medical_services').insert(rows);
+      if (error) throw error;
+      toast.success(`Imported ${rows.length} services successfully`);
+      setImportDialogOpen(false);
+      setImportFile(null);
+      setImportPreview([]);
+      fetchData();
+    } catch (err: any) {
+      console.error('CSV import error:', err);
+      setImportError(err?.message || 'Failed to import CSV');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const downloadServicesTemplate = () => {
+    const headers = ['service_code','service_name','service_type','description','base_price','currency','is_active'];
+    const sample = [
+      'CONS-0001,General Consultation,Consultation,Initial consultation,50000,TSh,true',
+      'PROC-0001,ECG,Procedure,Electrocardiogram,30000,TSh,true'
+    ];
+    const csv = [headers.join(','), ...sample].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'medical_services_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // Helper function to create sample data for testing
@@ -297,7 +579,7 @@ export default function AdminDashboard() {
     <DashboardLayout title="Admin Dashboard">
       <div className="space-y-8">
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card className="border-primary/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
@@ -325,17 +607,75 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-accent">{stats.totalUsers}</div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-green-200 shadow-lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Medical Services</CardTitle>
+              <Stethoscope className="h-4 w-4 text-green-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.totalServices}</div>
+              <p className="text-xs text-muted-foreground">Available services</p>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={createSampleData}
-                className="mt-2 text-accent-600 border-accent-200 hover:bg-accent-50"
+                onClick={() => {
+                  resetServiceForm();
+                  setServiceDialogOpen(true);
+                }}
+                className="mt-2 text-green-600 border-green-200 hover:bg-green-50"
               >
-                Create Sample Data
+                <Plus className="h-3 w-3 mr-1" />
+                Add Service
               </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportDialogOpen(true)}
+              className="mt-2 ml-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+            >
+              Import CSV
+            </Button>
             </CardContent>
           </Card>
         </div>
+
+        {/* Quick Actions */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Common administrative tasks</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => {
+                resetServiceForm();
+                setServiceDialogOpen(true);
+              }}>
+                <Stethoscope className="h-6 w-6" />
+                <span>Add Medical Service</span>
+                <span className="text-xs text-muted-foreground">Tests, procedures, pricing</span>
+              </Button>
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => setDialogOpen(true)}>
+                <UserPlus className="h-6 w-6" />
+                <span>Add Patient</span>
+                <span className="text-xs text-muted-foreground">Register new patient</span>
+              </Button>
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={createSampleData}>
+                <Activity className="h-6 w-6" />
+                <span>Create Sample Data</span>
+                <span className="text-xs text-muted-foreground">For testing</span>
+              </Button>
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/debug'}>
+                <Activity className="h-6 w-6" />
+                <span>Debug Tools</span>
+                <span className="text-xs text-muted-foreground">Troubleshooting</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* User Management */}
         <Card className="shadow-lg">
@@ -497,7 +837,102 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Role Assignment Dialog */}
+        {/* Medical Services Management */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Stethoscope className="h-5 w-5" />
+                  Medical Services Management
+                </CardTitle>
+                <CardDescription>Manage hospital services, tests, and pricing</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <div className="text-sm text-muted-foreground">
+                  {medicalServices.length} services
+                </div>
+                <Button onClick={() => {
+                  resetServiceForm();
+                  setServiceDialogOpen(true);
+                }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Service
+                </Button>
+                <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                  Import CSV
+                </Button>
+                <Button variant="ghost" onClick={downloadServicesTemplate}>
+                  Download Template
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Service Code</TableHead>
+                    <TableHead>Service Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {medicalServices.map((service) => (
+                    <TableRow key={service.id}>
+                      <TableCell className="font-mono text-sm">{service.service_code}</TableCell>
+                      <TableCell className="font-medium">{service.service_name}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{service.service_type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {service.description || 'No description'}
+                      </TableCell>
+                      <TableCell className="font-semibold">
+                        TSh{service.base_price?.toLocaleString() || '0'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={service.is_active ? 'default' : 'secondary'}>
+                          {service.is_active ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditService(service)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteService(service.id, service.service_name)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {medicalServices.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        No medical services found. Click "Add Service" to create your first service.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
         <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
           <DialogContent>
             <DialogHeader>
@@ -533,6 +968,137 @@ export default function AdminDashboard() {
               </div>
               <Button type="submit" className="w-full">Assign Role</Button>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Medical Services Dialog */}
+        <Dialog open={serviceDialogOpen} onOpenChange={(open) => {
+          setServiceDialogOpen(open);
+          if (!open) resetServiceForm();
+        }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {editingService ? 'Edit Medical Service' : 'Add New Medical Service'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingService ? 'Update service details and pricing' : 'Add a new medical service with pricing'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="service_type">Service Type *</Label>
+                  <Select
+                    value={serviceForm.service_type}
+                    onValueChange={(value) => {
+                      setServiceForm(prev => ({ ...prev, service_type: value }));
+                      setTimeout(generateServiceCode, 100);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Consultation">Consultation</SelectItem>
+                      <SelectItem value="Procedure">Procedure</SelectItem>
+                      <SelectItem value="Surgery">Surgery</SelectItem>
+                      <SelectItem value="Emergency">Emergency</SelectItem>
+                      <SelectItem value="Ward Stay">Ward Stay</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="service_code">Service Code</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="service_code"
+                      value={serviceForm.service_code}
+                      onChange={(e) => setServiceForm(prev => ({ ...prev, service_code: e.target.value }))}
+                      placeholder="CONS-001"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={generateServiceCode}>
+                      Auto
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="service_name">Service Name *</Label>
+                <Input
+                  id="service_name"
+                  value={serviceForm.service_name}
+                  onChange={(e) => setServiceForm(prev => ({ ...prev, service_name: e.target.value }))}
+                  placeholder="General Consultation"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Input
+                  id="description"
+                  value={serviceForm.description}
+                  onChange={(e) => setServiceForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Brief description of the service"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="base_price">Base Price (TSh) *</Label>
+                  <Input
+                    id="base_price"
+                    type="number"
+                    value={serviceForm.base_price}
+                    onChange={(e) => setServiceForm(prev => ({ ...prev, base_price: parseFloat(e.target.value) || 0 }))}
+                    placeholder="50000"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="currency">Currency</Label>
+                  <Select
+                    value={serviceForm.currency}
+                    onValueChange={(value) => setServiceForm(prev => ({ ...prev, currency: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TSh">TSh (Tanzanian Shilling)</SelectItem>
+                      <SelectItem value="USD">USD (US Dollar)</SelectItem>
+                      <SelectItem value="EUR">EUR (Euro)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={serviceForm.is_active}
+                  onChange={(e) => setServiceForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                  className="rounded"
+                />
+                <Label htmlFor="is_active" className="text-sm">
+                  Service is active and available for booking
+                </Label>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => {
+                  setServiceDialogOpen(false);
+                  resetServiceForm();
+                }}>
+                  Cancel
+                </Button>
+                <Button onClick={editingService ? handleUpdateService : handleAddService}>
+                  {editingService ? 'Update Service' : 'Add Service'}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

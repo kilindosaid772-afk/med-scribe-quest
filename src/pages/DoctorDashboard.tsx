@@ -340,6 +340,33 @@ export default function DoctorDashboard() {
           </Card>
         </div>
 
+        {/* Quick Actions */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Common doctor tasks and tools</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/services'}>
+                <Activity className="h-6 w-6" />
+                <span>Medical Services</span>
+                <span className="text-xs text-muted-foreground">Add problems & tests</span>
+              </Button>
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/lab'}>
+                <FlaskConical className="h-6 w-6" />
+                <span>View Lab Results</span>
+                <span className="text-xs text-muted-foreground">Check patient tests</span>
+              </Button>
+              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/pharmacy'}>
+                <Pill className="h-6 w-6" />
+                <span>Check Prescriptions</span>
+                <span className="text-xs text-muted-foreground">Review medications</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Lab Workflow Queue - Highlighted Section */}
         {pendingVisits.some(v => v.lab_completed_at) && (
           <Card className="shadow-lg border-green-300 bg-green-50/30">
