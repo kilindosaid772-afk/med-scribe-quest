@@ -673,34 +673,35 @@ export default function AdminDashboard() {
       if (checkError) throw checkError;
 
       if (existingRole) {
-        // If role exists, update it instead of inserting
-        const updates: { is_primary?: boolean } = {};
+        // If role exists, make it the active role
+        const { error: clearError } = await supabase
+          .from('user_roles')
+          .update({ is_primary: false })
+          .eq('user_id', selectedUserId)
+          .neq('id', existingRole.id);
         
-        if (isPrimary) {
-          // Clear primary flag from other roles if needed
-          const { error: clearError } = await supabase
-            .from('user_roles')
-            .update({ is_primary: false })
-            .eq('user_id', selectedUserId);
-          if (clearError) throw clearError;
-          
-          updates.is_primary = true;
-        }
+        if (clearError) throw clearError;
 
-        // Only update if there are changes to be made
-        if (Object.keys(updates).length > 0) {
-          const { error: updateError } = await supabase
-            .from('user_roles')
-            .update(updates)
-            .eq('id', existingRole.id);
-          
-          if (updateError) throw updateError;
-          
-          toast.success('Role updated successfully');
-        } else {
-          toast.info('User already has this role');
-          return;
+        // Set this role as primary
+        const { error: updateError } = await supabase
+          .from('user_roles')
+          .update({ is_primary: true })
+          .eq('id', existingRole.id);
+        
+        if (updateError) throw updateError;
+        
+        // Update the user's active role in your auth context or state
+        // This part depends on how you're managing user session/state
+        if (selectedUserId === user?.id) {
+          // If the current user is changing their own role, update the UI/state
+          // You might need to implement a context update or refresh the session
+          // For example:
+          // updateUserSession({ ...user, activeRole: role });
+          // or refresh the session to get the updated roles
+          await supabase.auth.refreshSession();
         }
+        
+        toast.success(`Switched to ${role} role`);
       } else {
         // Role doesn't exist, insert new role
         if (isPrimary) {
