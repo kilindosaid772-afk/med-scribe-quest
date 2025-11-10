@@ -7,9 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Calendar, Users, Activity, Loader2, FlaskConical, Pill } from 'lucide-react';
-import { format } from 'date-fns';
-import { EnhancedDoctorFeatures } from '@/components/EnhancedDoctorFeatures';
+import { Calendar, Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle } from 'lucide-react';
+import { format, isAfter, isToday, parseISO } from 'date-fns';
 
 export default function DoctorDashboard() {
   const { user } = useAuth();
