@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { format, parseISO, isSameDay } from 'date-fns';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -81,8 +82,12 @@ export default function AdminDashboard() {
   }
 
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<Array<User & { activeRole?: string }>>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedAction, setSelectedAction] = useState('all');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userForm, setUserForm] = useState({
     full_name: '',
@@ -96,8 +101,6 @@ export default function AdminDashboard() {
     totalServices: 0 
   });
   const [loading, setLoading] = useState(true);
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [medicalServices, setMedicalServices] = useState<MedicalService[]>([]);
   const [serviceForm, setServiceForm] = useState({
     service_code: '',
@@ -142,11 +145,13 @@ export default function AdminDashboard() {
   const fetchActivityLogs = async () => {
     try {
       setLogsLoading(true);
-      const { data: logs, error } = await supabase
+      let query = supabase
         .from('activity_logs')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
+
+      const { data: logs, error } = await query;
         
       if (error) throw error;
       
@@ -208,15 +213,22 @@ export default function AdminDashboard() {
         .from('user_roles')
         .select('id, user_id, role, is_primary');
 
-      // Combine users with their roles
-      const usersWithRoles = usersData?.map(user => ({
-        ...user,
-        roles: rolesData?.filter(r => r.user_id === user.id).map(r => ({
-          id: r.id,
-          role: r.role,
-          is_primary: r.is_primary
-        })) || []
-      })) || [];
+      // Combine users with their roles and active role
+      const usersWithRoles = usersData?.map(user => {
+        const userRoles = rolesData?.filter(r => r.user_id === user.id) || [];
+        const activeRole = userRoles.find(r => r.is_primary)?.role || 
+                         (userRoles[0]?.role || 'No role assigned');
+                          
+        return {
+          ...user,
+          roles: userRoles.map(r => ({
+            id: r.id,
+            role: r.role,
+            is_primary: r.is_primary
+  })),
+          activeRole
+        };
+      }) || [];
 
       // Fetch stats
       const { count: patientCount } = await supabase
@@ -867,23 +879,45 @@ export default function AdminDashboard() {
                 </TableHeader>
                 <TableBody>
                   {users.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell className="font-medium">{user.full_name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1 flex-wrap">
-                          {user.roles.map((roleObj: any) => (
-                            <Badge 
-                              key={roleObj.id}
-                              variant={roleObj.is_primary ? "default" : "secondary"} 
-                              className="capitalize cursor-pointer"
-                              onClick={() => !roleObj.is_primary && handleSetPrimaryRole(user.id, roleObj.id)}
-                            >
-                              {roleObj.is_primary && '★ '}
-                              {roleObj.role.replace('_', ' ')}
-                            </Badge>
-                          ))}
+                    <TableRow key={user.id} className="hover:bg-muted/50">
+                      <TableCell className="py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-sm font-medium text-primary">
+                              {user.full_name ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="font-medium">{user.full_name || 'Unnamed User'}</div>
+                            <div className="text-xs text-muted-foreground">{user.email}</div>
+                          </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {user.roles.find(r => r.is_primary) ? (
+                          <Badge 
+                            variant="outline"
+                            className={cn(
+                              'capitalize',
+                              user.roles.some(r => r.is_primary && r.role === 'admin') && 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200',
+                              user.roles.some(r => r.is_primary && r.role === 'doctor') && 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200',
+                              user.roles.some(r => r.is_primary && r.role === 'nurse') && 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200',
+                              user.roles.some(r => r.is_primary && r.role === 'receptionist') && 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200',
+                              'text-xs py-1 px-2 h-auto'
+                            )}
+                          >
+                            {user.roles.find(r => r.is_primary)?.role.replace('_', ' ') || 'No role'}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground text-xs py-1 px-2 h-auto">
+                            No active role
+                          </Badge>
+                        )}
+                        {user.roles.filter(r => !r.is_primary).length > 0 && (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            +{user.roles.filter(r => !r.is_primary).length} more
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="space-x-2">
                         <Button
@@ -1031,109 +1065,127 @@ export default function AdminDashboard() {
                 <CardTitle>Recent Activity Logs</CardTitle>
                 <CardDescription>System activities and user actions</CardDescription>
               </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={fetchActivityLogs}
-                disabled={logsLoading}
-              >
-                {logsLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={fetchActivityLogs}
+                  disabled={logsLoading}
+                >
+                  {logsLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Refresh
+                </Button>
+                {selectedDate && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setSelectedDate(null)}
+                  >
+                    Clear Date
+                  </Button>
                 )}
-                Refresh
-              </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {logsLoading ? (
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                  <h3 className="text-lg font-medium">Activity Logs</h3>
-                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="date"
-                        value={selectedDate ? format(selectedDate, 'yyyy-MM-dd') : ''}
-                        onChange={(e) => setSelectedDate(e.target.value ? parseISO(e.target.value) : null)}
-                        className="max-w-[180px]"
-                      />
-                      {selectedDate && (
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => setSelectedDate(null)}
-                        >
-                          Clear
-                        </Button>
-                      )}
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={fetchActivityLogs} 
-                      disabled={logsLoading}
-                      className="w-full sm:w-auto"
-                    >
-                      {logsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                      Refresh
-                    </Button>
-                  </div>
-                </div>
-              ) : activityLogs.length > 0 ? (
-                activityLogs
+            {logsLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : activityLogs.length > 0 ? (
+              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                {activityLogs
                   .filter(log => {
-                    if (!selectedDate) return true;
-                    const logDate = new Date(log.created_at);
-                    return isSameDay(logDate, selectedDate);
-                  })
-                  .map((log) => {
-                    const logDate = new Date(log.created_at);
-                    const displayName = log.user_name || log.user_email?.split('@')[0] || 'System';
-                    const displayEmail = log.user_email || 'system';
+                    // Date filter
+                    if (selectedDate) {
+                      const logDate = new Date(log.created_at);
+                      if (!isSameDay(logDate, selectedDate)) return false;
+                    }
                     
-                    return (
-                      <div key={log.id} className="border rounded-lg p-4 hover:bg-accent/10 transition-colors">
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                          <div className="space-y-1">
-                            <div className="font-medium flex flex-wrap items-baseline gap-1">
-                              <span className="whitespace-nowrap">{displayName}</span>
-                              <span className="text-muted-foreground text-xs sm:text-sm font-normal">
-                                ({displayEmail})
-                              </span>
-                            </div>
-                            <div className="text-xs sm:text-sm text-muted-foreground">
-                              {format(logDate, 'MMM d, yyyy hh:mm a')}
-                            </div>
+                    // Search term filter
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const matchesSearch = 
+                        (log.user_name?.toLowerCase().includes(searchLower)) ||
+                        (log.user_email?.toLowerCase().includes(searchLower)) ||
+                        (log.action?.toLowerCase().includes(searchLower)) ||
+                        JSON.stringify(log.details || {}).toLowerCase().includes(searchLower);
+                      if (!matchesSearch) return false;
+                    }
+                    
+                    // Action type filter
+                    if (selectedAction && selectedAction !== 'all') {
+                      if (selectedAction === 'appointment' && !log.action.includes('appointment')) return false;
+                      if (selectedAction === 'patient' && !log.action.includes('patient')) return false;
+                      if (selectedAction === 'user' && !log.action.startsWith('user.')) return false;
+                    }
+                    
+                    return true;
+                  })
+                .map((log) => {
+                  const logDate = new Date(log.created_at);
+                  const displayName = log.user_name || log.user_email?.split('@')[0] || 'System';
+                  const actionLabel = log.action.split('.');
+                  
+                  return (
+                    <div key={log.id} className="border rounded-lg overflow-hidden">
+                      <div className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium">{displayName}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {format(logDate, 'MMM d, yyyy h:mm a')}
+                            </p>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="capitalize">
-                              {log.action.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          <div className="text-sm mt-1">
+                            <span className="font-medium">Action: </span>
+                            <Badge 
+                              variant="outline" 
+                              className={cn(
+                                'capitalize',
+                                log.action.includes('error') && 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200',
+                                log.action.includes('create') && 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200',
+                                log.action.includes('update') && 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200',
+                                'whitespace-nowrap ml-1'
+                              )}
+                            >
+                              {actionLabel}
                             </Badge>
                           </div>
                         </div>
-                        {log.details && Object.keys(log.details).length > 0 && (
-                          <div className="mt-3 p-3 bg-muted/10 dark:bg-muted/20 rounded-md text-xs sm:text-sm overflow-x-auto">
-                            <pre className="whitespace-pre-wrap break-words">
-                              {JSON.stringify(log.details, (key, value) => 
-                                typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
-                                  ? format(new Date(value), 'MMM d, yyyy hh:mm a')
-                                  : value, 2
-                              )}
+                        {log.details && (
+                          <div className="mt-2">
+                            <pre className="bg-muted/50 p-2 rounded text-xs overflow-x-auto">
+                              {JSON.stringify(log.details, null, 2)}
                             </pre>
                           </div>
                         )}
                       </div>
-                    );
-                  })
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  No activity logs found
-                </div>
-              )}
-            </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No logs found matching your criteria</p>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="mt-2"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setSelectedAction('all');
+                    setSelectedDate(null);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
