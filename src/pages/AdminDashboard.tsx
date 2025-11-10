@@ -625,9 +625,14 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAssignRole = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleAssignRole = (user: User) => {
+    setSelectedUserId(user.id);
+    setRoleDialogOpen(true);
+  };
 
+  const handleRoleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
     if (!selectedUserId) {
       toast.error('No user selected for role assignment');
       return;
@@ -873,82 +878,54 @@ export default function AdminDashboard() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Roles (★ = Active)</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {users.map((user) => (
-                    <TableRow key={user.id} className="hover:bg-muted/50">
-                      <TableCell className="py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <span className="text-sm font-medium text-primary">
-                              {user.full_name ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
-                            </span>
-                          </div>
-                          <div>
-                            <div className="font-medium">{user.full_name || 'Unnamed User'}</div>
-                            <div className="text-xs text-muted-foreground">{user.email}</div>
-                          </div>
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center space-x-2">
+                          <span>{user.full_name || 'No name'}</span>
                         </div>
                       </TableCell>
+                      <TableCell>{user.email}</TableCell>
                       <TableCell>
-                        {user.roles.find(r => r.is_primary) ? (
-                          <Badge 
-                            variant="outline"
-                            className={cn(
-                              'capitalize',
-                              user.roles.some(r => r.is_primary && r.role === 'admin') && 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200',
-                              user.roles.some(r => r.is_primary && r.role === 'doctor') && 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200',
-                              user.roles.some(r => r.is_primary && r.role === 'nurse') && 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200',
-                              user.roles.some(r => r.is_primary && r.role === 'receptionist') && 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200',
-                              'text-xs py-1 px-2 h-auto'
-                            )}
-                          >
-                            {user.roles.find(r => r.is_primary)?.role.replace('_', ' ') || 'No role'}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-muted-foreground text-xs py-1 px-2 h-auto">
-                            No active role
-                          </Badge>
-                        )}
-                        {user.roles.filter(r => !r.is_primary).length > 0 && (
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            +{user.roles.filter(r => !r.is_primary).length} more
-                          </div>
-                        )}
+                        <Badge variant="outline" className="capitalize">
+                          {user.activeRole || 'No role'}
+                        </Badge>
                       </TableCell>
-                      <TableCell className="space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditUser(user)}
-                        >
-                          <Edit className="h-4 w-4 mr-1" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedUserId(user.id);
-                            setRoleDialogOpen(true);
-                          }}
-                        >
-                          <Users className="h-4 w-4 mr-1" />
-                          Roles
-                        </Button>
-                        {user.id !== user?.id && (
-                          <Button
-                            variant="destructive"
+                      <TableCell className="text-right">
+                        <div className="flex justify-end space-x-2">
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleEditUser(user)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Edit className="h-4 w-4" />
+                            <span className="sr-only">Edit</span>
+                          </Button>
+                          <Button 
+                            variant="ghost" 
                             size="sm"
                             onClick={() => handleDeleteUser(user.id)}
-                            className="ml-2"
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
                           >
                             <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Delete</span>
                           </Button>
-                        )}
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleAssignRole(user)}
+                            className="h-8 px-3 text-sm"
+                          >
+                            <UserPlus className="h-4 w-4 mr-1" />
+                            Assign Role
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1057,138 +1034,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Activity Logs */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Recent Activity Logs</CardTitle>
-                <CardDescription>System activities and user actions</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={fetchActivityLogs}
-                  disabled={logsLoading}
-                >
-                  {logsLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                  )}
-                  Refresh
-                </Button>
-                {selectedDate && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => setSelectedDate(null)}
-                  >
-                    Clear Date
-                  </Button>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {logsLoading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : activityLogs.length > 0 ? (
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
-                {activityLogs
-                  .filter(log => {
-                    // Date filter
-                    if (selectedDate) {
-                      const logDate = new Date(log.created_at);
-                      if (!isSameDay(logDate, selectedDate)) return false;
-                    }
-                    
-                    // Search term filter
-                    if (searchTerm) {
-                      const searchLower = searchTerm.toLowerCase();
-                      const matchesSearch = 
-                        (log.user_name?.toLowerCase().includes(searchLower)) ||
-                        (log.user_email?.toLowerCase().includes(searchLower)) ||
-                        (log.action?.toLowerCase().includes(searchLower)) ||
-                        JSON.stringify(log.details || {}).toLowerCase().includes(searchLower);
-                      if (!matchesSearch) return false;
-                    }
-                    
-                    // Action type filter
-                    if (selectedAction && selectedAction !== 'all') {
-                      if (selectedAction === 'appointment' && !log.action.includes('appointment')) return false;
-                      if (selectedAction === 'patient' && !log.action.includes('patient')) return false;
-                      if (selectedAction === 'user' && !log.action.startsWith('user.')) return false;
-                    }
-                    
-                    return true;
-                  })
-                .map((log) => {
-                  const logDate = new Date(log.created_at);
-                  const displayName = log.user_name || log.user_email?.split('@')[0] || 'System';
-                  const actionLabel = log.action.split('.');
-                  
-                  return (
-                    <div key={log.id} className="border rounded-lg overflow-hidden">
-                      <div className="p-4">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="font-medium">{displayName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {format(logDate, 'MMM d, yyyy h:mm a')}
-                            </p>
-                          </div>
-                          <div className="text-sm mt-1">
-                            <span className="font-medium">Action: </span>
-                            <Badge 
-                              variant="outline" 
-                              className={cn(
-                                'capitalize',
-                                log.action.includes('error') && 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200',
-                                log.action.includes('create') && 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200',
-                                log.action.includes('update') && 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200',
-                                'whitespace-nowrap ml-1'
-                              )}
-                            >
-                              {actionLabel}
-                            </Badge>
-                          </div>
-                        </div>
-                        {log.details && (
-                          <div className="mt-2">
-                            <pre className="bg-muted/50 p-2 rounded text-xs overflow-x-auto">
-                              {JSON.stringify(log.details, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground">No logs found matching your criteria</p>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="mt-2"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setSelectedAction('all');
-                    setSelectedDate(null);
-                  }}
-                >
-                  Clear filters
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Edit User Dialog */}
         <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
           <DialogContent>
@@ -1239,7 +1084,7 @@ export default function AdminDashboard() {
               <DialogTitle>Assign Role</DialogTitle>
               <DialogDescription>Select a role to assign to this user</DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleAssignRole} className="space-y-4">
+            <form onSubmit={handleRoleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
                 <Select name="role" required>
