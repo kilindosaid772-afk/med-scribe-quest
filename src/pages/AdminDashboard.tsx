@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { format, parseISO, isSameDay } from 'date-fns';
 import { cn } from '@/lib/utils';
+import 'highlight.js/styles/github.css'; // For JSON syntax highlighting
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -88,6 +89,7 @@ export default function AdminDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedAction, setSelectedAction] = useState('all');
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string>('all');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userForm, setUserForm] = useState({
     full_name: '',
@@ -142,7 +144,7 @@ export default function AdminDashboard() {
     fetchData();
   }, [user]);
 
-  const fetchActivityLogs = async () => {
+  const fetchActivityLogs = async (userId?: string) => {
     try {
       setLogsLoading(true);
       let query = supabase
@@ -150,6 +152,11 @@ export default function AdminDashboard() {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
+
+      // Filter by user if specified
+      if (userId && userId !== 'all') {
+        query = query.eq('user_id', userId);
+      }
 
       const { data: logs, error } = await query;
         
@@ -167,15 +174,16 @@ export default function AdminDashboard() {
           
           const { data: userData } = await supabase
             .from('profiles')
-            .select('full_name, email')
+            .select('full_name, email, avatar_url')
             .eq('id', log.user_id)
             .single();
             
           return {
             ...log,
             user_name: userData?.full_name || 'System',
-            user_email: userData?.email || 'system@example.com'
-          } as ActivityLog; // Add type assertion here
+            user_email: userData?.email || 'system@example.com',
+            user_avatar: userData?.avatar_url || ''
+          } as ActivityLog;
         })
       );
       
@@ -225,7 +233,7 @@ export default function AdminDashboard() {
             id: r.id,
             role: r.role,
             is_primary: r.is_primary
-  })),
+          })),
           activeRole
         };
       }) || [];
@@ -306,20 +314,20 @@ export default function AdminDashboard() {
 
       // Only attempt to create an auth user if an email is provided
       if (patientData.email && patientData.email.trim().length > 0) {
-      const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: patientData.email,
-        password: randomPassword,
-        options: {
-          data: {
-            full_name: patientData.full_name,
-            phone: patientData.phone,
-          },
+        const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: patientData.email,
+          password: randomPassword,
+          options: {
+            data: {
+              full_name: patientData.full_name,
+              phone: patientData.phone,
+            },
             emailRedirectTo: undefined,
-        },
-      });
+          },
+        });
 
-      if (authError) {
+        if (authError) {
           // If email already exists, try to find the existing user profile by email
           if (authError.message?.toLowerCase().includes('already')) {
             const { data: existingProfile } = await supabase
@@ -783,6 +791,36 @@ export default function AdminDashboard() {
       </DashboardLayout>
     );
   }
+
+  const formatJson = (obj: any) => {
+    if (!obj) return <span className="text-muted-foreground">No details</span>;
+    
+    try {
+      // If it's a string, try to parse it as JSON
+      if (typeof obj === 'string') {
+        try {
+          obj = JSON.parse(obj);
+        } catch (e) {
+          return <span>{obj}</span>; // Return as is if not JSON
+        }
+      }
+      
+      // Convert to formatted string with syntax highlighting
+      const jsonStr = JSON.stringify(obj, null, 2);
+      return (
+        <pre className="bg-muted/50 p-3 rounded-md text-xs overflow-x-auto">
+          <code className="language-json">
+            {jsonStr}
+          </code>
+        </pre>
+      );
+    } catch (e) {
+      return <span className="text-muted-foreground">Invalid data</span>;
+    }
+  };
+
+  const uniqueUsers = Array.from(new Set(activityLogs.map(log => log.user_id)))
+    .filter(Boolean) as string[];
 
   return (
     <DashboardLayout title="Admin Dashboard">
