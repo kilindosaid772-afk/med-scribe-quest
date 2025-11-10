@@ -1,4 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react';
+import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Users, UserPlus, Activity, Calendar, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus } from 'lucide-react';
+import { Users, UserPlus, Activity, Calendar, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus, RefreshCw } from 'lucide-react';
 import { logActivity } from '@/lib/utils';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
@@ -22,6 +23,7 @@ export default function AdminDashboard() {
     id: string;
     email: string;
     full_name?: string;
+    phone?: string;
     user_metadata?: {
       full_name?: string;
       avatar_url?: string;
@@ -37,6 +39,16 @@ export default function AdminDashboard() {
       role: string;
       is_primary: boolean;
     }>;
+  }
+  
+  interface ActivityLog {
+    id: string;
+    action: string;
+    user_id: string;
+    user_email?: string;
+    user_name?: string;
+    details: Record<string, any>;
+    created_at: string;
   }
 
   interface Patient {
@@ -70,6 +82,13 @@ export default function AdminDashboard() {
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [userForm, setUserForm] = useState({
+    full_name: '',
+    email: '',
+    phone: ''
+  });
   const [stats, setStats] = useState({ 
     totalPatients: 0, 
     activeAppointments: 0, 
@@ -77,6 +96,7 @@ export default function AdminDashboard() {
     totalServices: 0 
   });
   const [loading, setLoading] = useState(true);
+  const [logsLoading, setLogsLoading] = useState(false);
   const [medicalServices, setMedicalServices] = useState<MedicalService[]>([]);
   const [serviceForm, setServiceForm] = useState({
     service_code: '',
@@ -102,6 +122,45 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const fetchActivityLogs = async () => {
+    try {
+      setLogsLoading(true);
+      const { data: logs, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+        
+      if (error) throw error;
+      
+      // Get user details for each log
+      const logsWithUserInfo = await Promise.all(
+        logs.map(async (log: ActivityLog) => {
+          if (!log.user_id) return log;
+          
+          const { data: userData } = await supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', log.user_id)
+            .single();
+            
+          return {
+            ...log,
+            user_name: userData?.full_name || 'System',
+            user_email: userData?.email || 'system@example.com'
+          };
+        })
+      );
+      
+      setActivityLogs(logsWithUserInfo);
+    } catch (error) {
+      console.error('Error fetching activity logs:', error);
+      toast.error('Failed to load activity logs');
+    } finally {
+      setLogsLoading(false);
+    }
+  };
 
   const fetchData = async () => {
     if (!user) {
@@ -167,6 +226,9 @@ export default function AdminDashboard() {
         totalUsers: usersData?.length || 0,
         totalServices: servicesCount || 0
       });
+      
+      // Fetch activity logs
+      await fetchActivityLogs();
     } catch (error) {
       console.error('Error fetching admin data:', error);
       console.error('Error details:', {
@@ -462,6 +524,74 @@ export default function AdminDashboard() {
     setEditingService(null);
   };
 
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setUserForm({
+      full_name: user.full_name || '',
+      email: user.email || '',
+      phone: user.phone || ''
+    });
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: userForm.full_name,
+          phone: userForm.phone,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingUser.id);
+        
+      if (error) throw error;
+      
+      // Update email in auth if changed
+      if (userForm.email !== editingUser.email) {
+        const { error: emailError } = await supabase.auth.admin.updateUserById(editingUser.id, {
+          email: userForm.email
+        });
+        if (emailError) throw emailError;
+      }
+      
+      toast.success('User updated successfully');
+      setEditingUser(null);
+      fetchData();
+    } catch (error) {
+      console.error('Error updating user:', error);
+      toast.error('Failed to update user');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      // First delete from auth
+      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+      if (authError) throw authError;
+      
+      // Then delete from profiles (this should be handled by a trigger in Supabase)
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+        
+      if (error) throw error;
+      
+      toast.success('User deleted successfully');
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      toast.error('Failed to delete user');
+    }
+  };
+
   const handleAssignRole = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -493,6 +623,13 @@ export default function AdminDashboard() {
         .insert([{ user_id: selectedUserId, role, is_primary: isPrimary }]);
 
       if (insertError) throw insertError;
+
+      // Log the role assignment
+      await logActivity('user.role.assigned', {
+        user_id: selectedUserId,
+        role,
+        is_primary: isPrimary
+      });
 
       toast.success('Role assigned successfully');
       setRoleDialogOpen(false);
@@ -727,7 +864,15 @@ export default function AdminDashboard() {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditUser(user)}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -736,8 +881,19 @@ export default function AdminDashboard() {
                             setRoleDialogOpen(true);
                           }}
                         >
-                          Assign Role
+                          <Users className="h-4 w-4 mr-1" />
+                          Roles
                         </Button>
+                        {user.id !== user?.id && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="ml-2"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -845,6 +1001,111 @@ export default function AdminDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Activity Logs */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Recent Activity Logs</CardTitle>
+                <CardDescription>System activities and user actions</CardDescription>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={fetchActivityLogs}
+                disabled={logsLoading}
+              >
+                {logsLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {logsLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : activityLogs.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  No activity logs found
+                </div>
+              ) : (
+                activityLogs.map((log) => (
+                  <div key={log.id} className="border rounded-lg p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-medium">
+                          {log.user_name || 'System'}{' '}
+                          <span className="text-muted-foreground text-sm">
+                            ({log.user_email || 'system'})
+                          </span>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {format(new Date(log.created_at), 'MMM d, yyyy hh:mm a')}
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="capitalize">
+                        {log.action.replace('.', ' ')}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 p-3 bg-muted/20 rounded-md text-sm font-mono overflow-x-auto">
+                      <pre>{JSON.stringify(log.details, null, 2)}</pre>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Edit User Dialog */}
+        <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit User</DialogTitle>
+              <DialogDescription>Update user details</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleUpdateUser} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="full_name">Full Name</Label>
+                <Input
+                  id="full_name"
+                  value={userForm.full_name}
+                  onChange={(e) => setUserForm({...userForm, full_name: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={userForm.email}
+                  onChange={(e) => setUserForm({...userForm, email: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={userForm.phone}
+                  onChange={(e) => setUserForm({...userForm, phone: e.target.value})}
+                />
+              </div>
+              <Button type="submit" className="w-full">
+                Update User
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* Medical services management moved to Medical Services page */}
         <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>

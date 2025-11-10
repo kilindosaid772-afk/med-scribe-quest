@@ -12,8 +12,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2, RefreshCw } from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 
 interface Medication {
@@ -75,63 +75,115 @@ export default function PharmacyDashboard() {
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  
+  // Type for the combined prescription data
+  interface PrescriptionWithRelations extends Prescription {
+    patient: UserProfile | null;
+    doctor_profile: UserProfile | null;
+    medications: MedicationInfo[];
+  }
 
-  const loadPharmacyData = async () => {
+  const loadPharmacyData = async (showToast = true) => {
     if (!user) {
-      toast.error('User not authenticated');
+      const errorMsg = 'User not authenticated';
+      setLoadError(errorMsg);
+      if (showToast) toast.error(errorMsg);
       return;
     }
 
     try {
       setLoading(true);
+      setLoadError(null);
 
-      // First, let's fetch prescriptions with basic data
-      const { data: prescriptionsData, error: prescriptionsError } = await supabase
-        .from('prescriptions')
-        .select(`
-          *,
-          patient:patient_id (id, first_name, last_name, date_of_birth),
-          doctor_profile:doctor_id (id, first_name, last_name, specialization, email),
-          medications:medication_id (id, name, dosage_form, strength, manufacturer)
-        `)
-        .order('prescribed_date', { ascending: false })
-        .limit(50) as { data: Prescription[] | null, error: any };
-
-      if (prescriptionsError) {
-        console.error('Error fetching prescriptions:', prescriptionsError);
-        toast.error(`Failed to load prescriptions: ${prescriptionsError.message}`);
-        return;
-      }
-
-      // Fetch medications
-      const { data: medicationsData, error: medicationsError } = await supabase
-        .from('medications')
-        .select('*')
-        .order('name', { ascending: true });
-
+      // First, fetch all the data we need
+      const [
+        { data: prescriptionsData, error: prescriptionsError },
+        { data: medicationsData, error: medicationsError },
+        { data: patientsData, error: patientsError },
+        { data: doctorsData, error: doctorsError }
+      ] = await Promise.all([
+        supabase
+          .from('prescriptions')
+          .select('*')
+          .order('prescribed_date', { ascending: false })
+          .limit(50),
+        
+        supabase
+          .from('medications')
+          .select('*')
+          .order('name', { ascending: true }),
+          
+        supabase
+          .from('patients')
+          .select('id, first_name, last_name, date_of_birth'),
+          
+        supabase
+          .from('profiles')
+          .select('id, first_name, last_name, specialization, email')
+          .in('role', ['doctor', 'physician'])
+      ]);
+      
+      if (prescriptionsError) throw prescriptionsError;
       if (medicationsError) throw medicationsError;
+      if (patientsError) throw patientsError;
+      if (doctorsError) throw doctorsError;
+      
+      // Combine the data manually
+      const combinedPrescriptions: PrescriptionWithRelations[] = (prescriptionsData || []).map(prescription => ({
+        ...prescription,
+        patient: (patientsData || []).find((p: any) => p.id === prescription.patient_id) || null,
+        doctor_profile: (doctorsData || []).find((d: any) => d.id === prescription.doctor_id) || null,
+        medications: (medicationsData || []).filter((m: any) => m.id === prescription.medication_id)
+      }));
 
-      setPrescriptions(prescriptionsData || []);
+      setPrescriptions(combinedPrescriptions);
       setMedications(medicationsData || []);
 
-      const pending = prescriptionsData?.filter(p => p.status === 'Pending').length;
-      const lowStock = medicationsData?.filter(m => m.quantity_in_stock <= m.reorder_level).length || 0;
+      const pending = prescriptionsData.filter(p => p.status === 'Pending').length;
+      const lowStock = medicationsData.filter(m => m.quantity_in_stock <= m.reorder_level).length;
 
       setStats({
         pendingPrescriptions: pending,
         lowStock,
-        totalMedications: medicationsData?.length || 0
+        totalMedications: medicationsData.length
       });
+
+      setLastRefreshed(new Date());
+      
+      if (showToast) {
+        toast.success('Pharmacy data loaded successfully');
+      }
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to load pharmacy data');
+      console.error('Error loading pharmacy data:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to load pharmacy data';
+      setLoadError(errorMsg);
+      
+      if (showToast) {
+        toast.error(errorMsg, {
+          action: {
+            label: 'Retry',
+            onClick: () => loadPharmacyData()
+          }
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // Initial data load
   useEffect(() => {
     loadPharmacyData();
+    
+    // Set up auto-refresh every 30 seconds
+    const refreshInterval = setInterval(() => {
+      loadPharmacyData(false); // Silent refresh
+    }, 30000);
+    
+    return () => clearInterval(refreshInterval);
   }, [user]);
 
   const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
@@ -139,6 +191,8 @@ export default function PharmacyDashboard() {
       toast.error('User not authenticated');
       return;
     }
+    
+    setLoadingStates(prev => ({ ...prev, [prescriptionId]: true }));
 
     try {
       await logActivity('pharmacy.dispense.start', { 
@@ -148,7 +202,7 @@ export default function PharmacyDashboard() {
         timestamp: new Date().toISOString()
       });
 
-      // First, get the prescription details to create invoice
+      // First, get the prescription details
       const { data: prescription, error: fetchError } = await supabase
         .from('prescriptions')
         .select('*')
@@ -183,75 +237,38 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Reduce medication stock based on prescription quantity
+      // Get medication details for stock update
       const { data: medicationData, error: medError } = await supabase
         .from('medications')
         .select('*')
         .eq('id', prescription.medication_id)
         .single();
 
-      if (medError) {
+      if (medError || !medicationData) {
         console.error('Error fetching medication:', medError);
-        toast.error('Failed to fetch medication details for stock reduction');
+        toast.error('Failed to fetch medication details');
         return;
       }
 
-      if (!medicationData) {
-        toast.error('Medication not found for stock reduction');
-        return;
-      }
-
-      if (medicationData.quantity_in_stock < prescription.quantity) {
-        toast.error(`Insufficient stock. Available: ${medicationData.quantity_in_stock}, Required: ${prescription.quantity}`);
-        return;
-      }
-
-      const newStockQuantity = medicationData.quantity_in_stock - prescription.quantity;
-
-      const { error: stockError } = await supabase
-        .from('medications')
-        .update({ quantity_in_stock: newStockQuantity })
-        .eq('id', prescription.medication_id);
-
-      if (stockError) {
-        console.error('Error reducing stock:', stockError);
-        toast.error('Failed to reduce medication stock');
-        return;
-      }
-
-      // Update prescription status to dispensed
-      const currentUserId = user?.id;
-      const updateData: {
-        status: string;
-        dispensed_date: string;
-        dispensed_by: string | null;
-        updated_at: string;
-        lab_result_id?: string;
-      } = {
-        status: 'Dispensed',
-        dispensed_date: new Date().toISOString(),
-        dispensed_by: currentUserId || null,
-        updated_at: new Date().toISOString()
-      };
-      
-      // Only add lab_result_id if it exists in the prescription
-      if (prescription.lab_result_id) {
-        updateData.lab_result_id = prescription.lab_result_id;
-      }
-      
-      const { error } = await supabase
+      // Update prescription status
+      const { error: updateError } = await supabase
         .from('prescriptions')
-        .update(updateData)
+        .update({
+          status: 'Dispensed',
+          dispensed_at: new Date().toISOString(),
+          dispensed_by: user.id,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', prescriptionId);
 
-      if (error) {
-        console.error('Error dispensing prescription:', error);
-        toast.error('Failed to dispense prescription');
+      if (updateError) {
+        console.error('Error updating prescription:', updateError);
+        toast.error('Failed to update prescription status');
         return;
       }
 
-      // Update workflow to move to billing
-      const { data: visits, error: visitError } = await supabase
+      // Update patient visit status if applicable
+      const { data: visits, error: visitsError } = await supabase
         .from('patient_visits')
         .select('*')
         .eq('patient_id', patientId)
@@ -260,51 +277,76 @@ export default function PharmacyDashboard() {
         .order('created_at', { ascending: false })
         .limit(1);
 
-      if (visitError) {
-        console.error('Error fetching patient visits:', visitError);
-        toast.error('Failed to fetch patient visit information');
-        return;
-      }
-
-      if (visits && visits.length > 0) {
-        const { error: workflowError } = await supabase
+      if (!visitsError && visits && visits.length > 0) {
+        await supabase
           .from('patient_visits')
           .update({
             pharmacy_status: 'Completed',
             pharmacy_completed_at: new Date().toISOString(),
-            current_stage: 'billing',
-            billing_status: 'Pending'
+            pharmacy_completed_by: user.id,
+            updated_at: new Date().toISOString()
           })
           .eq('id', visits[0].id);
-
-        if (workflowError) {
-          console.error('Error updating patient visit workflow:', workflowError);
-          toast.error('Prescription dispensed but failed to update workflow');
-        } else {
-        }
-      } else {
       }
 
-      toast.success('Prescription dispensed successfully');
+      // Update medication stock
+      const newStock = medicationData.quantity_in_stock - prescription.quantity;
       
+      const { error: updateStockError } = await supabase
+        .from('medications')
+        .update({
+          quantity_in_stock: newStock,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', prescription.medication_id);
+
+      if (updateStockError) throw updateStockError;
+
+      // Create invoice
+      const invoiceNumber = generateInvoiceNumber();
+      await supabase
+        .from('invoices')
+        .insert([
+          {
+            invoice_number: invoiceNumber,
+            patient_id: patientId,
+            prescription_id: prescriptionId,
+            amount: medicationData.price * prescription.quantity,
+            status: 'Paid',
+            created_by: user.id,
+            updated_at: new Date().toISOString()
+          }
+        ]);
+
       // Log successful dispense
       await logActivity('pharmacy.dispense.success', {
+        user_id: user.id,
         prescription_id: prescriptionId,
         patient_id: patientId,
         medication_id: prescription.medication_id,
-        quantity: prescription.quantity
+        quantity: prescription.quantity,
+        invoice_number: invoiceNumber,
+        timestamp: new Date().toISOString()
+      });
+
+      // Refresh data
+      await loadPharmacyData();
+      
+      toast.success('Prescription dispensed successfully');
+    } catch (error) {
+      console.error('Error dispensing prescription:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to dispense prescription';
+      
+      await logActivity('pharmacy.dispense.error', {
+        error: errorMsg,
+        prescription_id: prescriptionId,
+        user_id: user?.id,
+        timestamp: new Date().toISOString()
       });
       
-      loadPharmacyData();
-    } catch (error) {
-      console.error('Unexpected error in handleDispensePrescription:', error);
-      await logActivity('pharmacy.dispense.error', { 
-        error: 'Unexpected error',
-        details: error instanceof Error ? error.message : String(error),
-        prescription_id: prescriptionId,
-        patient_id: patientId
-      });
-      toast.error('An unexpected error occurred while dispensing the prescription');
+      toast.error(errorMsg);
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [prescriptionId]: false }));
     }
   };
 
@@ -735,36 +777,68 @@ export default function PharmacyDashboard() {
 
   return (
     <DashboardLayout title="Pharmacy Dashboard">
-      <div className="space-y-8">
+      <div className="space-y-6">
+        {/* Header with refresh button */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Pharmacy Dashboard</h1>
+          <div className="flex items-center space-x-2">
+            {lastRefreshed && (
+              <span className="text-xs text-muted-foreground">
+                Last updated: {formatDistanceToNow(new Date(lastRefreshed), { addSuffix: true })}
+              </span>
+            )}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => loadPharmacyData()}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="ml-2">Refresh</span>
+            </Button>
+          </div>
+        </div>
+
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card className="border-primary/20 shadow-lg">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Pending Prescriptions</CardTitle>
-              <Pill className="h-4 w-4 text-primary" />
+              <Pill className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">{stats.pendingPrescriptions}</div>
+              <div className="text-2xl font-bold">{stats.pendingPrescriptions}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.pendingPrescriptions === 0 ? 'All caught up!' : 'Awaiting fulfillment'}
+              </p>
             </CardContent>
           </Card>
 
-          <Card className="border-destructive/20 shadow-lg">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-destructive">{stats.lowStock}</div>
+              <div className="text-2xl font-bold">{stats.lowStock}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.lowStock === 0 ? 'Stock levels good' : 'Below reorder level'}
+              </p>
             </CardContent>
           </Card>
 
-          <Card className="border-secondary/20 shadow-lg">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Medications</CardTitle>
-              <Package className="h-4 w-4 text-secondary" />
+              <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-secondary">{stats.totalMedications}</div>
+              <div className="text-2xl font-bold">{stats.totalMedications}</div>
+              <p className="text-xs text-muted-foreground">In inventory</p>
             </CardContent>
           </Card>
         </div>
@@ -777,86 +851,149 @@ export default function PharmacyDashboard() {
           </TabsList>
 
           <TabsContent value="prescriptions">
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle>Prescriptions</CardTitle>
-                <CardDescription>Manage and dispense prescriptions</CardDescription>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Recent Prescriptions</CardTitle>
+                  <CardDescription>
+                    {prescriptions.length > 0 
+                      ? `Showing ${Math.min(prescriptions.length, 10)} of ${prescriptions.length} prescriptions`
+                      : 'No prescriptions found'}
+                  </CardDescription>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => loadPharmacyData()}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Refresh
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Patient</TableHead>
-                        <TableHead>Medication</TableHead>
-                        <TableHead>Dosage</TableHead>
-                        <TableHead>Quantity</TableHead>
-                        <TableHead>Doctor</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {prescriptions.length === 0 ? (
+                {prescriptions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Package className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-medium">No prescriptions found</h3>
+                    <p className="text-muted-foreground text-sm mt-1">
+                      When prescriptions are created, they will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                            {loading ? (
-                              <div className="flex items-center justify-center gap-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Loading prescriptions...
-                              </div>
-                            ) : (
-                              'No prescriptions found. Create a prescription from the doctor dashboard first.'
-                            )}
-                          </TableCell>
+                          <TableHead>Patient</TableHead>
+                          <TableHead>Medication</TableHead>
+                          <TableHead>Prescribed By</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
-                      ) : (
-                        prescriptions.map((prescription) => (
-                          <TableRow key={prescription.id}>
+                      </TableHeader>
+                      <TableBody>
+                        {prescriptions.map((prescription) => (
+                          <TableRow 
+                            key={prescription.id}
+                            className={loadingStates[prescription.id] ? 'opacity-50' : ''}
+                          >
                             <TableCell className="font-medium">
-                              {prescription.patient?.first_name && prescription.patient.last_name 
-                                ? `${prescription.patient.first_name} ${prescription.patient.last_name}`
-                                : 'Unknown'}
+                              <div className="flex items-center">
+                                {loadingStates[prescription.id] && (
+                                  <Loader2 className="h-3 w-3 animate-spin mr-2 text-muted-foreground" />
+                                )}
+                                <span>
+                                  {prescription.patient?.first_name} {prescription.patient?.last_name}
+                                </span>
+                              </div>
+                              {prescription.patient?.date_of_birth && (
+                                <div className="text-xs text-muted-foreground">
+                                  DOB: {format(new Date(prescription.patient.date_of_birth), 'MM/dd/yyyy')}
+                                </div>
+                              )}
                             </TableCell>
-                            <TableCell>{prescription.medications?.name || prescription.medication_name || 'Unknown'}</TableCell>
-                            <TableCell>{prescription.dosage || 'N/A'}</TableCell>
-                            <TableCell>{prescription.quantity}</TableCell>
-                            <TableCell>{
-                              prescription.doctor_profile?.first_name && prescription.doctor_profile.last_name
-                                ? `${prescription.doctor_profile.first_name} ${prescription.doctor_profile.last_name}`
-                                : 'Unknown'
-                            }</TableCell>
                             <TableCell>
-                              {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy')}
+                              <div className="font-medium">
+                                {prescription.medications?.name || prescription.medication_name}
+                              </div>
+                              {prescription.medications?.strength && (
+                                <div className="text-xs text-muted-foreground">
+                                  {prescription.medications.strength}
+                                  {prescription.medications.dosage_form && ` • ${prescription.medications.dosage_form}`}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {prescription.doctor_profile ? (
+                                <>
+                                  <div>{prescription.doctor_profile.first_name} {prescription.doctor_profile.last_name}</div>
+                                  {prescription.doctor_profile.specialization && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {prescription.doctor_profile.specialization}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div>{format(new Date(prescription.prescribed_date), 'MMM d, yyyy')}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {format(new Date(prescription.prescribed_date), 'h:mm a')}
+                              </div>
                             </TableCell>
                             <TableCell>
                               <Badge
                                 variant={
-                                  prescription.status === 'Dispensed' ? 'default' :
-                                  prescription.status === 'Pending' ? 'secondary' :
-                                  'outline'
+                                  prescription.status === 'Dispensed'
+                                    ? 'default'
+                                    : prescription.status === 'Cancelled'
+                                    ? 'destructive'
+                                    : 'secondary'
                                 }
+                                className="capitalize"
                               >
-                                {prescription.status}
+                                {prescription.status.toLowerCase()}
                               </Badge>
                             </TableCell>
-                            <TableCell>
-                              {prescription.status === 'Pending' && (
+                            <TableCell className="text-right">
+                              {prescription.status === 'Pending' ? (
                                 <Button
+                                  variant="outline"
                                   size="sm"
-                                  onClick={() => handleDispensePrescription(prescription.id, prescription.patient_id)}
+                                  onClick={() =>
+                                    handleDispensePrescription(prescription.id, prescription.patient_id)
+                                  }
+                                  disabled={loadingStates[prescription.id]}
                                 >
+                                  {loadingStates[prescription.id] ? (
+                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  ) : (
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                  )}
                                   Dispense
                                 </Button>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">
+                                  Dispensed
+                                </span>
                               )}
                             </TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
