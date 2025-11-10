@@ -1,7 +1,10 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { format, parseISO, isSameDay } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn } from "@/lib/utils";
 import 'highlight.js/styles/github.css'; // For JSON syntax highlighting
+import { Search, X, Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Users, UserPlus, Activity, Calendar, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus, RefreshCw } from 'lucide-react';
+import { Users, UserPlus, Activity, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus, RefreshCw } from 'lucide-react';
 import { logActivity } from '@/lib/utils';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
@@ -90,6 +93,9 @@ export default function AdminDashboard() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedAction, setSelectedAction] = useState('all');
   const [selectedUserFilter, setSelectedUserFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [selectedActionType, setSelectedActionType] = useState<string>('all');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userForm, setUserForm] = useState({
     full_name: '',
@@ -821,6 +827,47 @@ export default function AdminDashboard() {
 
   const uniqueUsers = Array.from(new Set(activityLogs.map(log => log.user_id)))
     .filter(Boolean) as string[];
+
+  const actionTypes = Array.from(new Set(activityLogs.map(log => log.action.split('.')[0]))).filter(Boolean) as string[];
+
+  const filteredLogs = activityLogs.filter(log => {
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = 
+        log.action.toLowerCase().includes(searchLower) ||
+        log.user_name?.toLowerCase().includes(searchLower) ||
+        log.user_email?.toLowerCase().includes(searchLower) ||
+        JSON.stringify(log.details).toLowerCase().includes(searchLower);
+      if (!matchesSearch) return false;
+    }
+    
+    if (selectedUserFilter !== 'all' && log.user_id !== selectedUserFilter) {
+      return false;
+    }
+    
+    if (selectedActionType !== 'all' && !log.action.startsWith(selectedActionType)) {
+      return false;
+    }
+    
+    if (dateRange.from || dateRange.to) {
+      const logDate = new Date(log.created_at);
+      if (dateRange.from && logDate < dateRange.from) return false;
+      if (dateRange.to) {
+        const toDate = new Date(dateRange.to);
+        toDate.setHours(23, 59, 59, 999); // End of the day
+        if (logDate > toDate) return false;
+      }
+    }
+    
+    return true;
+  });
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setSelectedUserFilter('all');
+    setSelectedActionType('all');
+    setDateRange({});
+  };
 
   return (
     <DashboardLayout title="Admin Dashboard">
