@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import { format } from 'date-fns';
+import { format, parseISO, isSameDay } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -97,6 +97,7 @@ export default function AdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [medicalServices, setMedicalServices] = useState<MedicalService[]>([]);
   const [serviceForm, setServiceForm] = useState({
     service_code: '',
@@ -107,7 +108,7 @@ export default function AdminDashboard() {
     currency: 'TSh',
     is_active: true
   });
-  const [editingService, setEditingService] = useState<any>(null);
+  const [editingService, setEditingService] = useState<MedicalService | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
@@ -118,10 +119,25 @@ export default function AdminDashboard() {
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const { user } = useAuth();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   useEffect(() => {
+    const loadUser = async () => {
+      if (user?.id) {
+        const { data: userData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        if (userData) {
+          setCurrentUser(userData as User);
+        }
+      }
+    };
+    
+    loadUser();
     fetchData();
-  }, []);
+  }, [user]);
 
   const fetchActivityLogs = async () => {
     try {
@@ -133,6 +149,11 @@ export default function AdminDashboard() {
         .limit(50);
         
       if (error) throw error;
+      
+      if (!logs) {
+        setActivityLogs([]);
+        return;
+      }
       
       // Get user details for each log
       const logsWithUserInfo = await Promise.all(
@@ -149,7 +170,7 @@ export default function AdminDashboard() {
             ...log,
             user_name: userData?.full_name || 'System',
             user_email: userData?.email || 'system@example.com'
-          };
+          } as ActivityLog; // Add type assertion here
         })
       );
       
@@ -1028,37 +1049,89 @@ export default function AdminDashboard() {
           <CardContent>
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {logsLoading ? (
-                <div className="flex items-center justify-center h-32">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                  <h3 className="text-lg font-medium">Activity Logs</h3>
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="date"
+                        value={selectedDate ? format(selectedDate, 'yyyy-MM-dd') : ''}
+                        onChange={(e) => setSelectedDate(e.target.value ? parseISO(e.target.value) : null)}
+                        className="max-w-[180px]"
+                      />
+                      {selectedDate && (
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => setSelectedDate(null)}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={fetchActivityLogs} 
+                      disabled={logsLoading}
+                      className="w-full sm:w-auto"
+                    >
+                      {logsLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                      Refresh
+                    </Button>
+                  </div>
                 </div>
-              ) : activityLogs.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8">
+              ) : activityLogs.length > 0 ? (
+                activityLogs
+                  .filter(log => {
+                    if (!selectedDate) return true;
+                    const logDate = new Date(log.created_at);
+                    return isSameDay(logDate, selectedDate);
+                  })
+                  .map((log) => {
+                    const logDate = new Date(log.created_at);
+                    const displayName = log.user_name || log.user_email?.split('@')[0] || 'System';
+                    const displayEmail = log.user_email || 'system';
+                    
+                    return (
+                      <div key={log.id} className="border rounded-lg p-4 hover:bg-accent/10 transition-colors">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="font-medium flex flex-wrap items-baseline gap-1">
+                              <span className="whitespace-nowrap">{displayName}</span>
+                              <span className="text-muted-foreground text-xs sm:text-sm font-normal">
+                                ({displayEmail})
+                              </span>
+                            </div>
+                            <div className="text-xs sm:text-sm text-muted-foreground">
+                              {format(logDate, 'MMM d, yyyy hh:mm a')}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="capitalize">
+                              {log.action.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </Badge>
+                          </div>
+                        </div>
+                        {log.details && Object.keys(log.details).length > 0 && (
+                          <div className="mt-3 p-3 bg-muted/10 dark:bg-muted/20 rounded-md text-xs sm:text-sm overflow-x-auto">
+                            <pre className="whitespace-pre-wrap break-words">
+                              {JSON.stringify(log.details, (key, value) => 
+                                typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+                                  ? format(new Date(value), 'MMM d, yyyy hh:mm a')
+                                  : value, 2
+                              )}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
                   No activity logs found
                 </div>
-              ) : (
-                activityLogs.map((log) => (
-                  <div key={log.id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium">
-                          {log.user_name || 'System'}{' '}
-                          <span className="text-muted-foreground text-sm">
-                            ({log.user_email || 'system'})
-                          </span>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {format(new Date(log.created_at), 'MMM d, yyyy hh:mm a')}
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="capitalize">
-                        {log.action.replace('.', ' ')}
-                      </Badge>
-                    </div>
-                    <div className="mt-2 p-3 bg-muted/20 rounded-md text-sm font-mono overflow-x-auto">
-                      <pre>{JSON.stringify(log.details, null, 2)}</pre>
-                    </div>
-                  </div>
-                ))
               )}
             </div>
           </CardContent>
