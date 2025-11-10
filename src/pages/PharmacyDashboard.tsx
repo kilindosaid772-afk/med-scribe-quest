@@ -162,14 +162,8 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Create invoice from prescription before dispensing
-      console.log('Creating invoice from prescription...');
-      const invoice = await createInvoiceFromPrescription(prescription).catch(error => {
-        console.error('Error creating invoice:', error);
-        toast.error('Failed to create invoice');
-        throw error; // Re-throw to be caught by outer try-catch
-      });
-      console.log('Invoice created:', invoice);
+      // Skip invoice creation for now, just dispense the medication
+      console.log('Dispensing medication without creating invoice...');
 
       // Reduce medication stock based on prescription quantity
       console.log('Fetching medication data for stock reduction...');
@@ -281,14 +275,14 @@ export default function PharmacyDashboard() {
         console.log('No active patient visit found for workflow update');
       }
 
-      toast.success(`Prescription dispensed successfully. Invoice ${invoice.invoice_number} created for TSh${invoice.total_amount.toFixed(2)}`);
+      toast.success('Prescription dispensed successfully');
       
       // Log successful dispense
       await logActivity('pharmacy.dispense.success', {
         prescription_id: prescriptionId,
         patient_id: patientId,
-        invoice_number: invoice.invoice_number,
-        amount: invoice.total_amount
+        medication_id: prescription.medication_id,
+        quantity: prescription.quantity
       });
       
       loadPharmacyData();
@@ -569,27 +563,88 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
 
       console.log(`Calculated amounts - Subtotal: ${subtotal}, Tax: ${tax}, Total: ${totalAmount}`);
 
-      // Create invoice
-      const invoiceNumber = await generateInvoiceNumber();
-      const invoiceData = {
-        invoice_number: invoiceNumber,
-        patient_id: prescription.patient_id,
-        total_amount: totalAmount,
-        tax: tax,
-        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
-        notes: `Auto-generated invoice for prescription: ${medicationData.name} (${prescription.dosage})`
-      };
+      // Create invoice with retry logic for duplicate invoice numbers
+      let invoice = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts) {
+        try {
+          const invoiceNumber = await generateInvoiceNumber();
+          const invoiceData = {
+            invoice_number: invoiceNumber,
+            patient_id: prescription.patient_id,
+            total_amount: totalAmount,
+            tax: tax,
+            due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: `Auto-generated invoice for prescription: ${medicationData.name} (${prescription.dosage})`,
+            status: 'unpaid' // Using 'unpaid' as it's a standard invoice status
+          };
 
-      console.log('Creating invoice with data:', invoiceData);
-      const { data: invoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .insert([invoiceData])
-        .select()
-        .single();
+          console.log(`Attempt ${attempts + 1}: Creating invoice with number:`, invoiceNumber);
+          
+          const { data, error: invoiceError } = await supabase
+            .from('invoices')
+            .insert([invoiceData])
+            .select()
+            .single();
 
-      if (invoiceError) {
-        console.error('Error creating invoice:', invoiceError);
-        throw new Error(`Failed to create invoice: ${invoiceError.message}`);
+          if (invoiceError) {
+            console.error(`Invoice creation attempt ${attempts + 1} failed:`, invoiceError);
+            
+            // If it's a duplicate key error and we have retries left, try again
+            if (invoiceError.code === '23505' || (invoiceError as any).code === '23505') {
+              if (attempts < maxAttempts - 1) {
+              console.warn(`Duplicate invoice number ${invoiceNumber}, retrying...`);
+                attempts++;
+                console.warn(`Duplicate invoice number detected, retrying (${attempts}/${maxAttempts})...`);
+                // Add an increasing delay between retries
+                await new Promise(resolve => setTimeout(resolve, 200 * attempts));
+                continue;
+              } else {
+                // If we're out of retries, try one last time with a timestamp-based number
+                console.warn('Max retries reached, trying with timestamp-based invoice number');
+                const timestamp = Date.now().toString().slice(-6);
+                const fallbackInvoiceNumber = `INV-${timestamp}`;
+                
+                const { data: fallbackData, error: fallbackError } = await supabase
+                  .from('invoices')
+                  .insert([{
+                    ...invoiceData,
+                    invoice_number: fallbackInvoiceNumber,
+                    status: 'unpaid' // Ensure status is set for fallback as well
+                  }])
+                  .select()
+                  .single();
+                  
+                if (fallbackError) {
+                  console.error('Fallback invoice creation failed:', fallbackError);
+                  throw new Error(`Failed to create invoice after ${maxAttempts} attempts and fallback: ${fallbackError.message}`);
+                }
+                
+                invoice = fallbackData;
+                break;
+              }
+            }
+            // If it's a different error, throw it
+            throw new Error(`Failed to create invoice: ${invoiceError.message}`);
+          }
+          
+          invoice = data;
+          break; // Success, exit the retry loop
+          
+        } catch (error) {
+          if (attempts >= maxAttempts - 1) {
+            console.error(`Failed to create invoice after ${maxAttempts} attempts:`, error);
+            throw error;
+          }
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+
+      if (!invoice) {
+        throw new Error('Failed to create invoice after multiple attempts');
       }
 
       console.log('Invoice created:', invoice);
