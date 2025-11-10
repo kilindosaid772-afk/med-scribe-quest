@@ -14,10 +14,10 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
-import { generateInvoiceNumber } from '@/lib/utils';
+import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 
 export default function PharmacyDashboard() {
-  const { user } = useAuth();
+  const { user } = useAuth() || {};
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [medications, setMedications] = useState<any[]>([]);
   const [stats, setStats] = useState({ pendingPrescriptions: 0, lowStock: 0, totalMedications: 0 });
@@ -42,7 +42,7 @@ export default function PharmacyDashboard() {
         .select(`
           *,
           patient:patient_id(full_name),
-          medications(name)
+          medications:medication_id(name, unit_price, quantity_in_stock)
         `)
         .order('prescribed_date', { ascending: false })
         .limit(50);
@@ -118,6 +118,12 @@ export default function PharmacyDashboard() {
   const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
     try {
       console.log('Starting prescription dispense for ID:', prescriptionId);
+      
+      // Log start of dispense action
+      await logActivity('pharmacy.dispense.start', { 
+        prescription_id: prescriptionId,
+        patient_id: patientId 
+      });
 
       // First, get the prescription details to create invoice
       const { data: prescription, error: fetchError } = await supabase
@@ -128,6 +134,10 @@ export default function PharmacyDashboard() {
 
       if (fetchError) {
         console.error('Error fetching prescription:', fetchError);
+        await logActivity('pharmacy.dispense.error', { 
+          error: 'Failed to fetch prescription',
+          details: fetchError.message 
+        });
         toast.error('Failed to fetch prescription details');
         return;
       }
@@ -135,18 +145,30 @@ export default function PharmacyDashboard() {
       console.log('Prescription data:', prescription);
 
       if (!prescription) {
+        await logActivity('pharmacy.dispense.error', { 
+          error: 'Prescription not found',
+          prescription_id: prescriptionId 
+        });
         toast.error('Prescription not found');
         return;
       }
 
       if (!prescription.medication_id) {
+        await logActivity('pharmacy.dispense.error', { 
+          error: 'Invalid medication ID',
+          prescription_id: prescriptionId
+        });
         toast.error('Prescription does not have a valid medication ID');
         return;
       }
 
       // Create invoice from prescription before dispensing
       console.log('Creating invoice from prescription...');
-      const invoice = await createInvoiceFromPrescription(prescription);
+      const invoice = await createInvoiceFromPrescription(prescription).catch(error => {
+        console.error('Error creating invoice:', error);
+        toast.error('Failed to create invoice');
+        throw error; // Re-throw to be caught by outer try-catch
+      });
       console.log('Invoice created:', invoice);
 
       // Reduce medication stock based on prescription quantity
@@ -195,13 +217,21 @@ export default function PharmacyDashboard() {
       // Update prescription status to dispensed
       console.log('Updating prescription status...');
       const currentUserId = user?.id;
+      const updateData: any = {
+        status: 'Dispensed',
+        dispensed_date: new Date().toISOString(),
+        dispensed_by: currentUserId || null,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Only include lab_result_id if it exists
+      if (prescription.lab_result_id) {
+        updateData.lab_result_id = prescription.lab_result_id;
+      }
+      
       const { error } = await supabase
         .from('prescriptions')
-        .update({
-          status: 'Dispensed',
-          dispensed_date: new Date().toISOString(),
-          dispensed_by: currentUserId || null
-        })
+        .update(updateData)
         .eq('id', prescriptionId);
 
       if (error) {
@@ -252,10 +282,25 @@ export default function PharmacyDashboard() {
       }
 
       toast.success(`Prescription dispensed successfully. Invoice ${invoice.invoice_number} created for TSh${invoice.total_amount.toFixed(2)}`);
+      
+      // Log successful dispense
+      await logActivity('pharmacy.dispense.success', {
+        prescription_id: prescriptionId,
+        patient_id: patientId,
+        invoice_number: invoice.invoice_number,
+        amount: invoice.total_amount
+      });
+      
       loadPharmacyData();
     } catch (error) {
       console.error('Unexpected error in handleDispensePrescription:', error);
-      toast.error(`An unexpected error occurred: ${error.message || error}`);
+      await logActivity('pharmacy.dispense.error', { 
+        error: 'Unexpected error',
+        details: error instanceof Error ? error.message : String(error),
+        prescription_id: prescriptionId,
+        patient_id: patientId
+      });
+      toast.error('An unexpected error occurred while dispensing the prescription');
     }
   };
 
@@ -483,7 +528,14 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
     }
   };
 
-  const createInvoiceFromPrescription = async (prescription: any) => {
+  const createInvoiceFromPrescription = async (prescription: {
+    id: string;
+    medication_id: string;
+    patient_id: string;
+    quantity: number;
+    dosage: string;
+    [key: string]: any;
+  }) => {
     try {
       console.log('Starting invoice creation for prescription:', prescription.id);
 
@@ -525,7 +577,7 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
         total_amount: totalAmount,
         tax: tax,
         due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
-        notes: `Auto-generated invoice for prescription: ${prescription.medication_name} (${prescription.dosage})`
+        notes: `Auto-generated invoice for prescription: ${medicationData.name} (${prescription.dosage})`
       };
 
       console.log('Creating invoice with data:', invoiceData);
@@ -545,11 +597,12 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
       // Create invoice item
       const invoiceItemData = {
         invoice_id: invoice.id,
-        description: `${prescription.medication_name} ${prescription.dosage}`,
-        item_type: null, // Set to null to avoid constraint violation
+        description: `${medicationData.name} ${prescription.dosage}`,
+        item_type: 'medication',
         quantity: prescription.quantity,
         unit_price: medicationData.unit_price,
-        total_price: subtotal
+        total_price: subtotal,
+        medication_id: prescription.medication_id
       };
 
       console.log('Creating invoice item:', invoiceItemData);
