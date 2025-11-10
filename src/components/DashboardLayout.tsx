@@ -91,15 +91,29 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
 
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8 border-2 border-primary/20">
-                <AvatarFallback className="bg-primary/10 text-primary">
-                  <User className="h-4 w-4" />
+                {user?.user_metadata?.avatar_url ? (
+                  <img 
+                    src={user.user_metadata.avatar_url} 
+                    alt="Profile" 
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const fallback = target.nextElementSibling as HTMLElement;
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
+                  />
+                ) : null}
+                <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                  {user?.user_metadata?.username?.substring(0, 2).toUpperCase() || 
+                   user?.user_metadata?.full_name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 
+                   user?.email?.substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden sm:block text-right">
                 <p className="text-sm font-medium">
                   {user?.user_metadata?.username || 
                    user?.user_metadata?.full_name || 
-                   user?.user_metadata?.name || 
                    user?.email?.split('@')[0]}
                 </p>
               </div>
@@ -142,15 +156,29 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
               <div className="flex items-center justify-between pt-2 border-t">
                 <div className="flex items-center gap-2">
                   <Avatar className="h-6 w-6 border border-primary/20">
-                    <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                      <User className="h-3 w-3" />
+                    {user?.user_metadata?.avatar_url ? (
+                      <img 
+                        src={user.user_metadata.avatar_url} 
+                        alt="Profile" 
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const fallback = target.nextElementSibling as HTMLElement;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-medium">
+                      {user?.user_metadata?.username?.substring(0, 2).toUpperCase() || 
+                       user?.user_metadata?.full_name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 
+                       user?.email?.substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="text-sm">
                     <p className="font-medium">
                       {user?.user_metadata?.username || 
                        user?.user_metadata?.full_name || 
-                       user?.user_metadata?.name || 
                        user?.email?.split('@')[0]}
                     </p>
                   </div>

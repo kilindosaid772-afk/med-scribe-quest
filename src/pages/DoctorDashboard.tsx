@@ -203,77 +203,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Helper function to create sample data for testing
-  const createSampleData = async () => {
-    if (!user) return;
-
-    try {
-      // Create sample patients if none exist
-      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
-      if (!existingPatients || existingPatients.length === 0) {
-        const { data: newPatients } = await supabase.from('patients').insert([
-          {
-            full_name: 'Alice Johnson',
-            date_of_birth: '1988-03-20',
-            gender: 'Female',
-            phone: '+255700000003',
-            email: 'alice@example.com',
-            blood_group: 'B+',
-            status: 'Active'
-          },
-          {
-            full_name: 'Bob Wilson',
-            date_of_birth: '1975-11-10',
-            gender: 'Male',
-            phone: '+255700000004',
-            email: 'bob@example.com',
-            blood_group: 'AB+',
-            status: 'Active'
-          }
-        ]).select();
-
-        if (newPatients && newPatients.length > 0) {
-          // Create sample appointments for today
-          const today = new Date().toISOString().split('T')[0];
-          await supabase.from('appointments').insert([
-            {
-              patient_id: newPatients[0].id,
-              doctor_id: user.id,
-              appointment_date: today,
-              appointment_time: '09:00',
-              reason: 'Follow-up consultation',
-              status: 'Scheduled'
-            },
-            {
-              patient_id: newPatients[1].id,
-              doctor_id: user.id,
-              appointment_date: today,
-              appointment_time: '14:30',
-              reason: 'Regular checkup',
-              status: 'Confirmed'
-            }
-          ]);
-
-          // Create sample patient visits
-          await supabase.from('patient_visits').insert([
-            {
-              patient_id: newPatients[0].id,
-              current_stage: 'doctor',
-              overall_status: 'Active',
-              reception_status: 'Checked In',
-              nurse_status: 'Completed',
-              doctor_status: 'Pending'
-            }
-          ]);
-        }
-      }
-
-      toast.success('Sample data created');
-      fetchData();
-    } catch (error) {
-      console.error('Error creating sample data:', error);
-    }
-  };
 
   if (loading) {
     return (
@@ -328,14 +257,7 @@ export default function DoctorDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">{stats.totalPatients}</div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={createSampleData}
-                className="mt-2 text-green-600 border-green-200 hover:bg-green-50"
-              >
-                Create Sample Data
-              </Button>
+              <p className="text-xs text-muted-foreground mt-1">Total registered patients</p>
             </CardContent>
           </Card>
         </div>
@@ -347,12 +269,7 @@ export default function DoctorDashboard() {
             <CardDescription>Common doctor tasks and tools</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/services'}>
-                <Activity className="h-6 w-6" />
-                <span>Medical Services</span>
-                <span className="text-xs text-muted-foreground">Add problems & tests</span>
-              </Button>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
               <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/lab'}>
                 <FlaskConical className="h-6 w-6" />
                 <span>View Lab Results</span>

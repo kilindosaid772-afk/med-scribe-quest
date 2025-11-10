@@ -219,60 +219,6 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
 
     return summary;
   };
-  const createSampleData = async () => {
-    if (!user) return;
-
-    try {
-      // Create sample patients if none exist
-      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
-      if (!existingPatients || existingPatients.length === 0) {
-        const { data: newPatients } = await supabase.from('patients').insert([
-          {
-            full_name: 'Alice Johnson',
-            date_of_birth: '1988-03-20',
-            gender: 'Female',
-            phone: '+255700000003',
-            email: 'alice@example.com',
-            blood_group: 'B+',
-            status: 'Active'
-          },
-          {
-            full_name: 'Bob Wilson',
-            date_of_birth: '1975-11-10',
-            gender: 'Male',
-            phone: '+255700000004',
-            email: 'bob@example.com',
-            blood_group: 'AB+',
-            status: 'Active'
-          }
-        ]).select();
-
-        if (newPatients && newPatients.length > 0) {
-          // Create sample patient visits ready for discharge
-          await supabase.from('patient_visits').insert([
-            {
-              patient_id: newPatients[0].id,
-              visit_date: new Date().toISOString().split('T')[0],
-              current_stage: 'discharge_ready',
-              overall_status: 'Active',
-              reception_status: 'Checked In',
-              nurse_status: 'Completed',
-              doctor_status: 'Completed',
-              pharmacy_status: 'Completed',
-              billing_status: 'Paid',
-              discharge_status: 'Pending'
-            }
-          ]);
-        }
-      }
-
-      toast.success('Sample discharge data created');
-      fetchData();
-    } catch (error) {
-      console.error('Error creating sample data:', error);
-      toast.error('Failed to create sample data');
-    }
-  };
 
   if (loading) {
     return (

@@ -27,6 +27,7 @@ import {
   Phone,
   Clipboard,
   HeartHandshake,
+  Plus,
 } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
@@ -59,6 +60,8 @@ export default function ReceptionistDashboard() {
 
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [showBookAppointmentDialog, setShowBookAppointmentDialog] = useState(false);
+  const [showAddDepartmentDialog, setShowAddDepartmentDialog] = useState(false);
+  const [newDepartment, setNewDepartment] = useState({ name: '', description: '' });
   const [showPatientSearch, setShowPatientSearch] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
 
@@ -81,10 +84,11 @@ export default function ReceptionistDashboard() {
     department_id: '',
   });
 
-// Load data when component mounts or user changes
+  // Load data when component mounts or user changes
   useEffect(() => {
     fetchData();
   }, [user]);
+
   const fetchData = async () => {
     if (!user) return;
 
@@ -435,7 +439,7 @@ export default function ReceptionistDashboard() {
       }
     }
   }, [appointmentForm.department_id, doctors]);
-  
+
   // Load data when component mounts or user changes
   useEffect(() => {
     fetchData();
@@ -683,6 +687,38 @@ export default function ReceptionistDashboard() {
     }
   };
 
+  const handleAddDepartment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDepartment.name.trim()) {
+      toast.error('Department name is required');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .insert([
+          { 
+            name: newDepartment.name.trim(),
+            description: newDepartment.description.trim() || null,
+            created_by: user?.id
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setDepartments([...departments, data]);
+      setNewDepartment({ name: '', description: '' });
+      setShowAddDepartmentDialog(false);
+      toast.success('Department added successfully');
+    } catch (error) {
+      console.error('Error adding department:', error);
+      toast.error('Failed to add department');
+    }
+  };
+
   // ---------------- LOADING SCREEN ----------------
   if (loading) {
     return (
@@ -803,23 +839,29 @@ export default function ReceptionistDashboard() {
                   <span>Process Discharge</span>
                   <span className="text-xs text-muted-foreground">For completed patients</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/services'}>
-                  <Clipboard className="h-6 w-6" />
-                  <span>Medical Services</span>
-                  <span className="text-xs text-muted-foreground">Add problems & tests</span>
-                </Button>
               </div>
             </CardContent>
           </Card>
 
           {/* Departments */}
           <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="h-5 w-5" />
-                Departments & Doctor Queue
-              </CardTitle>
-              <CardDescription>Available departments and current doctor workload</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Building className="h-5 w-5" />
+                  Departments & Doctor Queue
+                </CardTitle>
+                <CardDescription>Available departments and current doctor workload</CardDescription>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex items-center gap-1"
+                onClick={() => setShowAddDepartmentDialog(true)}
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Department</span>
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
