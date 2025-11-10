@@ -6,25 +6,31 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Plus, Stethoscope, DollarSign, Loader2 } from 'lucide-react';
-import { logActivity } from '@/lib/utils';
+import { Plus, Stethoscope, DollarSign, Loader2, Trash2, Pencil, Check, X } from 'lucide-react';
+import { 
+  createMedicalService, 
+  getMedicalServices, 
+  updateMedicalService, 
+  deleteMedicalService,
+  toggleServiceStatus,
+  type MedicalService 
+} from '@/services/medicalService';
 
-interface MedicalService {
-  id: string;
-  service_code: string;
-  service_name: string;
-  service_type: string;
-  description?: string;
-  base_price: number;
-  currency: string;
-  is_active: boolean;
-}
+const SERVICE_TYPES = [
+  'Consultation',
+  'Procedure',
+  'Test',
+  'Therapy',
+  'Surgery',
+  'Other'
+];
+
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'KES', 'UGX', 'TZS'];
 
 interface PatientService {
   id: string;

@@ -662,19 +662,77 @@ export default function AdminDashboard() {
     }
 
     try {
-      if (isPrimary) {
-        const { error: clearError } = await supabase
-          .from('user_roles')
-          .update({ is_primary: false })
-          .eq('user_id', selectedUserId);
-        if (clearError) throw clearError;
-      }
-
-      const { error: insertError } = await supabase
+      // Check if the user already has this role
+      const { data: existingRole, error: checkError } = await supabase
         .from('user_roles')
-        .insert([{ user_id: selectedUserId, role, is_primary: isPrimary }]);
+        .select('id, is_primary')
+        .eq('user_id', selectedUserId)
+        .eq('role', role)
+        .maybeSingle();
 
-      if (insertError) throw insertError;
+      if (checkError) throw checkError;
+
+      if (existingRole) {
+        // If role exists, update it instead of inserting
+        const updates: { is_primary?: boolean } = {};
+        
+        if (isPrimary) {
+          // Clear primary flag from other roles if needed
+          const { error: clearError } = await supabase
+            .from('user_roles')
+            .update({ is_primary: false })
+            .eq('user_id', selectedUserId);
+          if (clearError) throw clearError;
+          
+          updates.is_primary = true;
+        }
+
+        // Only update if there are changes to be made
+        if (Object.keys(updates).length > 0) {
+          const { error: updateError } = await supabase
+            .from('user_roles')
+            .update(updates)
+            .eq('id', existingRole.id);
+          
+          if (updateError) throw updateError;
+          
+          toast.success('Role updated successfully');
+        } else {
+          toast.info('User already has this role');
+          return;
+        }
+      } else {
+        // Role doesn't exist, insert new role
+        if (isPrimary) {
+          // Clear primary flag from other roles if needed
+          const { error: clearError } = await supabase
+            .from('user_roles')
+            .update({ is_primary: false })
+            .eq('user_id', selectedUserId);
+          if (clearError) throw clearError;
+        }
+
+        const { error: insertError } = await supabase
+          .from('user_roles')
+          .upsert(
+            { 
+              user_id: selectedUserId, 
+              role, 
+              is_primary: isPrimary,
+              updated_at: new Date().toISOString()
+            },
+            { 
+              onConflict: 'user_id,role',
+              ignoreDuplicates: false
+            }
+          )
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        
+        toast.success('Role assigned successfully');
+      }
 
       // Log the role assignment
       await logActivity('user.role.assigned', {
@@ -683,7 +741,6 @@ export default function AdminDashboard() {
         is_primary: isPrimary
       });
 
-      toast.success('Role assigned successfully');
       setRoleDialogOpen(false);
       setSelectedUserId(null);
       fetchData();
