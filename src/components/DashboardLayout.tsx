@@ -38,11 +38,6 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
       label: 'Medical Services',
       path: '/services',
       roles: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_tech', 'pharmacist', 'billing']
-    },
-    {
-      label: 'Debug Tools',
-      path: '/debug',
-      roles: ['admin', 'doctor', 'receptionist']
     }
   ];
 

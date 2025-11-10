@@ -16,16 +16,60 @@ import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, P
 import { format } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 
+interface Medication {
+  id: string;
+  name: string;
+  quantity_in_stock: number;
+  reorder_level: number;
+  [key: string]: any;
+}
+
+interface UserProfile {
+  id: string;
+  first_name: string;
+  last_name: string;
+  full_name?: string;
+  email?: string;
+  [key: string]: any;
+}
+
+interface MedicationInfo {
+  id: string;
+  name: string;
+  dosage_form?: string;
+  strength?: string;
+  manufacturer?: string;
+  [key: string]: any;
+}
+
+interface Prescription {
+  id: string;
+  patient_id: string;
+  patient?: UserProfile;
+  medication_id: string;
+  medication_name?: string;
+  medications?: MedicationInfo;
+  doctor_id?: string;
+  doctor_profile?: UserProfile;
+  quantity: number;
+  dosage: string;
+  status: 'Pending' | 'Dispensed' | 'Cancelled' | string;
+  lab_result_id?: string;
+  prescribed_date: string;
+  [key: string]: any;
+}
+
 export default function PharmacyDashboard() {
-  const { user } = useAuth() || {};
-  const [prescriptions, setPrescriptions] = useState<any[]>([]);
-  const [medications, setMedications] = useState<any[]>([]);
+  const { user } = useAuth() || {} as { user: UserProfile | null };
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+
+  const [medications, setMedications] = useState<Medication[]>([]);
   const [stats, setStats] = useState({ pendingPrescriptions: 0, lowStock: 0, totalMedications: 0 });
   const [loading, setLoading] = useState(true);
-  const [medicationDialogOpen, setMedicationDialogOpen] = useState(false);
-  const [editingMedication, setEditingMedication] = useState<any>(null);
-  const [stockDialogOpen, setStockDialogOpen] = useState(false);
-  const [selectedMedication, setSelectedMedication] = useState<any>(null);
+  const [medicationDialogOpen, setMedicationDialogOpen] = useState<boolean>(false);
+  const [editingMedication, setEditingMedication] = useState<Medication | null>(null);
+  const [stockDialogOpen, setStockDialogOpen] = useState<boolean>(false);
+  const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<any[]>([]);
@@ -33,6 +77,11 @@ export default function PharmacyDashboard() {
   const [importProgress, setImportProgress] = useState(0);
 
   const loadPharmacyData = async () => {
+    if (!user) {
+      toast.error('User not authenticated');
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -41,61 +90,31 @@ export default function PharmacyDashboard() {
         .from('prescriptions')
         .select(`
           *,
-          patient:patient_id(full_name),
-          medications:medication_id(name, unit_price, quantity_in_stock)
+          patient:patient_id (id, first_name, last_name, date_of_birth),
+          doctor_profile:doctor_id (id, first_name, last_name, specialization, email),
+          medications:medication_id (id, name, dosage_form, strength, manufacturer)
         `)
         .order('prescribed_date', { ascending: false })
-        .limit(50);
+        .limit(50) as { data: Prescription[] | null, error: any };
 
       if (prescriptionsError) {
         console.error('Error fetching prescriptions:', prescriptionsError);
-        console.error('Error details:', prescriptionsError.message, prescriptionsError.details, prescriptionsError.hint);
         toast.error(`Failed to load prescriptions: ${prescriptionsError.message}`);
         return;
-      }
-
-      // Get unique doctor IDs from prescriptions
-      const doctorIds = [...new Set(prescriptionsData?.map(p => p.doctor_id).filter(Boolean) || [])];
-
-      // Fetch doctor profiles
-      let doctorProfiles = {};
-      if (doctorIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', doctorIds);
-
-        doctorProfiles = profilesData?.reduce((acc, profile) => {
-          acc[profile.id] = profile;
-          return acc;
-        }, {}) || {};
       }
 
       // Fetch medications
       const { data: medicationsData, error: medicationsError } = await supabase
         .from('medications')
         .select('*')
-        .order('name');
+        .order('name', { ascending: true });
 
-      if (medicationsError) {
-        console.error('Error fetching medications:', medicationsError);
-        toast.error('Failed to load medications');
-        return;
-      }
+      if (medicationsError) throw medicationsError;
 
-      // Add doctor profile information to prescriptions
-      const prescriptionsWithDoctors = prescriptionsData?.map(prescription => ({
-        ...prescription,
-        doctor_profile: doctorProfiles[prescription.doctor_id]
-      })) || [];
-
-      setPrescriptions(prescriptionsWithDoctors);
+      setPrescriptions(prescriptionsData || []);
       setMedications(medicationsData || []);
 
-      console.log('Pharmacy Dashboard - Prescriptions loaded:', prescriptionsData?.length || 0);
-      console.log('Pharmacy Dashboard - Medications loaded:', medicationsData?.length || 0);
-
-      const pending = prescriptionsWithDoctors.filter(p => p.status === 'Pending').length;
+      const pending = prescriptionsData?.filter(p => p.status === 'Pending').length;
       const lowStock = medicationsData?.filter(m => m.quantity_in_stock <= m.reorder_level).length || 0;
 
       setStats({
@@ -113,16 +132,20 @@ export default function PharmacyDashboard() {
 
   useEffect(() => {
     loadPharmacyData();
-  }, []);
+  }, [user]);
 
   const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
+    if (!user?.id) {
+      toast.error('User not authenticated');
+      return;
+    }
+
     try {
-      console.log('Starting prescription dispense for ID:', prescriptionId);
-      
-      // Log start of dispense action
       await logActivity('pharmacy.dispense.start', { 
+        user_id: user.id,
         prescription_id: prescriptionId,
-        patient_id: patientId 
+        patient_id: patientId,
+        timestamp: new Date().toISOString()
       });
 
       // First, get the prescription details to create invoice
@@ -142,8 +165,6 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      console.log('Prescription data:', prescription);
-
       if (!prescription) {
         await logActivity('pharmacy.dispense.error', { 
           error: 'Prescription not found',
@@ -162,11 +183,7 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Skip invoice creation for now, just dispense the medication
-      console.log('Dispensing medication without creating invoice...');
-
       // Reduce medication stock based on prescription quantity
-      console.log('Fetching medication data for stock reduction...');
       const { data: medicationData, error: medError } = await supabase
         .from('medications')
         .select('*')
@@ -184,16 +201,12 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      console.log('Medication data:', medicationData);
-      console.log(`Available stock: ${medicationData.quantity_in_stock}, Required: ${prescription.quantity}`);
-
       if (medicationData.quantity_in_stock < prescription.quantity) {
         toast.error(`Insufficient stock. Available: ${medicationData.quantity_in_stock}, Required: ${prescription.quantity}`);
         return;
       }
 
       const newStockQuantity = medicationData.quantity_in_stock - prescription.quantity;
-      console.log(`Reducing stock from ${medicationData.quantity_in_stock} to ${newStockQuantity}`);
 
       const { error: stockError } = await supabase
         .from('medications')
@@ -206,19 +219,22 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      console.log('Stock reduced successfully');
-
       // Update prescription status to dispensed
-      console.log('Updating prescription status...');
       const currentUserId = user?.id;
-      const updateData: any = {
+      const updateData: {
+        status: string;
+        dispensed_date: string;
+        dispensed_by: string | null;
+        updated_at: string;
+        lab_result_id?: string;
+      } = {
         status: 'Dispensed',
         dispensed_date: new Date().toISOString(),
         dispensed_by: currentUserId || null,
         updated_at: new Date().toISOString()
       };
       
-      // Only include lab_result_id if it exists
+      // Only add lab_result_id if it exists in the prescription
       if (prescription.lab_result_id) {
         updateData.lab_result_id = prescription.lab_result_id;
       }
@@ -234,10 +250,7 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      console.log('Prescription status updated');
-
       // Update workflow to move to billing
-      console.log('Updating patient visit workflow...');
       const { data: visits, error: visitError } = await supabase
         .from('patient_visits')
         .select('*')
@@ -254,7 +267,6 @@ export default function PharmacyDashboard() {
       }
 
       if (visits && visits.length > 0) {
-        console.log('Found patient visit:', visits[0]);
         const { error: workflowError } = await supabase
           .from('patient_visits')
           .update({
@@ -269,10 +281,8 @@ export default function PharmacyDashboard() {
           console.error('Error updating patient visit workflow:', workflowError);
           toast.error('Prescription dispensed but failed to update workflow');
         } else {
-          console.log('Workflow updated successfully');
         }
       } else {
-        console.log('No active patient visit found for workflow update');
       }
 
       toast.success('Prescription dispensed successfully');
@@ -302,8 +312,20 @@ export default function PharmacyDashboard() {
     e.preventDefault();
     if (!selectedMedication) return;
 
-    const formData = new FormData(e.currentTarget);
-    const newQuantity = Number(formData.get('quantity'));
+    const form = e.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
+    const quantity = formData.get('quantity');
+    const newQuantity = quantity ? Number(quantity) : 0;
+    
+    if (isNaN(newQuantity)) {
+      toast.error('Please enter a valid quantity');
+      return;
+    }
+    
+    if (isNaN(newQuantity)) {
+      toast.error('Please enter a valid quantity');
+      return;
+    }
 
     const { error } = await supabase
       .from('medications')
@@ -322,17 +344,38 @@ export default function PharmacyDashboard() {
 
   const handleSaveMedication = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    const form = e.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
+    
+    const name = formData.get('name') as string;
+    const description = formData.get('description') as string;
+    const quantity = formData.get('quantity');
+    const reorderLevel = formData.get('reorderLevel');
+    const unitPrice = formData.get('unitPrice');
+    
+    if (!name || !quantity || !reorderLevel || !unitPrice) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    
+    const quantityNum = Number(quantity);
+    const reorderLevelNum = Number(reorderLevel);
+    const unitPriceNum = Number(unitPrice);
+    
+    if (isNaN(quantityNum) || isNaN(reorderLevelNum) || isNaN(unitPriceNum)) {
+      toast.error('Please enter valid numbers for quantity, reorder level, and unit price');
+      return;
+    }
 
     const medicationData = {
       name: formData.get('name') as string,
-      generic_name: formData.get('genericName') as string || null,
-      strength: formData.get('strength') as string,
-      dosage_form: formData.get('dosageForm') as string,
-      manufacturer: formData.get('manufacturer') as string || null,
-      quantity_in_stock: Number(formData.get('quantity')),
-      reorder_level: Number(formData.get('reorderLevel')),
-      unit_price: Number(formData.get('unitPrice')),
+      description: formData.get('description') as string || '',
+      quantity_in_stock: Number(quantity),
+      reorder_level: Number(reorderLevel),
+      unit_price: Number(unitPrice),
+      manufacturer: formData.get('manufacturer') as string || '',
+      dosage_form: formData.get('dosageForm') as string || '',
+      strength: formData.get('strength') as string || '',
       expiry_date: formData.get('expiryDate') as string || null,
     };
 
@@ -369,27 +412,28 @@ export default function PharmacyDashboard() {
   };
 
   const downloadCSVTemplate = () => {
-    const csvContent = `name,generic_name,strength,dosage_form,manufacturer,quantity_in_stock,reorder_level,unit_price,expiry_date
-Paracetamol,,500mg,Tablet,ABC Pharma,100,10,25.50,2025-12-31
-Ibuprofen,,200mg,Tablet,XYZ Pharma,50,5,15.75,2025-10-15
-Amoxicillin,Amoxycillin,250mg,Capsule,HealthCorp,75,8,45.00,2025-08-20
-Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
+    const headers = ['name', 'description', 'quantity_in_stock', 'reorder_level', 'unit_price', 'manufacturer', 'dosage_form', 'strength', 'expiry_date'];
+    const csvContent = [
+      headers.join(','),
+      'Paracetamol 500mg,For pain relief,100,20,5000,ABC Pharma,Tablet,500mg,2025-12-31',
+      'Amoxicillin 500mg,Antibiotic,50,10,8000,XYZ Pharma,Capsule,500mg,2024-06-30'
+    ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'medication_import_template.csv';
+    a.setAttribute('href', url);
+    a.setAttribute('download', 'medications_template.csv');
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    URL.revokeObjectURL(url);
   };
 
   const parseCSV = (text: string) => {
     const lines = text.split('\n');
     const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-
+    
     return lines.slice(1).map((line, index) => {
       if (!line.trim()) return null;
 
@@ -447,7 +491,8 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
     if (!file) return;
 
     if (!file.name.endsWith('.csv')) {
@@ -770,12 +815,18 @@ Aspirin,,100mg,Tablet,MediLab,200,20,8.25,2025-11-30`;
                         prescriptions.map((prescription) => (
                           <TableRow key={prescription.id}>
                             <TableCell className="font-medium">
-                              {prescription.patient?.full_name || 'Unknown'}
+                              {prescription.patient?.first_name && prescription.patient.last_name 
+                                ? `${prescription.patient.first_name} ${prescription.patient.last_name}`
+                                : 'Unknown'}
                             </TableCell>
                             <TableCell>{prescription.medications?.name || prescription.medication_name || 'Unknown'}</TableCell>
-                            <TableCell>{prescription.dosage}</TableCell>
+                            <TableCell>{prescription.dosage || 'N/A'}</TableCell>
                             <TableCell>{prescription.quantity}</TableCell>
-                            <TableCell>{prescription.doctor_profile?.full_name || 'Unknown'}</TableCell>
+                            <TableCell>{
+                              prescription.doctor_profile?.first_name && prescription.doctor_profile.last_name
+                                ? `${prescription.doctor_profile.first_name} ${prescription.doctor_profile.last_name}`
+                                : 'Unknown'
+                            }</TableCell>
                             <TableCell>
                               {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy')}
                             </TableCell>

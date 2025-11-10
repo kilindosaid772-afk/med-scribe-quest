@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,14 +14,70 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Users, UserPlus, Activity, Calendar, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus } from 'lucide-react';
 import { logActivity } from '@/lib/utils';
-import { EnhancedAppointmentBooking } from '@/components/EnhancedAppointmentBooking';
+// Using dynamic import for code splitting
+const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
 
 export default function AdminDashboard() {
-  const [patients, setPatients] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [stats, setStats] = useState({ totalPatients: 0, activeAppointments: 0, totalUsers: 0, totalServices: 0 });
+  interface User {
+    id: string;
+    email: string;
+    full_name?: string;
+    user_metadata?: {
+      full_name?: string;
+      avatar_url?: string;
+    };
+    app_metadata?: {
+      provider?: string;
+    };
+    created_at: string;
+    last_sign_in_at?: string;
+    role?: string;
+    roles?: Array<{
+      id: string;
+      role: string;
+      is_primary: boolean;
+    }>;
+  }
+
+  interface Patient {
+    id: string;
+    first_name: string;
+    last_name: string;
+    full_name?: string;
+    date_of_birth: string;
+    gender: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    blood_group?: string | null;
+    status: 'Active' | 'Inactive' | 'Pending' | string;
+    created_at: string;
+    updated_at: string;
+  }
+
+  interface MedicalService {
+    id: string;
+    service_code: string;
+    service_name: string;
+    service_type: string;
+    description?: string;
+    base_price: number;
+    currency: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  }
+
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [stats, setStats] = useState({ 
+    totalPatients: 0, 
+    activeAppointments: 0, 
+    totalUsers: 0, 
+    totalServices: 0 
+  });
   const [loading, setLoading] = useState(true);
-  const [medicalServices, setMedicalServices] = useState<any[]>([]);
+  const [medicalServices, setMedicalServices] = useState<MedicalService[]>([]);
   const [serviceForm, setServiceForm] = useState({
     service_code: '',
     service_name: '',
@@ -40,12 +97,18 @@ export default function AdminDashboard() {
   const [importing, setImporting] = useState(false);
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
+    if (!user) {
+      toast.error('User not authenticated');
+      return;
+    }
+
     try {
       // Fetch patients
       const { data: patientsData } = await supabase
@@ -767,7 +830,7 @@ export default function AdminDashboard() {
                 <TableBody>
                   {patients.map((patient) => (
                     <TableRow key={patient.id}>
-                      <TableCell className="font-medium">{patient.full_name}</TableCell>
+                      <TableCell className="font-medium">{patient.full_name || `${patient.first_name} ${patient.last_name}`}</TableCell>
                       <TableCell>{patient.phone}</TableCell>
                       <TableCell>{patient.blood_group || 'N/A'}</TableCell>
                       <TableCell>

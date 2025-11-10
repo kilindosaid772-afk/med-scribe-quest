@@ -14,7 +14,7 @@ interface EnhancedAppointmentBookingProps {
   onSuccess: () => void;
 }
 
-export const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppointmentBookingProps) => {
+const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppointmentBookingProps) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
@@ -222,4 +222,6 @@ export const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppo
       </DialogContent>
     </Dialog>
   );
-};
+}
+
+export default EnhancedAppointmentBooking;;
