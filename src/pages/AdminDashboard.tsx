@@ -887,7 +887,7 @@ export default function AdminDashboard() {
           <Card className="border-secondary/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Appointments</CardTitle>
-              <Calendar className="h-4 w-4 text-secondary" />
+              <CalendarIcon className="h-4 w-4 text-secondary" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-secondary">{stats.activeAppointments}</div>
