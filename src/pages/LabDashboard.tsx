@@ -415,8 +415,11 @@ export default function LabDashboard() {
   if (loading) {
     return (
       <DashboardLayout title="Laboratory Dashboard">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-3">
+            {[1,2,3].map(i => <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>)}
+          </div>
+          <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
         </div>
       </DashboardLayout>
     );

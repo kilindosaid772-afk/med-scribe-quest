@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2, RefreshCw } from 'lucide-react';
+import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 
@@ -65,7 +65,7 @@ export default function PharmacyDashboard() {
 
   const [medications, setMedications] = useState<Medication[]>([]);
   const [stats, setStats] = useState({ pendingPrescriptions: 0, lowStock: 0, totalMedications: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [medicationDialogOpen, setMedicationDialogOpen] = useState<boolean>(false);
   const [editingMedication, setEditingMedication] = useState<Medication | null>(null);
   const [stockDialogOpen, setStockDialogOpen] = useState<boolean>(false);
@@ -77,7 +77,6 @@ export default function PharmacyDashboard() {
   const [importProgress, setImportProgress] = useState(0);
   const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({});
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [prescriptionFilter, setPrescriptionFilter] = useState<'pending' | 'all'>('pending');
   
   // Type for the combined prescription data
@@ -150,8 +149,6 @@ export default function PharmacyDashboard() {
         lowStock,
         totalMedications: medicationsData.length
       });
-
-      setLastRefreshed(new Date());
       
       if (showToast) {
         toast.success('Pharmacy data loaded successfully');
@@ -177,13 +174,6 @@ export default function PharmacyDashboard() {
   // Initial data load
   useEffect(() => {
     loadPharmacyData();
-    
-    // Set up auto-refresh every 30 seconds
-    const refreshInterval = setInterval(() => {
-      loadPharmacyData(false); // Silent refresh
-    }, 30000);
-    
-    return () => clearInterval(refreshInterval);
   }, [user]);
 
   const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
@@ -331,10 +321,11 @@ export default function PharmacyDashboard() {
         timestamp: new Date().toISOString()
       });
 
-      // Refresh data
-      await loadPharmacyData();
       
       toast.success('Prescription dispensed successfully');
+      
+      // Update local state
+      setPrescriptions(prev => prev.filter(p => p.id !== prescriptionId));
     } catch (error) {
       console.error('Error dispensing prescription:', error);
       const errorMsg = error instanceof Error ? error.message : 'Failed to dispense prescription';
@@ -770,8 +761,11 @@ export default function PharmacyDashboard() {
   if (loading) {
     return (
       <DashboardLayout title="Pharmacy Dashboard">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            {[1,2,3].map(i => <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>)}
+          </div>
+          <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
         </div>
       </DashboardLayout>
     );
@@ -780,31 +774,6 @@ export default function PharmacyDashboard() {
   return (
     <DashboardLayout title="Pharmacy Dashboard">
       <div className="space-y-6">
-        {/* Header with refresh button */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Pharmacy Dashboard</h1>
-          <div className="flex items-center space-x-2">
-            {lastRefreshed && (
-              <span className="text-xs text-muted-foreground">
-                Last updated: {formatDistanceToNow(new Date(lastRefreshed), { addSuffix: true })}
-              </span>
-            )}
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => loadPharmacyData()}
-              disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              <span className="ml-2">Refresh</span>
-            </Button>
-          </div>
-        </div>
-
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
@@ -884,19 +853,6 @@ export default function PharmacyDashboard() {
                       All
                     </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => loadPharmacyData()}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Refresh
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent>

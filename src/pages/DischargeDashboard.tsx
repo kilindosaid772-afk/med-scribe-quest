@@ -224,8 +224,11 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
   if (loading) {
     return (
       <DashboardLayout title="Discharge Management">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-3">
+            {[1,2,3].map(i => <div key={i} className="h-28 bg-gray-200 animate-pulse rounded-lg"></div>)}
+          </div>
+          <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
         </div>
       </DashboardLayout>
     );
