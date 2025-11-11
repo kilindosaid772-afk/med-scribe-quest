@@ -95,6 +95,169 @@ export default function DoctorDashboard() {
     }
   };
 
+    // Handle different appointment actions
+  const handleStartAppointment = async (appointment: any) => {
+    try {
+      setLoading(true);
+      // Update appointment status to 'In Progress'
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'In Progress' })
+        .eq('id', appointment.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setAppointments(prev => 
+        prev.map(a => 
+          a.id === appointment.id 
+            ? { ...a, status: 'In Progress' } 
+            : a
+        )
+      );
+      
+      toast.success('Appointment started successfully');
+    } catch (error) {
+      console.error('Error starting appointment:', error);
+      toast.error('Failed to start appointment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteAppointment = async (appointment: any) => {
+    try {
+      setLoading(true);
+      // Update appointment status to 'Completed'
+      const { error } = await supabase
+        .from('appointments')
+        .update({ 
+          status: 'Completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', appointment.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setAppointments(prev => 
+        prev.map(a => 
+          a.id === appointment.id 
+            ? { ...a, status: 'Completed' } 
+            : a
+        )
+      );
+      
+      toast.success('Appointment marked as completed');
+    } catch (error) {
+      console.error('Error completing appointment:', error);
+      toast.error('Failed to complete appointment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelAppointment = async (appointment: any) => {
+    if (!window.confirm('Are you sure you want to cancel this appointment?')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Update appointment status to 'Cancelled'
+      const { error } = await supabase
+        .from('appointments')
+        .update({ 
+          status: 'Cancelled',
+          cancelled_at: new Date().toISOString()
+        })
+        .eq('id', appointment.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setAppointments(prev => 
+        prev.map(a => 
+          a.id === appointment.id 
+            ? { ...a, status: 'Cancelled' } 
+            : a
+        )
+      );
+      
+      toast.success('Appointment cancelled successfully');
+    } catch (error) {
+      console.error('Error cancelling appointment:', error);
+      toast.error('Failed to cancel appointment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewDetails = (appointment: any) => {
+    setSelectedAppointment(appointment);
+    // You can add more logic here to show a modal or navigate to a details page
+    console.log('Viewing details for appointment:', appointment.id);
+  };
+
+  const handleAppointmentAction = (appointment: any) => {
+    switch (appointment.status) {
+      case 'Scheduled':
+        return (
+          <div className="flex space-x-2">
+            <Button 
+              variant="default" 
+              size="sm"
+              onClick={() => handleStartAppointment(appointment)}
+              disabled={loading}
+            >
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Start'}
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => handleCancelAppointment(appointment)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+          </div>
+        );
+      case 'In Progress':
+        return (
+          <div className="flex space-x-2">
+            <Button 
+              variant="default" 
+              size="sm"
+              onClick={() => handleCompleteAppointment(appointment)}
+              disabled={loading}
+            >
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Complete'}
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => handleViewDetails(appointment)}
+            >
+              View
+            </Button>
+          </div>
+        );
+      case 'Completed':
+      case 'Cancelled':
+        return (
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => handleViewDetails(appointment)}
+          >
+            View Details
+          </Button>
+        );
+      default:
+        return null;
+    }
+  };
+
   const getAppointmentDotClass = (appointment: any) => {
     const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
     const now = new Date();
