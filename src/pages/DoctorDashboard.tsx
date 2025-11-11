@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Calendar, Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X } from 'lucide-react';
+import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X } from 'lucide-react';
 import { format, isAfter, isToday, parseISO, isBefore, addMinutes, addDays } from 'date-fns';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -1528,6 +1528,7 @@ export default function DoctorDashboard() {
             </Tabs>
           </CardContent>
         </Card>
+      </div>
       </Dialog>
 
       {/* Reschedule Appointment Dialog */}
@@ -1566,10 +1567,11 @@ export default function DoctorDashboard() {
                       mode="single"
                       selected={rescheduleDate}
                       onSelect={(date) => date && setRescheduleDate(date)}
-                      initialFocus
+                      defaultMonth={rescheduleDate || new Date()}
                       disabled={(date) => 
                         date < new Date() || date > addDays(new Date(), 30)
                       }
+                      initialFocus
                     />
                   </PopoverContent>
                 </Popover>
@@ -1634,6 +1636,7 @@ export default function DoctorDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+      </div>
     </DashboardLayout>
   );
-};
+}
