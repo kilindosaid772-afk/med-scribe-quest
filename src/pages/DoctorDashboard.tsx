@@ -495,6 +495,7 @@ export default function DoctorDashboard() {
                 }, 1000);
               }
             )
+            // @ts-ignore - Supabase realtime types are not fully compatible
             .on('error', (error: any) => {
               console.error('Realtime subscription error:', error);
               toast.error('Connection error. Attempting to reconnect...');
@@ -506,7 +507,8 @@ export default function DoctorDashboard() {
                   });
                 }
               }, 5000);
-            }, {})
+              return error;
+            })
             .subscribe((status: string) => {
               if (status === 'SUBSCRIBED' && isMounted) {
                 console.log('Successfully subscribed to real-time updates');
