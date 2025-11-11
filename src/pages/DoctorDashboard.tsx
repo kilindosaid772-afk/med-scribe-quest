@@ -82,14 +82,23 @@ export default function DoctorDashboard() {
   }, []);
 
   // Helper functions for appointment display
+  // Standardize status values
+  const normalizeStatus = (status: string) => {
+    if (!status) return 'Scheduled'; // Default status
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  };
+
   const getAppointmentBadgeVariant = (status: string) => {
-    switch (status) {
+    const normalizedStatus = normalizeStatus(status);
+    switch (normalizedStatus) {
       case 'In Progress':
         return 'default';
       case 'Completed':
         return 'secondary';
       case 'Scheduled':
         return 'outline';
+      case 'Cancelled':
+        return 'destructive';
       default:
         return 'default';
     }
@@ -99,7 +108,7 @@ export default function DoctorDashboard() {
   const handleStartAppointment = async (appointment: any) => {
     try {
       setLoading(true);
-      // Update appointment status to 'In Progress'
+      // Update appointment status to 'In Progress' to match database constraint
       const { error } = await supabase
         .from('appointments')
         .update({ status: 'In Progress' })
@@ -107,7 +116,7 @@ export default function DoctorDashboard() {
 
       if (error) throw error;
 
-      // Update local state
+      // Update local state with the correct status value
       setAppointments(prev => 
         prev.map(a => 
           a.id === appointment.id 
@@ -128,22 +137,22 @@ export default function DoctorDashboard() {
   const handleCompleteAppointment = async (appointment: any) => {
     try {
       setLoading(true);
-      // Update appointment status to 'Completed'
+      // Update appointment status to 'completed' to match database enum
       const { error } = await supabase
         .from('appointments')
         .update({ 
-          status: 'Completed',
+          status: 'completed',
           completed_at: new Date().toISOString()
         })
         .eq('id', appointment.id);
 
       if (error) throw error;
 
-      // Update local state
+      // Update local state with the correct status value
       setAppointments(prev => 
         prev.map(a => 
           a.id === appointment.id 
-            ? { ...a, status: 'Completed' } 
+            ? { ...a, status: 'completed' } 
             : a
         )
       );
@@ -164,22 +173,22 @@ export default function DoctorDashboard() {
 
     try {
       setLoading(true);
-      // Update appointment status to 'Cancelled'
+      // Update appointment status to 'cancelled' to match database enum
       const { error } = await supabase
         .from('appointments')
         .update({ 
-          status: 'Cancelled',
+          status: 'cancelled',
           cancelled_at: new Date().toISOString()
         })
         .eq('id', appointment.id);
 
       if (error) throw error;
 
-      // Update local state
+      // Update local state with the correct status value
       setAppointments(prev => 
         prev.map(a => 
           a.id === appointment.id 
-            ? { ...a, status: 'Cancelled' } 
+            ? { ...a, status: 'cancelled' } 
             : a
         )
       );
@@ -200,23 +209,38 @@ export default function DoctorDashboard() {
   };
 
   const handleAppointmentAction = (appointment: any) => {
-    switch (appointment.status) {
+    const status = normalizeStatus(appointment.status);
+    
+    // Show loading state for the specific appointment being processed
+    const isProcessing = loading && selectedAppointment?.id === appointment.id;
+
+    switch (status) {
       case 'Scheduled':
         return (
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap gap-2">
             <Button 
               variant="default" 
               size="sm"
-              onClick={() => handleStartAppointment(appointment)}
-              disabled={loading}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedAppointment(appointment);
+                handleStartAppointment(appointment);
+              }}
+              disabled={isProcessing}
+              className="min-w-[80px]"
             >
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Start'}
+              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Start'}
             </Button>
             <Button 
               variant="outline" 
               size="sm"
-              onClick={() => handleCancelAppointment(appointment)}
-              disabled={loading}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedAppointment(appointment);
+                handleCancelAppointment(appointment);
+              }}
+              disabled={isProcessing}
+              className="min-w-[80px]"
             >
               Cancel
             </Button>
@@ -224,19 +248,28 @@ export default function DoctorDashboard() {
         );
       case 'In Progress':
         return (
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap gap-2">
             <Button 
               variant="default" 
               size="sm"
-              onClick={() => handleCompleteAppointment(appointment)}
-              disabled={loading}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedAppointment(appointment);
+                handleCompleteAppointment(appointment);
+              }}
+              disabled={isProcessing}
+              className="min-w-[100px]"
             >
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Complete'}
+              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Complete'}
             </Button>
             <Button 
               variant="outline" 
               size="sm"
-              onClick={() => handleViewDetails(appointment)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedAppointment(appointment);
+                handleViewDetails(appointment);
+              }}
             >
               View
             </Button>
@@ -248,7 +281,12 @@ export default function DoctorDashboard() {
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => handleViewDetails(appointment)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedAppointment(appointment);
+              handleViewDetails(appointment);
+            }}
+            className="w-full"
           >
             View Details
           </Button>
@@ -352,30 +390,148 @@ export default function DoctorDashboard() {
     return () => clearInterval(timer);
   }, [appointments, currentTime]);
 
-  useEffect(() => {
-    fetchData();
+  // Fetch appointments with retry logic
+  const fetchAppointments = useCallback(async () => {
+    if (!user?.id) return;
     
-    // Set up real-time subscription for appointments
-    const subscription = supabase
-      .channel('appointments_changes')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'appointments',
-          filter: 'doctor_id=eq.' + user?.id
-        }, 
-        (payload) => {
-          console.log('Appointment change received:', payload);
-          fetchData();
-        }
-      )
-      .subscribe();
+    try {
+      setLoading(true);
+      
+      // First, fetch only the essential appointment data
+      const { data: appointmentsData, error: appointmentsError } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('doctor_id', user.id)
+        .order('appointment_date', { ascending: true })
+        .order('appointment_time', { ascending: true });
+      
+      if (appointmentsError) throw appointmentsError;
+      if (!appointmentsData) return;
 
-    return () => {
-      subscription.unsubscribe();
-    };
+      // Get unique patient IDs
+      const patientIds = [...new Set(appointmentsData.map(appt => appt.patient_id))];
+      
+      // Fetch patient data in a separate query
+      let patientsData: any[] = [];
+      if (patientIds.length > 0) {
+        const { data: patients, error: patientsError } = await supabase
+          .from('patients')
+          .select('*')
+          .in('id', patientIds);
+          
+        if (patientsError) throw patientsError;
+        patientsData = patients || [];
+      }
+      
+      // Combine the data
+      const processedAppointments = appointmentsData.map(appt => {
+        const patient = patientsData.find(p => p.id === appt.patient_id) || {};
+        return {
+          ...appt,
+          status: normalizeStatus(appt.status),
+          patient
+        };
+      });
+      
+      setAppointments(processedAppointments);
+      
+      // Update stats
+      const today = new Date().toISOString().split('T')[0];
+      const todayApps = processedAppointments.filter(
+        appt => appt.appointment_date === today && 
+        !['Completed', 'Cancelled'].includes(appt.status)
+      ).length;
+      
+      setStats(prev => ({
+        ...prev,
+        totalAppointments: processedAppointments.length,
+        todayAppointments: todayApps,
+        pendingConsultations: processedAppointments.filter(
+          appt => appt.status === 'Scheduled' || appt.status === 'In Progress'
+        ).length
+      }));
+      
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+      toast.error('Failed to load appointments. Please refresh the page.');
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  // Set up real-time subscription for appointments with error handling
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    let isMounted = true;
+    let channel: any = null;
+    let debounceTimer: NodeJS.Timeout;
+    
+    const setupSubscription = async () => {
+      try {
+        // Initial data fetch
+        if (isMounted) {
+          await fetchAppointments();
+        }
+        
+        // Only set up subscription if not already done
+        if (!channel) {
+          channel = supabase.channel('appointments_changes')
+            .on('postgres_changes', 
+              { 
+                event: '*', 
+                schema: 'public', 
+                table: 'appointments',
+                filter: `doctor_id=eq.${user.id}`
+              }, 
+              (payload: any) => {
+                console.log('Appointment change received:', payload);
+                // Debounce rapid updates
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                  if (isMounted) {
+                    fetchAppointments();
+                  }
+                }, 1000);
+              }
+            )
+            .on('error', (error: any) => {
+              console.error('Realtime subscription error:', error);
+              toast.error('Connection error. Attempting to reconnect...');
+              // Attempt to resubscribe after a delay
+              setTimeout(() => {
+                if (channel && isMounted) {
+                  channel.unsubscribe().then(() => {
+                    if (isMounted) setupSubscription();
+                  });
+                }
+              }, 5000);
+            }, {})
+            .subscribe((status: string) => {
+              if (status === 'SUBSCRIBED' && isMounted) {
+                console.log('Successfully subscribed to real-time updates');
+              }
+            });
+        }
+      } catch (error) {
+        console.error('Error setting up subscription:', error);
+        if (isMounted) {
+          toast.error('Failed to set up real-time updates');
+        }
+      }
+    };
+    
+    setupSubscription();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      clearTimeout(debounceTimer);
+      if (channel) {
+        channel.unsubscribe();
+      }
+    };
+  }, [user?.id]); // Only depend on user.id to prevent unnecessary re-renders
 
   const updateAppointmentStatus = async (appointmentId: string, newStatus: string) => {
     try {
