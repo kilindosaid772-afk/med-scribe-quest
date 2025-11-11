@@ -56,6 +56,73 @@ export default function DoctorDashboard() {
   const [selectedPrescriptions, setSelectedPrescriptions] = useState<Prescription[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
+  // Helper functions for appointment display
+  const getAppointmentBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'In Progress':
+        return 'default';
+      case 'Completed':
+        return 'secondary';
+      case 'Scheduled':
+        return 'outline';
+      default:
+        return 'default';
+    }
+  };
+
+  const getAppointmentDotClass = (appointment: any) => {
+    const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+    const now = new Date();
+    
+    if (appointment.status === 'Completed') return 'bg-gray-400';
+    if (appointment.status === 'In Progress') return 'bg-green-500 animate-pulse';
+    if (isBefore(now, apptTime)) return 'bg-blue-500';
+    return 'bg-amber-500';
+  };
+
+  const getAppointmentRowClass = (appointment: any) => {
+    if (appointment.status === 'Completed') return 'opacity-60';
+    if (appointment.status === 'In Progress') return 'bg-blue-50';
+    return '';
+  };
+
+  const getAppointmentStatusBadge = (appointment: any) => {
+    const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+    const now = new Date();
+    
+    if (appointment.status === 'Completed') return null;
+    
+    if (isBefore(now, apptTime)) {
+      const minsToAppt = Math.ceil((apptTime.getTime() - now.getTime()) / (1000 * 60));
+      if (minsToAppt <= 30) {
+        return (
+          <span className="text-xs text-amber-600">
+            Starts in {minsToAppt} min
+          </span>
+        );
+      }
+      return (
+        <span className="text-xs text-muted-foreground">
+          {format(apptTime, 'h:mm a')}
+        </span>
+      );
+    }
+    
+    if (isBefore(now, addMinutes(apptTime, 30))) {
+      return (
+        <span className="text-xs font-medium text-green-600">
+          In progress
+        </span>
+      );
+    }
+    
+    return (
+      <span className="text-xs text-muted-foreground">
+        {format(apptTime, 'h:mm a')}
+      </span>
+    );
+  };
+
   // Update current time every minute
   useEffect(() => {
     const timer = setInterval(() => {
@@ -924,93 +991,154 @@ export default function DoctorDashboard() {
           </Card>
         )}
 
-        {/* Upcoming Appointments */}
+        {/* Appointments */}
         <Card className="shadow-lg">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Upcoming Appointments</CardTitle>
-                <CardDescription>Your scheduled patient appointments</CardDescription>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => window.location.href = '/appointments'}>
-                View All Appointments
-              </Button>
-            </div>
+            <CardTitle>Appointments</CardTitle>
+            <CardDescription>Your scheduled patient appointments</CardDescription>
           </CardHeader>
           <CardContent>
-            {appointments.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No appointments scheduled</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Date & Time</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {appointments.map((appointment) => (
-                      <TableRow key={appointment.id}>
-                        <TableCell className="font-medium">
-                          {appointment.patient?.full_name || 'Unknown'}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span>{format(new Date(appointment.appointment_date), 'MMM dd, yyyy')} {appointment.appointment_time}</span>
-                            {isBefore(
-                              new Date(), 
-                              new Date(`${appointment.appointment_date}T${appointment.appointment_time}`)
-                            ) ? (
-                              <span className="text-xs text-muted-foreground">
-                                Starts in {Math.ceil((new Date(`${appointment.appointment_date}T${appointment.appointment_time}`).getTime() - new Date().getTime()) / (1000 * 60))} min
-                              </span>
-                            ) : isBefore(
-                              new Date(),
-                              addMinutes(new Date(`${appointment.appointment_date}T${appointment.appointment_time}`), 30)
-                            ) ? (
-                              <span className="text-xs text-amber-600 font-medium">
-                                In progress
-                              </span>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell>{appointment.department?.name || 'N/A'}</TableCell>
-                        <TableCell className="max-w-xs truncate">{appointment.reason}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Badge
-                              variant={
-                                appointment.status === 'In Progress' ? 'default' :
-                                appointment.status === 'Completed' ? 'secondary' :
-                                appointment.status === 'Confirmed' ? 'default' :
-                                'outline'
-                              }
-                              className="w-fit"
-                            >
-                              {appointment.status}
-                            </Badge>
-                            {appointment.status === 'In Progress' && (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="h-6 text-xs"
-                                onClick={() => updateAppointmentStatus(appointment.id, 'Completed')}
-                              >
-                                Mark as Done
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
+            <Tabs defaultValue="today" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="today">Today</TabsTrigger>
+                <TabsTrigger value="week">This Week</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="today" className="space-y-4">
+                {appointments.filter(appt => 
+                  isToday(new Date(appt.appointment_date))
+                ).length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Patient</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                    </TableHeader>
+                    <TableBody>
+                      {appointments
+                        .filter(appt => isToday(new Date(appt.appointment_date)))
+                        .sort((a, b) => {
+                          const timeA = new Date(`${a.appointment_date}T${a.appointment_time}`).getTime();
+                          const timeB = new Date(`${b.appointment_date}T${b.appointment_time}`).getTime();
+                          return timeA - timeB;
+                        })
+                        .map((appointment) => (
+                          <TableRow key={appointment.id} className={getAppointmentRowClass(appointment)}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-2 w-2 rounded-full ${getAppointmentDotClass(appointment)}`}></div>
+                                {appointment.patient?.full_name || 'Unknown'}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span>{format(new Date(`${appointment.appointment_date}T${appointment.appointment_time}`), 'h:mm a')}</span>
+                                {getAppointmentStatusBadge(appointment)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={getAppointmentBadgeVariant(appointment.status)}>
+                                {appointment.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {appointment.status === 'In Progress' && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-7 text-xs"
+                                  onClick={() => updateAppointmentStatus(appointment.id, 'Completed')}
+                                >
+                                  Mark Done
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No appointments scheduled for today
+                  </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="week" className="space-y-4">
+                {appointments.filter(appt => {
+                  const weekFromNow = new Date();
+                  weekFromNow.setDate(weekFromNow.getDate() + 7);
+                  return new Date(appt.appointment_date) <= weekFromNow;
+                }).length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Patient</TableHead>
+                        <TableHead>Date & Time</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {appointments
+                        .filter(appt => {
+                          const weekFromNow = new Date();
+                          weekFromNow.setDate(weekFromNow.getDate() + 7);
+                          return new Date(appt.appointment_date) <= weekFromNow;
+                        })
+                        .sort((a, b) => {
+                          const timeA = new Date(`${a.appointment_date}T${a.appointment_time}`).getTime();
+                          const timeB = new Date(`${b.appointment_date}T${b.appointment_time}`).getTime();
+                          return timeA - timeB;
+                        })
+                        .map((appointment) => (
+                          <TableRow key={appointment.id} className={getAppointmentRowClass(appointment)}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-2 w-2 rounded-full ${getAppointmentDotClass(appointment)}`}></div>
+                                {appointment.patient?.full_name || 'Unknown'}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span>{format(new Date(`${appointment.appointment_date}T${appointment.appointment_time}`), 'MMM d, h:mm a')}</span>
+                                {getAppointmentStatusBadge(appointment)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {appointment.department?.name || 'N/A'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={getAppointmentBadgeVariant(appointment.status)}>
+                                  {appointment.status}
+                                </Badge>
+                                {appointment.status === 'In Progress' && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="h-6 text-xs"
+                                    onClick={() => updateAppointmentStatus(appointment.id, 'Completed')}
+                                  >
+                                    Done
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No appointments scheduled for this week
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
