@@ -214,6 +214,7 @@ export default function NurseDashboard() {
           patient:patients(*)
         `)
         .eq('current_stage', 'nurse')
+        .eq('nurse_status', 'Pending')
         .eq('overall_status', 'Active')
         .order('created_at', { ascending: true });
 

@@ -10,9 +10,9 @@ interface AppointmentsCardProps {
 }
 
 export function AppointmentsCard({ appointments, onCheckIn, onCancel }: AppointmentsCardProps) {
-  // Filter for today's appointments only (in case we have future appointments)
+  // Filter for today's appointments that need action (Scheduled status only)
   const todayAppointments = appointments.filter(
-    a => a.appointment_date === new Date().toISOString().split('T')[0]
+    a => a.appointment_date === new Date().toISOString().split('T')[0] && a.status === 'Scheduled'
   );
 
   return (
@@ -52,22 +52,24 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
                     {appointment.status}
                   </Badge>
                   {appointment.status === 'Scheduled' && (
-                    <Button
-                      size="sm"
-                      onClick={() => onCheckIn(appointment.id)}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      Check In
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => onCheckIn(appointment.id)}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        Check In
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onCancel(appointment.id)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </>
                   )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onCancel(appointment.id)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <XCircle className="h-4 w-4" />
-                  </Button>
                 </div>
               </div>
             ))}

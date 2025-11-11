@@ -78,6 +78,7 @@ export default function PharmacyDashboard() {
   const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [prescriptionFilter, setPrescriptionFilter] = useState<'pending' | 'all'>('pending');
   
   // Type for the combined prescription data
   interface PrescriptionWithRelations extends Prescription {
@@ -283,6 +284,8 @@ export default function PharmacyDashboard() {
             pharmacy_status: 'Completed',
             pharmacy_completed_at: new Date().toISOString(),
             pharmacy_completed_by: user.id,
+            overall_status: 'Completed',
+            current_stage: 'completed',
             updated_at: new Date().toISOString()
           })
           .eq('id', visits[0].id);
@@ -855,12 +858,32 @@ export default function PharmacyDashboard() {
                 <div>
                   <CardTitle>Recent Prescriptions</CardTitle>
                   <CardDescription>
-                    {prescriptions.length > 0 
-                      ? `Showing ${Math.min(prescriptions.length, 10)} of ${prescriptions.length} prescriptions`
-                      : 'No prescriptions found'}
+                    {prescriptionFilter === 'pending' 
+                      ? (prescriptions.filter(p => p.status === 'Pending').length > 0 
+                          ? `Showing ${Math.min(prescriptions.filter(p => p.status === 'Pending').length, 10)} of ${prescriptions.filter(p => p.status === 'Pending').length} pending`
+                          : 'No pending prescriptions')
+                      : (prescriptions.length > 0 
+                          ? `Showing ${Math.min(prescriptions.length, 10)} of ${prescriptions.length} prescriptions`
+                          : 'No prescriptions found')}
                   </CardDescription>
                 </div>
                 <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
+                    <Button
+                      variant={prescriptionFilter === 'pending' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setPrescriptionFilter('pending')}
+                    >
+                      Pending
+                    </Button>
+                    <Button
+                      variant={prescriptionFilter === 'all' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setPrescriptionFilter('all')}
+                    >
+                      All
+                    </Button>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -877,10 +900,15 @@ export default function PharmacyDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                {prescriptions.length === 0 ? (
+                {(prescriptionFilter === 'pending' 
+                    ? prescriptions.filter(p => p.status === 'Pending') 
+                    : prescriptions
+                  ).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <Package className="h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium">No prescriptions found</h3>
+                    <h3 className="text-lg font-medium">
+                      {prescriptionFilter === 'pending' ? 'No pending prescriptions' : 'No prescriptions found'}
+                    </h3>
                     <p className="text-muted-foreground text-sm mt-1">
                       When prescriptions are created, they will appear here.
                     </p>
@@ -899,7 +927,10 @@ export default function PharmacyDashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {prescriptions.map((prescription) => (
+                        {(prescriptionFilter === 'pending' 
+                          ? prescriptions.filter(p => p.status === 'Pending') 
+                          : prescriptions
+                        ).slice(0, 10).map((prescription) => (
                           <TableRow 
                             key={prescription.id}
                             className={loadingStates[prescription.id] ? 'opacity-50' : ''}
@@ -934,9 +965,9 @@ export default function PharmacyDashboard() {
                               {prescription.doctor_profile ? (
                                 <>
                                   <div>{prescription.doctor_profile.full_name}</div>
-                                  {prescription.doctor_profile.specialization && (
+                                  {prescription.doctor_profile.department && (
                                     <div className="text-xs text-muted-foreground">
-                                      {prescription.doctor_profile.specialization}
+                                      {prescription.doctor_profile.department}
                                     </div>
                                   )}
                                 </>

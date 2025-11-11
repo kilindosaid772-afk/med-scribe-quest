@@ -736,8 +736,10 @@ export default function AdminDashboard() {
   const [userForm, setUserForm] = useState({
     full_name: '',
     email: '',
-    phone: ''
+    phone: '',
+    department_id: ''
   });
+  const [departments, setDepartments] = useState<Array<{id: string, name: string}>>([]);
   const [stats, setStats] = useState({ 
     totalPatients: 0, 
     activeAppointments: 0, 
@@ -880,15 +882,30 @@ export default function AdminDashboard() {
         .limit(10);
 
       // Fetch users with their roles
-      const { data: usersData } = await supabase
+      const { data: usersData, error: usersError } = await supabase
         .from('profiles')
-        .select('id, full_name, email, phone')
+        .select('id, full_name, email, phone, department_id')
         .limit(20);
+
+      if (usersError) {
+        console.error('Error fetching users:', usersError);
+        throw usersError;
+      }
+
+      console.log('Fetched users data:', usersData);
+
+      // Fetch departments
+      const { data: departmentsData } = await supabase
+        .from('departments')
+        .select('id, name')
+        .order('name');
 
       // Fetch user roles
       const { data: rolesData } = await supabase
         .from('user_roles')
         .select('id, user_id, role, is_primary');
+
+      console.log('Fetched roles data:', rolesData);
 
       // Combine users with their roles and active role
       const usersWithRoles = usersData?.map(user => {
@@ -906,6 +923,8 @@ export default function AdminDashboard() {
           activeRole
         };
       }) || [];
+
+      console.log('Users with roles:', usersWithRoles);
 
       // Fetch stats
       const { count: patientCount } = await supabase
@@ -929,6 +948,7 @@ export default function AdminDashboard() {
 
       setPatients(patientsData || []);
       setUsers(usersWithRoles);
+      setDepartments(departmentsData || []);
       setMedicalServices(servicesData || []);
       setStats({
         totalPatients: patientCount || 0,
@@ -1239,7 +1259,8 @@ export default function AdminDashboard() {
     setUserForm({
       full_name: user.full_name || '',
       email: user.email || '',
-      phone: user.phone || ''
+      phone: user.phone || '',
+      department_id: (user as any).department_id || ''
     });
   };
 
@@ -1253,6 +1274,7 @@ export default function AdminDashboard() {
         .update({
           full_name: userForm.full_name,
           phone: userForm.phone,
+          department_id: userForm.department_id || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', editingUser.id);
@@ -1664,49 +1686,59 @@ export default function AdminDashboard() {
             <CardDescription>Manage users and roles</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Active Role</TableHead>
+            {users.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">No users found</h3>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Users will appear here once they are registered in the system.
+                </p>
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Active Role</TableHead>
 
-                    <TableHead className="w-[160px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.id}>
-                      <TableCell>
-                        <div className="font-medium">{u.full_name || u.user_metadata?.full_name || 'Unknown'}</div>
-                      </TableCell>
-                      <TableCell>{u.email}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{u.activeRole || 'No role'}</Badge>
-                      </TableCell>
-
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditUser(u)}>
-                            <Edit className="h-4 w-4" />
-                            <span className="sr-only">Edit</span>
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleAssignRole(u)}>
-                            <Shield className="h-4 w-4" />
-                            <span className="sr-only">Assign Role</span>
-                          </Button>
-                          <Button variant="destructive" size="sm" className="h-8 w-8 p-0" onClick={() => handleDeleteUser(u.id)}>
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Delete</span>
-                          </Button>
-                        </div>
-                      </TableCell>
+                      <TableHead className="w-[160px]">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell>
+                          <div className="font-medium">{u.full_name || u.user_metadata?.full_name || 'Unknown'}</div>
+                        </TableCell>
+                        <TableCell>{u.email}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{u.activeRole || 'No role'}</Badge>
+                        </TableCell>
+
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditUser(u)}>
+                              <Edit className="h-4 w-4" />
+                              <span className="sr-only">Edit</span>
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleAssignRole(u)}>
+                              <Shield className="h-4 w-4" />
+                              <span className="sr-only">Assign Role</span>
+                            </Button>
+                            <Button variant="destructive" size="sm" className="h-8 w-8 p-0" onClick={() => handleDeleteUser(u.id)}>
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -1728,6 +1760,22 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
                 <Input id="phone" value={userForm.phone} onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="department">Department (for doctors)</Label>
+                <Select value={userForm.department_id} onValueChange={(value) => setUserForm({ ...userForm, department_id: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {departments.map((dept) => (
+                      <SelectItem key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <Button type="submit" className="w-full">Save Changes</Button>
             </form>

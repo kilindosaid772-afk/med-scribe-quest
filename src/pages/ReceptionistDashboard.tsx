@@ -450,41 +450,80 @@ export default function ReceptionistDashboard() {
     }
   }, [appointmentForm.department_id, doctors]);
 
-  // Load data when component mounts or user changes
-  useEffect(() => {
-    fetchData();
-  }, [user]);
-
   // ---------------- FETCH DATA ----------------
   const handleCheckIn = async (appointmentId: string) => {
     try {
+      // First, get appointment details
+      const { data: appointment, error: appointmentFetchError } = await supabase
+        .from('appointments')
+        .select('patient_id')
+        .eq('id', appointmentId)
+        .single();
+
+      if (appointmentFetchError) throw appointmentFetchError;
+
       // Update appointment status
       const { error: appointmentError } = await supabase
         .from('appointments')
-        .update({ status: 'Confirmed' })
+        .update({ status: 'Confirmed', updated_at: new Date().toISOString() })
         .eq('id', appointmentId);
 
       if (appointmentError) throw appointmentError;
 
-      // Update patient visit workflow for appointment check-in
-      const { error: visitError } = await supabase
+      // Check if patient visit exists for this appointment
+      const { data: existingVisit, error: visitFetchError } = await supabase
         .from('patient_visits')
-        .update({
-          reception_status: 'Checked In',
-          reception_completed_at: new Date().toISOString(),
-          current_stage: 'nurse',
-          nurse_status: 'Pending'
-        })
-        .eq('appointment_id', appointmentId);
+        .select('id')
+        .eq('appointment_id', appointmentId)
+        .maybeSingle();
 
-      if (visitError) throw visitError;
+      if (visitFetchError) throw visitFetchError;
 
-      toast.success('Appointment patient checked in and sent to nurse queue');
+      if (existingVisit) {
+        // Update existing visit
+        const { error: visitError } = await supabase
+          .from('patient_visits')
+          .update({
+            reception_status: 'Checked In',
+            reception_completed_at: new Date().toISOString(),
+            current_stage: 'nurse',
+            nurse_status: 'Pending',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingVisit.id);
+
+        if (visitError) throw visitError;
+      } else {
+        // Create new visit if doesn't exist
+        const { error: visitError } = await supabase
+          .from('patient_visits')
+          .insert({
+            patient_id: appointment.patient_id,
+            appointment_id: appointmentId,
+            visit_date: new Date().toISOString().split('T')[0],
+            reception_status: 'Checked In',
+            reception_completed_at: new Date().toISOString(),
+            current_stage: 'nurse',
+            nurse_status: 'Pending',
+            overall_status: 'Active'
+          });
+
+        if (visitError) throw visitError;
+      }
+
+      // Remove from local state immediately
+      setAppointments(prev => prev.filter(apt => apt.id !== appointmentId));
+
+      toast.success('Patient checked in and sent to nurse queue');
       logActivity('appointment.check_in', { appointment_id: appointmentId });
+      
+      // Refresh stats and other data
       fetchData();
     } catch (error) {
       console.error('Check-in error:', error);
-      toast.error('Failed to check in appointment patient');
+      toast.error(`Failed to check in: ${error.message || 'Unknown error'}`);
+      // Revert by refetching
+      fetchData();
     }
   };
 
