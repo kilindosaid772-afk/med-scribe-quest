@@ -216,27 +216,64 @@ export default function DoctorDashboard() {
 
   const updateAppointmentStatus = async (appointmentId: string, newStatus: string) => {
     try {
+      // Input validation
+      if (!appointmentId) {
+        console.error('No appointment ID provided');
+        toast.error('Error: No appointment ID provided');
+        return;
+      }
+
+      const validStatuses = ['Scheduled', 'In Progress', 'Completed', 'No Show', 'Cancelled'];
+      if (!validStatuses.includes(newStatus)) {
+        console.error('Invalid status provided:', newStatus);
+        toast.error(`Error: Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+        return;
+      }
+
+      console.log('Updating appointment status:', { appointmentId, newStatus });
+
+      const updateData: any = { 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      };
+
+      // Only set completed_at when marking as completed
+      if (newStatus === 'Completed') {
+        updateData.completed_at = new Date().toISOString();
+      }
+
       const { data, error } = await supabase
         .from('appointments')
-        .update({ 
-          status: newStatus,
-          // If marking as completed, set the completed_at timestamp
-          ...(newStatus === 'Completed' && { completed_at: new Date().toISOString() })
-        })
+        .update(updateData)
         .eq('id', appointmentId)
-        .select('*, patient:patient_id(full_name)');
+        .select('*, patient:patient_id(full_name, id)');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('No data returned from update - appointment may not exist');
+      }
+
+      console.log('Update successful, response data:', data);
 
       // Update local state
-      setAppointments(prev =>
-        prev.map(appt =>
-          appt.id === appointmentId ? { ...appt, ...data[0] } : appt
-        )
-      );
+      setAppointments(prev => {
+        const updated = prev.map(appt =>
+          appt.id === appointmentId ? { 
+            ...appt, 
+            ...data[0],
+            patient: data[0].patient || appt.patient // Preserve patient data if not in response
+          } : appt
+        );
+        console.log('Updated appointments state:', updated);
+        return updated;
+      });
 
       // Show appropriate toast message
-      const appointment = data?.[0];
+      const appointment = data[0];
       const patientName = appointment?.patient?.full_name || 'the patient';
       
       const statusMessages = {
@@ -247,69 +284,26 @@ export default function DoctorDashboard() {
         'Cancelled': `Cancelled appointment with ${patientName}`
       };
 
-      toast.success(statusMessages[newStatus as keyof typeof statusMessages] || 'Appointment updated');
+      const message = statusMessages[newStatus as keyof typeof statusMessages] || 'Appointment updated';
+      console.log('Showing success message:', message);
+      toast.success(message);
       
       // If completing an appointment, check if there are pending lab tests or prescriptions
       if (newStatus === 'Completed') {
+        console.log('Appointment completed, check for pending tests/prescriptions');
         // You could add logic here to check for pending tests/prescriptions
         // and prompt the doctor if they want to order any
       }
     } catch (error) {
-      console.error('Error updating appointment status:', error);
-      toast.error('Failed to update appointment status');
+      console.error('Error in updateAppointmentStatus:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Full error details:', error);
+      toast.error(`Failed to update appointment status: ${errorMessage}`);
     }
   };
 
-  const handleRescheduleAppointment = async () => {
-    if (!rescheduleDate || !rescheduleTime || !selectedAppointment) return;
-    
-    setIsRescheduling(true);
-    try {
-      const newDate = format(rescheduleDate, 'yyyy-MM-dd');
-      const { error } = await supabase
-        .from('appointments')
-        .update({ 
-          appointment_date: newDate,
-          appointment_time: rescheduleTime,
-          status: 'Scheduled',
-          rescheduled_at: new Date().toISOString(),
-          reschedule_reason: rescheduleReason || 'No reason provided'
-        })
-        .eq('id', selectedAppointment.id);
-
-      if (error) throw error;
-
-      // Update local state
-      setAppointments(prev =>
-        prev.map(appt =>
-          appt.id === selectedAppointment.id 
-            ? { 
-                ...appt, 
-                appointment_date: newDate, 
-                appointment_time: rescheduleTime,
-                status: 'Scheduled',
-                rescheduled_at: new Date().toISOString()
-              } 
-            : appt
-        )
-      );
-
-      toast.success('Appointment rescheduled successfully');
-      setShowRescheduleForm(false);
-      setRescheduleDate(undefined);
-      setRescheduleTime('');
-      setRescheduleReason('');
-    } catch (error) {
-      console.error('Error rescheduling appointment:', error);
-      toast.error('Failed to reschedule appointment');
-    } finally {
-      setIsRescheduling(false);
-      setSelectedAppointment(null);
-    }
-  };
-
-
-  const handleAppointmentAction = (appointment: any) => {
+  // Get appointment actions based on status and time
+  const getAppointmentActions = (appointment: any) => {
     const now = new Date();
     const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
     const apptEndTime = addMinutes(apptTime, 30);
@@ -429,6 +423,94 @@ export default function DoctorDashboard() {
   const handleViewPrescriptions = (prescriptions: any[]) => {
     setSelectedPrescriptions(prescriptions);
     setShowPrescriptions(true);
+  };
+
+  const handleRescheduleAppointment = async () => {
+    // Input validation
+    if (!rescheduleDate || !rescheduleTime || !selectedAppointment) {
+      console.error('Missing required fields for rescheduling:', { 
+        rescheduleDate, 
+        rescheduleTime, 
+        selectedAppointment 
+      });
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    
+    console.log('Starting reschedule with data:', {
+      appointmentId: selectedAppointment.id,
+      newDate: rescheduleDate,
+      newTime: rescheduleTime,
+      reason: rescheduleReason
+    });
+
+    setIsRescheduling(true);
+    try {
+      const newDate = format(rescheduleDate, 'yyyy-MM-dd');
+      console.log('Formatted date for DB:', newDate);
+
+      const updateData = { 
+        appointment_date: newDate,
+        appointment_time: rescheduleTime,
+        status: 'Scheduled',
+        rescheduled_at: new Date().toISOString(),
+        reschedule_reason: rescheduleReason || 'No reason provided',
+        updated_at: new Date().toISOString()
+      };
+
+      console.log('Sending update to database:', updateData);
+
+      const { data, error } = await supabase
+        .from('appointments')
+        .update(updateData)
+        .eq('id', selectedAppointment.id)
+        .select('*');
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw new Error(error.message || 'Failed to update appointment in database');
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('No data returned from update - appointment may not exist');
+      }
+
+      console.log('Database update successful, response:', data);
+
+      // Update local state with the complete appointment data from the server
+      setAppointments(prev => {
+        const updated = prev.map(appt =>
+          appt.id === selectedAppointment.id 
+            ? { 
+                ...appt,
+                ...data[0],
+                patient: appt.patient // Preserve patient data
+              } 
+            : appt
+        );
+        console.log('Updated appointments state:', updated);
+        return updated;
+      });
+
+      const successMessage = `Appointment rescheduled to ${format(rescheduleDate, 'PPP')} at ${rescheduleTime}`;
+      console.log('Success:', successMessage);
+      toast.success(successMessage);
+      
+      // Reset form
+      setShowRescheduleForm(false);
+      setRescheduleDate(undefined);
+      setRescheduleTime('');
+      setRescheduleReason('');
+      setSelectedAppointment(null);
+      
+    } catch (error) {
+      console.error('Error in handleRescheduleAppointment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('Error details:', error);
+      toast.error(`Failed to reschedule appointment: ${errorMessage}`);
+    } finally {
+      setIsRescheduling(false);
+    }
   };
 
   const fetchData = async () => {
