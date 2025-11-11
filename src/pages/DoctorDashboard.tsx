@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -68,6 +68,18 @@ export default function DoctorDashboard() {
   const [selectedLabTests, setSelectedLabTests] = useState<LabTestResult[]>([]);
   const [selectedPrescriptions, setSelectedPrescriptions] = useState<Prescription[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Generate time slots for the time selector
+  const generateTimeSlots = useCallback(() => {
+    const times = [];
+    for (let hour = 9; hour <= 17; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        times.push(timeString);
+      }
+    }
+    return times;
+  }, []);
 
   // Helper functions for appointment display
   const getAppointmentBadgeVariant = (status: string) => {
@@ -296,16 +308,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Generate time slots from 8 AM to 5 PM in 30-minute intervals
-  const generateTimeSlots = () => {
-    const slots = [];
-    for (let hour = 8; hour <= 17; hour++) {
-      for (let minute of ['00', '30']) {
-        slots.push(`${hour.toString().padStart(2, '0')}:${minute}`);
-      }
-    }
-    return slots;
-  };
 
   const handleAppointmentAction = (appointment: any) => {
     const now = new Date();
@@ -628,7 +630,7 @@ export default function DoctorDashboard() {
           <Card className="border-primary/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Today's Appointments</CardTitle>
-              <Calendar className="h-4 w-4 text-primary" />
+              <CalendarIcon className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-primary">{stats.todayAppointments}</div>
@@ -1529,7 +1531,7 @@ export default function DoctorDashboard() {
           </CardContent>
         </Card>
       </div>
-      </Dialog>
+    
 
       {/* Reschedule Appointment Dialog */}
       <Dialog open={showRescheduleForm} onOpenChange={setShowRescheduleForm}>
@@ -1636,7 +1638,6 @@ export default function DoctorDashboard() {
           </div>
         </DialogContent>
       </Dialog>
-      </div>
     </DashboardLayout>
   );
 }
