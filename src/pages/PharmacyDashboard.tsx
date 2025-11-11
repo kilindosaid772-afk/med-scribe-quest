@@ -83,7 +83,7 @@ export default function PharmacyDashboard() {
   interface PrescriptionWithRelations extends Prescription {
     patient: UserProfile | null;
     doctor_profile: UserProfile | null;
-    medications: MedicationInfo[];
+    medications: MedicationInfo | null;
   }
 
   const loadPharmacyData = async (showToast = true) => {
@@ -118,12 +118,11 @@ export default function PharmacyDashboard() {
           
         supabase
           .from('patients')
-          .select('id, first_name, last_name, date_of_birth'),
+          .select('id, full_name, date_of_birth'),
           
         supabase
           .from('profiles')
-          .select('id, first_name, last_name, specialization, email')
-          .in('role', ['doctor', 'physician'])
+          .select('id, full_name, email')
       ]);
       
       if (prescriptionsError) throw prescriptionsError;
@@ -136,7 +135,7 @@ export default function PharmacyDashboard() {
         ...prescription,
         patient: (patientsData || []).find((p: any) => p.id === prescription.patient_id) || null,
         doctor_profile: (doctorsData || []).find((d: any) => d.id === prescription.doctor_id) || null,
-        medications: (medicationsData || []).filter((m: any) => m.id === prescription.medication_id)
+        medications: (medicationsData || []).find((m: any) => m.id === prescription.medication_id) || null
       }));
 
       setPrescriptions(combinedPrescriptions);
@@ -911,7 +910,7 @@ export default function PharmacyDashboard() {
                                   <Loader2 className="h-3 w-3 animate-spin mr-2 text-muted-foreground" />
                                 )}
                                 <span>
-                                  {prescription.patient?.first_name} {prescription.patient?.last_name}
+                                  {prescription.patient?.full_name || '-'}
                                 </span>
                               </div>
                               {prescription.patient?.date_of_birth && (
@@ -934,7 +933,7 @@ export default function PharmacyDashboard() {
                             <TableCell>
                               {prescription.doctor_profile ? (
                                 <>
-                                  <div>{prescription.doctor_profile.first_name} {prescription.doctor_profile.last_name}</div>
+                                  <div>{prescription.doctor_profile.full_name}</div>
                                   {prescription.doctor_profile.specialization && (
                                     <div className="text-xs text-muted-foreground">
                                       {prescription.doctor_profile.specialization}

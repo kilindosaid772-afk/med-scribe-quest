@@ -11,6 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { logActivity } from '@/lib/utils';
 import { Plus, Stethoscope, DollarSign, Loader2, Trash2, Pencil, Check, X } from 'lucide-react';
 import { 
   createMedicalService, 

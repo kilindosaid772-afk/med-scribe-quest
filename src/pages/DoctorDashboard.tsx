@@ -553,8 +553,10 @@ export default function DoctorDashboard() {
 
       console.log('Updating appointment status:', { appointmentId, newStatus });
 
+      // Map display statuses to database enum values where needed
+      const dbStatus = newStatus === 'Completed' ? 'completed' : newStatus === 'Cancelled' ? 'cancelled' : newStatus;
       const updateData: any = { 
-        status: newStatus,
+        status: dbStatus,
         updated_at: new Date().toISOString()
       };
 

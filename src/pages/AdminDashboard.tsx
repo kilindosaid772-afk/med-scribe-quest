@@ -1532,10 +1532,13 @@ export default function AdminDashboard() {
     try {
       setIsLoadingRecords(true);
       const { data, error } = await supabase
-        .from('medical_records')
-        .select('*')
+        .from('patient_services')
+        .select(`
+          *,
+          service:medical_services(*)
+        `)
         .eq('patient_id', patientId)
-        .order('date', { ascending: false });
+        .order('service_date', { ascending: false });
         
       if (error) throw error;
       setPatientRecords(data || []);
@@ -1551,13 +1554,7 @@ export default function AdminDashboard() {
     try {
       const { data, error } = await supabase
         .from('appointments')
-        .select(`
-          *,
-          doctor:profiles(
-            full_name,
-            specialization
-          )
-        `)
+        .select('*')
         .eq('patient_id', patientId)
         .order('appointment_date', { ascending: false });
         
