@@ -10,7 +10,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Calendar, Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X } from 'lucide-react';
-import { format, isAfter, isToday, parseISO, isBefore, addMinutes } from 'date-fns';
+import { format, isAfter, isToday, parseISO, isBefore, addMinutes, addDays } from 'date-fns';
+import { Calendar as CalendarIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { formatInTimeZone } from 'date-fns-tz';
 
 interface LabTestResult {
   id: string;
@@ -52,6 +59,12 @@ export default function DoctorDashboard() {
   const [loading, setLoading] = useState(true);
   const [showLabResults, setShowLabResults] = useState(false);
   const [showPrescriptions, setShowPrescriptions] = useState(false);
+  const [showRescheduleForm, setShowRescheduleForm] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<Date>();
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [isRescheduling, setIsRescheduling] = useState(false);
   const [selectedLabTests, setSelectedLabTests] = useState<LabTestResult[]>([]);
   const [selectedPrescriptions, setSelectedPrescriptions] = useState<Prescription[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -189,27 +202,221 @@ export default function DoctorDashboard() {
     };
   }, [user]);
 
-  const updateAppointmentStatus = async (appointmentId: string, status: string) => {
+  const updateAppointmentStatus = async (appointmentId: string, newStatus: string) => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('appointments')
-        .update({ status })
-        .eq('id', appointmentId);
-      
+        .update({ 
+          status: newStatus,
+          // If marking as completed, set the completed_at timestamp
+          ...(newStatus === 'Completed' && { completed_at: new Date().toISOString() })
+        })
+        .eq('id', appointmentId)
+        .select('*, patient:patient_id(full_name)');
+
       if (error) throw error;
-      
+
       // Update local state
-      setAppointments(prevAppointments =>
-        prevAppointments.map(appt =>
-          appt.id === appointmentId ? { ...appt, status } : appt
+      setAppointments(prev =>
+        prev.map(appt =>
+          appt.id === appointmentId ? { ...appt, ...data[0] } : appt
         )
       );
+
+      // Show appropriate toast message
+      const appointment = data?.[0];
+      const patientName = appointment?.patient?.full_name || 'the patient';
       
-      toast.success(`Appointment marked as ${status}`);
+      const statusMessages = {
+        'Scheduled': `Appointment with ${patientName} has been rescheduled`,
+        'In Progress': `Started consultation with ${patientName}`,
+        'Completed': `Completed appointment with ${patientName}`,
+        'No Show': `Marked appointment with ${patientName} as No Show`,
+        'Cancelled': `Cancelled appointment with ${patientName}`
+      };
+
+      toast.success(statusMessages[newStatus as keyof typeof statusMessages] || 'Appointment updated');
+      
+      // If completing an appointment, check if there are pending lab tests or prescriptions
+      if (newStatus === 'Completed') {
+        // You could add logic here to check for pending tests/prescriptions
+        // and prompt the doctor if they want to order any
+      }
     } catch (error) {
       console.error('Error updating appointment status:', error);
       toast.error('Failed to update appointment status');
     }
+  };
+
+  const handleRescheduleAppointment = async () => {
+    if (!rescheduleDate || !rescheduleTime || !selectedAppointment) return;
+    
+    setIsRescheduling(true);
+    try {
+      const newDate = format(rescheduleDate, 'yyyy-MM-dd');
+      const { error } = await supabase
+        .from('appointments')
+        .update({ 
+          appointment_date: newDate,
+          appointment_time: rescheduleTime,
+          status: 'Scheduled',
+          rescheduled_at: new Date().toISOString(),
+          reschedule_reason: rescheduleReason || 'No reason provided'
+        })
+        .eq('id', selectedAppointment.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setAppointments(prev =>
+        prev.map(appt =>
+          appt.id === selectedAppointment.id 
+            ? { 
+                ...appt, 
+                appointment_date: newDate, 
+                appointment_time: rescheduleTime,
+                status: 'Scheduled',
+                rescheduled_at: new Date().toISOString()
+              } 
+            : appt
+        )
+      );
+
+      toast.success('Appointment rescheduled successfully');
+      setShowRescheduleForm(false);
+      setRescheduleDate(undefined);
+      setRescheduleTime('');
+      setRescheduleReason('');
+    } catch (error) {
+      console.error('Error rescheduling appointment:', error);
+      toast.error('Failed to reschedule appointment');
+    } finally {
+      setIsRescheduling(false);
+      setSelectedAppointment(null);
+    }
+  };
+
+  // Generate time slots from 8 AM to 5 PM in 30-minute intervals
+  const generateTimeSlots = () => {
+    const slots = [];
+    for (let hour = 8; hour <= 17; hour++) {
+      for (let minute of ['00', '30']) {
+        slots.push(`${hour.toString().padStart(2, '0')}:${minute}`);
+      }
+    }
+    return slots;
+  };
+
+  const handleAppointmentAction = (appointment: any) => {
+    const now = new Date();
+    const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+    const apptEndTime = addMinutes(apptTime, 30);
+    
+    // If appointment is in the future
+    if (isBefore(now, apptTime)) {
+      return (
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 text-xs"
+            onClick={() => updateAppointmentStatus(appointment.id, 'Cancelled')}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 text-xs"
+            onClick={() => {
+              setSelectedAppointment(appointment);
+              setRescheduleDate(new Date(appointment.appointment_date));
+              setRescheduleTime(appointment.appointment_time);
+              setShowRescheduleForm(true);
+            }}
+          >
+            Reschedule
+          </Button>
+        </div>
+      );
+    }
+    
+    // If appointment time has arrived but not yet marked in progress
+    if (isBefore(now, apptEndTime) && appointment.status !== 'In Progress') {
+      return (
+        <Button 
+          variant="default" 
+          size="sm" 
+          className="h-7 text-xs"
+          onClick={() => updateAppointmentStatus(appointment.id, 'In Progress')}
+        >
+          Start Consultation
+        </Button>
+      );
+    }
+    
+    // If appointment is in progress
+    if (appointment.status === 'In Progress') {
+      return (
+        <div className="flex gap-2">
+          <Button 
+            variant="default" 
+            size="sm" 
+            className="h-7 text-xs"
+            onClick={() => {
+              // This would open a form to add consultation notes
+              toast.info('Would open consultation notes form');
+            }}
+          >
+            Add Notes
+          </Button>
+          <Button 
+            variant="secondary" 
+            size="sm" 
+            className="h-7 text-xs"
+            onClick={() => updateAppointmentStatus(appointment.id, 'Completed')}
+          >
+            Complete
+          </Button>
+        </div>
+      );
+    }
+    
+    // For completed appointments
+    if (appointment.status === 'Completed') {
+      return (
+        <div className="flex gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-7 text-xs"
+            onClick={() => {
+              // This would open the patient's record
+              if (appointment.patient_id) {
+                window.open(`/patients/${appointment.patient_id}`, '_blank');
+              }
+            }}
+          >
+            View Record
+          </Button>
+        </div>
+      );
+    }
+    
+    // For no show or cancelled appointments
+    return (
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        className="h-7 text-xs"
+        onClick={() => {
+          // Option to reschedule
+          toast.info('Would open reschedule form');
+        }}
+      >
+        Reschedule
+      </Button>
+    );
   };
   
   const handleViewLabResults = (tests: any[]) => {
@@ -1062,16 +1269,7 @@ export default function DoctorDashboard() {
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              {appointment.status === 'In Progress' && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="h-7 text-xs"
-                                  onClick={() => updateAppointmentStatus(appointment.id, 'Completed')}
-                                >
-                                  Mark Done
-                                </Button>
-                              )}
+                              {handleAppointmentAction(appointment)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1330,7 +1528,112 @@ export default function DoctorDashboard() {
             </Tabs>
           </CardContent>
         </Card>
-      </div>
+      </Dialog>
+
+      {/* Reschedule Appointment Dialog */}
+      <Dialog open={showRescheduleForm} onOpenChange={setShowRescheduleForm}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Reschedule Appointment</DialogTitle>
+            <DialogDescription>
+              Select a new date and time for this appointment.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium leading-none">Date</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !rescheduleDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {rescheduleDate ? (
+                        format(rescheduleDate, "PPP")
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={rescheduleDate}
+                      onSelect={(date) => date && setRescheduleDate(date)}
+                      initialFocus
+                      disabled={(date) => 
+                        date < new Date() || date > addDays(new Date(), 30)
+                      }
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium leading-none">Time</label>
+                <Select 
+                  value={rescheduleTime} 
+                  onValueChange={setRescheduleTime}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {generateTimeSlots().map((time) => (
+                      <SelectItem key={time} value={time}>
+                        {time}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium leading-none">
+                  Reason for Rescheduling (Optional)
+                </label>
+                <Textarea
+                  placeholder="Enter the reason for rescheduling..."
+                  value={rescheduleReason}
+                  onChange={(e) => setRescheduleReason(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowRescheduleForm(false);
+                setSelectedAppointment(null);
+              }}
+              disabled={isRescheduling}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleRescheduleAppointment}
+              disabled={!rescheduleDate || !rescheduleTime || isRescheduling}
+            >
+              {isRescheduling ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Reschedule Appointment'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
-}
+};
