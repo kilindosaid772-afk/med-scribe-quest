@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, XCircle } from 'lucide-react';
+import { Calendar, XCircle, Clock, User } from 'lucide-react';
 
 interface AppointmentsCardProps {
   appointments: any[];
@@ -10,38 +10,77 @@ interface AppointmentsCardProps {
 }
 
 export function AppointmentsCard({ appointments, onCheckIn, onCancel }: AppointmentsCardProps) {
+  const today = new Date().toISOString().split('T')[0];
+  
   // Filter for today's appointments that need action (Scheduled status only)
   const todayAppointments = appointments.filter(
-    a => a.appointment_date === new Date().toISOString().split('T')[0] && a.status === 'Scheduled'
+    a => a.appointment_date === today && a.status === 'Scheduled'
   );
+
+  // Sort by appointment time
+  const sortedAppointments = todayAppointments.sort((a, b) => {
+    const timeA = a.appointment_time || '00:00';
+    const timeB = b.appointment_time || '00:00';
+    return timeA.localeCompare(timeB);
+  });
 
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Calendar className="h-5 w-5" />
-          Today's Appointments ({todayAppointments.length})
-        </CardTitle>
-        <CardDescription>Manage today's patient schedule</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Today's Appointments ({sortedAppointments.length})
+            </CardTitle>
+            <CardDescription>Manage today's patient schedule</CardDescription>
+          </div>
+          {sortedAppointments.length > 5 && (
+            <Badge variant="secondary" className="ml-2">
+              {sortedAppointments.length - 5}+ more
+            </Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
-        {todayAppointments.length === 0 ? (
-          <p className="text-center text-muted-foreground py-8">No appointments scheduled for today</p>
+        {sortedAppointments.length === 0 ? (
+          <div className="text-center py-12">
+            <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground font-medium">No pending appointments for today</p>
+            <p className="text-sm text-muted-foreground mt-1">All appointments have been checked in or there are no scheduled visits</p>
+          </div>
         ) : (
           <div className="space-y-3">
-            {todayAppointments.slice(0, 6).map((appointment) => (
-              <div key={appointment.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="flex flex-col">
-                    <p className="font-medium">
+            {sortedAppointments.slice(0, 5).map((appointment) => (
+              <div key={appointment.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="p-2 bg-blue-50 rounded-full">
+                    <User className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div className="flex flex-col flex-1">
+                    <p className="font-medium text-base">
                       {appointment.patient?.full_name || 'Unknown Patient'}
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      {appointment.appointment_time} • Dr. {appointment.doctor?.full_name || 'Unknown Doctor'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {appointment.department?.name || 'No Department'}
-                    </p>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      <span>{appointment.appointment_time}</span>
+                      {appointment.doctor?.full_name && (
+                        <>
+                          <span>•</span>
+                          <span>Dr. {appointment.doctor.full_name}</span>
+                        </>
+                      )}
+                    </div>
+                    {appointment.reason && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span className="font-medium">Reason:</span> {appointment.reason}
+                      </p>
+                    )}
+                    {appointment.department?.name && (
+                      <p className="text-xs text-blue-600 mt-0.5">
+                        {appointment.department.name}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

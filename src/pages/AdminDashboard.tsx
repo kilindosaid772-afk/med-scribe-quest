@@ -736,10 +736,8 @@ export default function AdminDashboard() {
   const [userForm, setUserForm] = useState({
     full_name: '',
     email: '',
-    phone: '',
-    department_id: ''
+    phone: ''
   });
-  const [departments, setDepartments] = useState<Array<{id: string, name: string}>>([]);
   const [stats, setStats] = useState({ 
     totalPatients: 0, 
     activeAppointments: 0, 
@@ -884,7 +882,7 @@ export default function AdminDashboard() {
       // Fetch users with their roles
       const { data: usersData, error: usersError } = await supabase
         .from('profiles')
-        .select('id, full_name, email, phone, department_id')
+        .select('id, full_name, email, phone')
         .limit(20);
 
       if (usersError) {
@@ -893,12 +891,6 @@ export default function AdminDashboard() {
       }
 
       console.log('Fetched users data:', usersData);
-
-      // Fetch departments
-      const { data: departmentsData } = await supabase
-        .from('departments')
-        .select('id, name')
-        .order('name');
 
       // Fetch user roles
       const { data: rolesData } = await supabase
@@ -948,7 +940,6 @@ export default function AdminDashboard() {
 
       setPatients(patientsData || []);
       setUsers(usersWithRoles);
-      setDepartments(departmentsData || []);
       setMedicalServices(servicesData || []);
       setStats({
         totalPatients: patientCount || 0,
@@ -1259,8 +1250,7 @@ export default function AdminDashboard() {
     setUserForm({
       full_name: user.full_name || '',
       email: user.email || '',
-      phone: user.phone || '',
-      department_id: (user as any).department_id || ''
+      phone: user.phone || ''
     });
   };
 
@@ -1274,7 +1264,6 @@ export default function AdminDashboard() {
         .update({
           full_name: userForm.full_name,
           phone: userForm.phone,
-          department_id: userForm.department_id || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', editingUser.id);
@@ -1761,22 +1750,6 @@ export default function AdminDashboard() {
                 <Label htmlFor="phone">Phone</Label>
                 <Input id="phone" value={userForm.phone} onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="department">Department (for doctors)</Label>
-                <Select value={userForm.department_id} onValueChange={(value) => setUserForm({ ...userForm, department_id: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">None</SelectItem>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept.id} value={dept.id}>
-                        {dept.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <Button type="submit" className="w-full">Save Changes</Button>
             </form>
           </DialogContent>
@@ -1832,8 +1805,11 @@ export default function AdminDashboard() {
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-xs truncate">
-                        {typeof log.details === 'string' ? log.details.slice(0, 60) : JSON.stringify(log.details).slice(0, 60)}
-                        {(typeof log.details === 'string' ? log.details.length : JSON.stringify(log.details).length) > 60 ? '…' : ''}
+                        {(() => {
+                          const details = log.details as any;
+                          const str = typeof details === 'string' ? details : JSON.stringify(details);
+                          return str.slice(0, 60) + (str.length > 60 ? '…' : '');
+                        })()}
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button variant="ghost" size="sm" className="ml-2 h-8 w-8 p-0">
