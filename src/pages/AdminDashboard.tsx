@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { format, parseISO, isSameDay } from 'date-fns';
 import { cn } from "@/lib/utils";
 import 'highlight.js/styles/github.css'; // For JSON syntax highlighting
@@ -22,6 +22,99 @@ import { Users, UserPlus, Activity, Loader2, Stethoscope, DollarSign, Edit, Tras
 import { logActivity } from '@/lib/utils';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
+
+// Define the Patient interface
+interface Patient {
+  id: string;
+  first_name: string;
+  last_name: string;
+  full_name?: string;
+  date_of_birth: string;
+  gender: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  blood_group?: string | null;
+  status: 'Active' | 'Inactive' | 'Pending' | string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Patient View Component
+const PatientView = ({ 
+  patients, 
+  view, 
+  onViewChange,
+  loading 
+}: { 
+  patients: Patient[];
+  view: 'day' | 'week' | 'all';
+  onViewChange: (view: 'day' | 'week' | 'all') => void;
+  loading: boolean;
+}) => {
+  const filteredPatients = useMemo(() => {
+    const now = new Date();
+    return patients.filter(patient => {
+      const patientDate = new Date(patient.created_at);
+      
+      switch (view) {
+        case 'day':
+          return patientDate.toDateString() === now.toDateString();
+        case 'week': {
+          const weekAgo = new Date();
+          weekAgo.setDate(now.getDate() - 7);
+          return patientDate >= weekAgo;
+        }
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  }, [patients, view]);
+
+  const viewLabels = {
+    day: 'Today',
+    week: 'This Week',
+    all: 'All Patients'
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={fetchData}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Patient View */}
+        <div className="flex items-center justify-between">
+          <CardTitle>Patients Overview</CardTitle>
+          <div className="flex items-center gap-2">
+            {(['all', 'week', 'day'] as const).map((tab) => (
+              <Button
+                key={tab}
+                variant={view === tab ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => onViewChange(tab)}
+                className="h-8"
+              >
+                {viewLabels[tab]}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <CardDescription>
+          Viewing {filteredPatients.length} {view !== 'all' ? viewLabels[view].toLowerCase() : 'total'} patients
+        </CardDescription>
+      </div>
+    </DashboardLayout>
+  );
+};
 
 export default function AdminDashboard() {
   interface User {
@@ -130,7 +223,7 @@ export default function AdminDashboard() {
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const { user } = useAuth();
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [patientView, setPatientView] = useState<'day' | 'week' | 'all'>('all');
 
   useEffect(() => {
     const loadUser = async () => {
@@ -149,6 +242,35 @@ export default function AdminDashboard() {
     loadUser();
     fetchData();
   }, [user]);
+
+  // Filter patients based on selected time period
+  const filterPatientsByTime = useCallback((patientsList: Patient[], period: 'day' | 'week' | 'all') => {
+    const now = new Date();
+    
+    return patientsList.filter(patient => {
+      const patientDate = new Date(patient.created_at);
+      
+      switch (period) {
+        case 'day':
+          return patientDate.toDateString() === now.toDateString();
+        case 'week': {
+          const weekAgo = new Date();
+          weekAgo.setDate(now.getDate() - 7);
+          return patientDate >= weekAgo;
+        }
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  }, []);
+
+  // Update filtered patients when patients or view changes
+  useEffect(() => {
+    if (patients.length > 0) {
+      // The filtering is now handled in the PatientView component
+    }
+  }, [patients, patientView]);
 
   const fetchActivityLogs = async (userId?: string) => {
     try {
@@ -842,9 +964,6 @@ export default function AdminDashboard() {
     a.download = 'medical_services_template.csv';
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  // Sample data creation removed
 
   if (loading) {
     return (
@@ -856,16 +975,12 @@ export default function AdminDashboard() {
     );
   }
 
-  const formatJson = (obj: any) => {
-    if (!obj) return <span className="text-muted-foreground">No details</span>;
-    
-    try {
-      // If it's a string, try to parse it as JSON
-      if (typeof obj === 'string') {
-        try {
-          obj = JSON.parse(obj);
-        } catch (e) {
-          return <span>{obj}</span>; // Return as is if not JSON
+  // Tabs for patient view
+  const patientViewTabs = [
+    { id: 'all', label: 'All Patients' },
+    { id: 'week', label: 'This Week' },
+    { id: 'day', label: 'Today' },
+  ];
         }
       }
       
