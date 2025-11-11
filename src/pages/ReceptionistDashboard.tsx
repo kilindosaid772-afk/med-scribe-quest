@@ -146,17 +146,27 @@ export default function ReceptionistDashboard() {
       let doctorsData = [];
       try {
         // First try with correct join syntax
-        const { data: profilesWithRoles, error: profilesError } = await supabase
-          .from('profiles')
-          .select(`
-            *,
-            user_roles!inner(*)
-          `)
-          .eq('user_roles.role', 'doctor');
+        const { data: doctorRoles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('user_id')
+          .eq('role', 'doctor');
 
-        if (profilesError) throw profilesError;
-        doctorsData = profilesWithRoles || [];
-        console.log('Found doctors with roles:', doctorsData.length);
+        if (rolesError) throw rolesError;
+
+        if (doctorRoles && doctorRoles.length > 0) {
+          const doctorIds = doctorRoles.map(dr => dr.user_id);
+          const { data: doctorProfiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, full_name, email')
+            .in('id', doctorIds);
+
+          if (profilesError) throw profilesError;
+          doctorsData = doctorProfiles || [];
+          console.log('Found doctor profiles:', doctorsData.length);
+        } else {
+          doctorsData = [];
+          console.log('No doctor roles found');
+        }
       } catch (error) {
         console.warn('Could not fetch doctors with roles, using fallback:', error);
         try {

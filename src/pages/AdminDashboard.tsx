@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
-import { format, parseISO, isSameDay } from 'date-fns';
+import { format, parseISO, isSameDay, formatDistanceToNow } from 'date-fns';
 import { cn } from "@/lib/utils";
 import 'highlight.js/styles/github.css'; // For JSON syntax highlighting
 import { 
@@ -458,9 +458,21 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="max-w-sm">
+                                <div className="space-y-1 text-sm">
+                                  <div><span className="text-muted-foreground">Doctor:</span> {appointment.doctor?.full_name || 'N/A'}</div>
+                                  <div><span className="text-muted-foreground">Status:</span> {appointment.status}</div>
+                                  <div><span className="text-muted-foreground">Reason:</span> {appointment.reason || 'N/A'}</div>
+                                  <div><span className="text-muted-foreground">Time:</span> {appointment.appointment_time}</div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -536,7 +548,7 @@ const PatientView: React.FC<PatientViewProps> = ({
       <div className="flex items-center justify-between">
         <CardTitle>Patients Overview</CardTitle>
         <div className="flex items-center gap-2">
-          {(['all', 'week', 'day'] as const).map((tab) => (
+          {(['day', 'week', 'all'] as const).map((tab) => (
             <Button
               key={tab}
               variant={view === tab ? 'default' : 'ghost'}
@@ -754,7 +766,7 @@ export default function AdminDashboard() {
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const { user } = useAuth();
-  const [patientView, setPatientView] = useState<'day' | 'week' | 'all'>('all');
+  const [patientView, setPatientView] = useState<'day' | 'week' | 'all'>('day');
 
   useEffect(() => {
     const loadUser = async () => {
@@ -1659,7 +1671,7 @@ export default function AdminDashboard() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Active Role</TableHead>
-                    <TableHead>Roles</TableHead>
+
                     <TableHead className="w-[160px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1673,7 +1685,7 @@ export default function AdminDashboard() {
                       <TableCell>
                         <Badge variant="outline">{u.activeRole || 'No role'}</Badge>
                       </TableCell>
-                      <TableCell>{u.roles?.length || 0}</TableCell>
+
                       <TableCell>
                         <div className="flex gap-2">
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditUser(u)}>
@@ -1744,13 +1756,36 @@ export default function AdminDashboard() {
                 <TableBody>
                   {activityLogs.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell>{format(new Date(log.created_at), 'MMM d, HH:mm')}</TableCell>
-                      <TableCell>{log.user_email || 'System'}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{log.action}</Badge>
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span title={format(new Date(log.created_at), 'MMM d, yyyy HH:mm')}>
+                            {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="font-mono">{log.user_email || 'System'}</Badge>
+                          {log.user_name && <span className="text-xs text-muted-foreground">{log.user_name}</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          log.action?.includes('error') ? 'destructive' :
+                          log.action?.startsWith('appointment.') ? 'default' :
+                          log.action?.startsWith('patient.') ? 'secondary' :
+                          log.action?.startsWith('pharmacy.') ? 'default' :
+                          log.action?.startsWith('billing.') ? 'default' :
+                          log.action?.startsWith('service.') ? 'secondary' :
+                          'outline'
+                        }>
+                          {log.action}
+                        </Badge>
                       </TableCell>
                       <TableCell className="max-w-xs truncate">
-                        {JSON.stringify(log.details).slice(0, 60)}{JSON.stringify(log.details).length > 60 ? '…' : ''}
+                        {typeof log.details === 'string' ? log.details.slice(0, 60) : JSON.stringify(log.details).slice(0, 60)}
+                        {(typeof log.details === 'string' ? log.details.length : JSON.stringify(log.details).length) > 60 ? '…' : ''}
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button variant="ghost" size="sm" className="ml-2 h-8 w-8 p-0">
