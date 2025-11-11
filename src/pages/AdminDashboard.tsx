@@ -2,11 +2,43 @@ import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'reac
 import { format, parseISO, isSameDay } from 'date-fns';
 import { cn } from "@/lib/utils";
 import 'highlight.js/styles/github.css'; // For JSON syntax highlighting
-import { Search, X, Calendar as CalendarIcon } from 'lucide-react';
+import { 
+  Search, 
+  X, 
+  Calendar as CalendarIcon, 
+  Users, 
+  UserPlus, 
+  Activity, 
+  Loader2, 
+  Stethoscope, 
+  DollarSign, 
+  Edit, 
+  Trash2, 
+  Plus, 
+  RefreshCw, 
+  Eye, 
+  FileText, 
+  User, 
+  ClipboardList, 
+  Shield, 
+  Phone, 
+  Mail, 
+  Home, 
+  Clock, 
+  Pill, 
+  AlertTriangle, 
+  FilePlus, 
+  FileCheck, 
+  FileX, 
+  FileSearch,
+  Stethoscope as StethoscopeIcon,
+  FileText as FileTextIcon
+} from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/DashboardLayout';
+import { StatCard } from '@/components/StatCard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,8 +49,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
+import { supabaseAdmin } from '@/integrations/supabase/admin';
 import { toast } from 'sonner';
-import { Users, UserPlus, Activity, Loader2, Stethoscope, DollarSign, Edit, Trash2, Plus, RefreshCw } from 'lucide-react';
 import { logActivity } from '@/lib/utils';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
@@ -36,21 +68,442 @@ type Patient = {
   address?: string;
   blood_group?: string | null;
   status: 'Active' | 'Inactive' | 'Pending' | string;
+  medical_history?: string;
+  allergies?: string;
+  medications?: string;
+  insurance_provider?: string;
+  insurance_policy_number?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relation?: string;
   created_at: string;
   updated_at: string;
 };
 
-// Patient View Component
-const PatientView = ({ 
-  patients, 
-  view, 
-  onViewChange,
-  loading 
-}: { 
+type MedicalRecord = {
+  id: string;
+  patient_id: string;
+  record_type: 'Diagnosis' | 'Prescription' | 'Lab Result' | 'Note' | 'Other';
+  title: string;
+  description: string;
+  date: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type Appointment = {
+  id: string;
+  patient_id: string;
+  doctor_id: string;
+  appointment_date: string;
+  appointment_time: string;
+  status: 'Scheduled' | 'Completed' | 'Cancelled' | 'No Show';
+  reason: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  doctor?: {
+    full_name: string;
+    specialization?: string;
+  };
+};
+
+// Patient Detail View Component
+interface PatientDetailViewProps {
+  patient: Patient | null;
+  records: MedicalRecord[];
+  appointments: Appointment[];
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onClose: () => void;
+  loading: boolean;
+  isLoadingRecords?: boolean;
+}
+
+const PatientDetailView: React.FC<PatientDetailViewProps> = ({
+  patient,
+  records = [],
+  appointments = [],
+  activeTab = 'overview',
+  onTabChange,
+  onClose,
+  loading = false,
+  isLoadingRecords = false
+}) => {
+  if (!patient) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <p className="text-muted-foreground">No patient selected</p>
+      </div>
+    );
+  }
+  
+  // Default values for optional fields
+  const {
+    full_name = '',
+    first_name = '',
+    last_name = '',
+    date_of_birth = '',
+    gender = '',
+    phone = '',
+    email = '',
+    address = '',
+    blood_group = null,
+    medical_history = '',
+    allergies = '',
+    medications = '',
+    insurance_provider = '',
+    insurance_policy_number = ''
+  } = patient;
+
+  const formatDate = (dateString?: string) => {
+    return dateString ? format(new Date(dateString), 'MMM d, yyyy') : 'N/A';
+  };
+
+  const calculateAge = (dob?: string) => {
+    if (!dob) return 'N/A';
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  return (
+    <Dialog open={!!patient} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-2xl">
+            {full_name || `${first_name} ${last_name}`.trim()}
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {gender} • {calculateAge(date_of_birth)} years • {blood_group || 'N/A'}
+            </span>
+          </DialogTitle>
+          <DialogDescription>
+            Patient ID: {patient.id}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="border-b">
+          <div className="flex space-x-4">
+            {['overview', 'records', 'appointments'].map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                className={`py-2 px-4 border-b-2 font-medium text-sm ${
+                  activeTab === tab
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => onTabChange(tab)}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          {loading && (
+            <div className="flex items-center justify-center p-8">
+              <p>Loading patient data...</p>
+            </div>
+          )}
+          {!loading && activeTab === 'overview' && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center space-x-2">
+                    <User className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle>Personal Information</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Date of Birth</p>
+                      <p>{formatDate(date_of_birth)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Age</p>
+                      <p>{calculateAge(date_of_birth)} years</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground flex items-center">
+                      <Mail className="h-4 w-4 mr-1" /> Email
+                    </p>
+                    <p>{email || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground flex items-center">
+                      <Phone className="h-4 w-4 mr-1" /> Phone
+                    </p>
+                    <p>{phone || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground flex items-center">
+                      <Home className="h-4 w-4 mr-1" /> Address
+                    </p>
+                    <p>{address || 'N/A'}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center space-x-2">
+                    <StethoscopeIcon className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle>Medical Information</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground flex items-center">
+                      <FileTextIcon className="h-4 w-4 mr-1" /> Medical History
+                    </p>
+                    <p className="whitespace-pre-line mt-1">
+                      {medical_history || 'No medical history recorded'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground flex items-center">
+                      <AlertTriangle className="h-4 w-4 mr-1 text-amber-500" /> Allergies
+                    </p>
+                    <p className="whitespace-pre-line mt-1">
+                      {allergies || 'No known allergies'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground flex items-center">
+                      <Pill className="h-4 w-4 mr-1 text-blue-500" /> Current Medications
+                    </p>
+                    <p className="whitespace-pre-line mt-1">
+                      {medications || 'No current medications'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="md:col-span-2">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Shield className="h-5 w-5 text-muted-foreground" />
+                      <CardTitle>Insurance Information</CardTitle>
+                    </div>
+                    <Button variant="outline" size="sm" className="h-8">
+                      <FilePlus className="h-4 w-4 mr-2" />
+                      Update Insurance
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Provider</p>
+                        <p className="font-medium">{patient.insurance_provider || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Policy Number</p>
+                        <p className="font-mono">{patient.insurance_policy_number || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+        
+        {activeTab === 'records' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-medium flex items-center">
+                <FileText className="h-5 w-5 mr-2" />
+                Medical Records
+              </h3>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Record
+              </Button>
+            </div>
+            
+            {isLoadingRecords ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : records.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                  <p>No medical records found for this patient.</p>
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Created By</TableHead>
+                          <TableHead className="w-12"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {records.map((record) => (
+                          <TableRow key={record.id}>
+                            <TableCell>{format(new Date(record.date), 'MMM d, yyyy')}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{record.record_type}</Badge>
+                            </TableCell>
+                            <TableCell className="font-medium">{record.title}</TableCell>
+                            <TableCell className="max-w-xs truncate">
+                              {record.description.substring(0, 50)}{record.description.length > 50 ? '...' : ''}
+                            </TableCell>
+                            <TableCell>{record.created_by}</TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
+
+          
+          {activeTab === 'appointments' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium flex items-center">
+                  <CalendarIcon className="h-5 w-5 mr-2" />
+                  Appointments
+                </h3>
+                <Button variant="outline" size="sm" className="h-8">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Schedule Appointment
+                </Button>
+              </div>
+              
+              {appointments.length === 0 ? (
+                <div className="text-center py-12 border rounded-lg bg-muted/20">
+                  <CalendarIcon className="h-10 w-10 mx-auto text-muted-foreground" />
+                  <h4 className="mt-3 font-medium text-muted-foreground">No appointments scheduled</h4>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Schedule a new appointment to get started
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-4">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Schedule Appointment
+                  </Button>
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Doctor</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-[100px]">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {appointments.map((appointment) => (
+                        <TableRow key={appointment.id}>
+                          <TableCell>{format(new Date(appointment.appointment_date), 'MMM d, yyyy')}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center">
+                              <Clock className="h-4 w-4 mr-1 text-muted-foreground" />
+                              {appointment.appointment_time}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">
+                              {appointment.doctor?.full_name || 'N/A'}
+                            </div>
+                            {appointment.doctor?.specialization && (
+                              <p className="text-xs text-muted-foreground">
+                                {appointment.doctor.specialization}
+                              </p>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {appointment.reason}
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={
+                                appointment.status === 'Completed' ? 'default' :
+                                appointment.status === 'Scheduled' ? 'secondary' :
+                                appointment.status === 'Cancelled' ? 'destructive' :
+                                'outline'
+                              }
+                            >
+                              {appointment.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+interface PatientViewProps {
   patients: Patient[];
   view: 'day' | 'week' | 'all';
   onViewChange: (view: 'day' | 'week' | 'all') => void;
   loading: boolean;
+  onViewPatient: (patient: Patient) => void;
+  selectedPatient: Patient | null;
+  patientRecords: MedicalRecord[];
+  patientAppointments: Appointment[];
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onClosePatientView: () => void;
+  isLoadingRecords: boolean;
+}
+
+const PatientView: React.FC<PatientViewProps> = ({
+  patients,
+  view,
+  onViewChange,
+  loading,
+  onViewPatient,
+  selectedPatient,
+  patientRecords,
+  patientAppointments,
+  activeTab,
+  onTabChange,
+  onClosePatientView,
+  isLoadingRecords
 }) => {
   const filteredPatients = useMemo(() => {
     const now = new Date();
@@ -79,40 +532,113 @@ const PatientView = ({
   };
 
   return (
-    <DashboardLayout title="Admin Dashboard">
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={fetchData}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <CardTitle>Patients Overview</CardTitle>
+        <div className="flex items-center gap-2">
+          {(['all', 'week', 'day'] as const).map((tab) => (
+            <Button
+              key={tab}
+              variant={view === tab ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => onViewChange(tab)}
+              className="h-8"
+            >
+              {viewLabels[tab]}
             </Button>
-          </div>
+          ))}
         </div>
-
-        {/* Patient View */}
-        <div className="flex items-center justify-between">
-          <CardTitle>Patients Overview</CardTitle>
-          <div className="flex items-center gap-2">
-            {(['all', 'week', 'day'] as const).map((tab) => (
-              <Button
-                key={tab}
-                variant={view === tab ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => onViewChange(tab)}
-                className="h-8"
-              >
-                {viewLabels[tab]}
-              </Button>
-            ))}
-          </div>
-        </div>
-        <CardDescription>
-          Viewing {filteredPatients.length} {view !== 'all' ? viewLabels[view].toLowerCase() : 'total'} patients
-        </CardDescription>
       </div>
-    </DashboardLayout>
+      
+      <CardDescription>
+        Viewing {filteredPatients.length} {view !== 'all' ? viewLabels[view].toLowerCase() : 'total'} patients
+      </CardDescription>
+
+      <div className="border rounded-lg overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Date of Birth</TableHead>
+              <TableHead>Gender</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Last Visit</TableHead>
+              <TableHead className="w-[100px]">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  <p className="mt-2 text-sm text-muted-foreground">Loading patients...</p>
+                </TableCell>
+              </TableRow>
+            ) : filteredPatients.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  No patients found
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredPatients.map((patient) => (
+                <TableRow key={patient.id} className="hover:bg-muted/50">
+                  <TableCell className="font-medium">
+                    <div>
+                      {patient.full_name || `${patient.first_name} ${patient.last_name}`}
+                      {patient.email && (
+                        <p className="text-xs text-muted-foreground">{patient.email}</p>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {format(new Date(patient.date_of_birth), 'MMM d, yyyy')}
+                  </TableCell>
+                  <TableCell>{patient.gender}</TableCell>
+                  <TableCell>{patient.phone}</TableCell>
+                  <TableCell>
+                    <Badge 
+                      variant={
+                        patient.status === 'Active' ? 'default' :
+                        patient.status === 'Inactive' ? 'secondary' :
+                        'outline'
+                      }
+                    >
+                      {patient.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {patient.updated_at ? format(new Date(patient.updated_at), 'MMM d, yyyy') : 'N/A'}
+                  </TableCell>
+                  <TableCell>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 w-8 p-0"
+                      onClick={() => onViewPatient(patient)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Patient Detail View */}
+      <PatientDetailView
+        patient={selectedPatient}
+        records={patientRecords}
+        appointments={patientAppointments}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        onClose={onClosePatientView}
+        loading={isLoadingRecords}
+      />
+    </div>
   );
 };
 
@@ -179,6 +705,11 @@ export default function AdminDashboard() {
   }
 
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patientRecords, setPatientRecords] = useState<MedicalRecord[]>([]);
+  const [patientAppointments, setPatientAppointments] = useState<Appointment[]>([]);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [users, setUsers] = useState<Array<User & { activeRole?: string }>>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -233,9 +764,7 @@ export default function AdminDashboard() {
           .select('*')
           .eq('id', user.id)
           .single();
-        if (userData) {
-          setCurrentUser(userData as User);
-        }
+        // Optionally use userData here if needed
       }
     };
     
@@ -741,23 +1270,47 @@ export default function AdminDashboard() {
     }
     
     try {
-      // First delete from auth
-      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-      if (authError) throw authError;
+      // First, delete related records to avoid foreign key constraints
+      // 1. Delete from user_roles using the admin client
+      const { error: roleError } = await supabaseAdmin
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userId);
       
-      // Then delete from profiles (this should be handled by a trigger in Supabase)
-      const { error } = await supabase
+      if (roleError) throw roleError;
+      
+      // 2. Delete from profiles using the admin client
+      const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .delete()
         .eq('id', userId);
         
-      if (error) throw error;
+      if (profileError) throw profileError;
+      
+      // 3. Delete the auth user using the admin client
+      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      if (authError) throw authError;
       
       toast.success('User deleted successfully');
-      fetchData();
+      
+      // Refresh the users list
+      await fetchData();
+      
     } catch (error) {
       console.error('Error deleting user:', error);
-      toast.error('Failed to delete user');
+      
+      // More specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('foreign key constraint')) {
+          toast.error('Cannot delete user: User has related records in the database');
+        } else if (error.message.includes('403')) {
+          toast.error('Permission denied: You do not have sufficient permissions to delete users');
+        } else {
+          toast.error(`Failed to delete user: ${error.message}`);
+        }
+      } else {
+        toast.error('Failed to delete user. Please check the console for details.');
+      }
     }
   };
 
@@ -975,6 +1528,62 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
+  const fetchPatientRecords = async (patientId: string) => {
+    try {
+      setIsLoadingRecords(true);
+      const { data, error } = await supabase
+        .from('medical_records')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('date', { ascending: false });
+        
+      if (error) throw error;
+      setPatientRecords(data || []);
+    } catch (error) {
+      console.error('Error fetching patient records:', error);
+      toast.error('Failed to load patient records');
+    } finally {
+      setIsLoadingRecords(false);
+    }
+  };
+  
+  const fetchPatientAppointments = async (patientId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          doctor:profiles(
+            full_name,
+            specialization
+          )
+        `)
+        .eq('patient_id', patientId)
+        .order('appointment_date', { ascending: false });
+        
+      if (error) throw error;
+      setPatientAppointments(data || []);
+    } catch (error) {
+      console.error('Error fetching patient appointments:', error);
+      toast.error('Failed to load patient appointments');
+    }
+  };
+  
+  const handleViewPatient = async (patient: Patient) => {
+    setSelectedPatient(patient);
+    setActiveTab('overview');
+    await Promise.all([
+      fetchPatientRecords(patient.id),
+      fetchPatientAppointments(patient.id)
+    ]);
+  };
+  
+  const handleClosePatientView = () => {
+    setSelectedPatient(null);
+    setPatientRecords([]);
+    setPatientAppointments([]);
+  };
+
   if (loading) {
     return (
       <DashboardLayout title="Admin Dashboard">
@@ -1013,186 +1622,74 @@ export default function AdminDashboard() {
     .filter(Boolean) as string[];
 
   const actionTypes = Array.from(new Set(activityLogs.map(log => log.action.split('.')[0]))).filter(Boolean) as string[];
-
-  const filteredLogs = activityLogs.filter(log => {
-    if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = 
-        log.action.toLowerCase().includes(searchLower) ||
-        log.user_name?.toLowerCase().includes(searchLower) ||
-        log.user_email?.toLowerCase().includes(searchLower) ||
-        JSON.stringify(log.details).toLowerCase().includes(searchLower);
-      if (!matchesSearch) return false;
-    }
-    
-    if (selectedUserFilter !== 'all' && log.user_id !== selectedUserFilter) {
-      return false;
-    }
-    
-    if (selectedActionType !== 'all' && !log.action.startsWith(selectedActionType)) {
-      return false;
-    }
-    
-    if (dateRange.from || dateRange.to) {
-      const logDate = new Date(log.created_at);
-      if (dateRange.from && logDate < dateRange.from) return false;
-      if (dateRange.to) {
-        const toDate = new Date(dateRange.to);
-        toDate.setHours(23, 59, 59, 999); // End of the day
-        if (logDate > toDate) return false;
-      }
-    }
-    
-    return true;
-  });
-
-  const resetFilters = () => {
-    setSearchQuery('');
-    setSelectedUserFilter('all');
-    setSelectedActionType('all');
-    setDateRange({});
-  };
-
   return (
     <DashboardLayout title="Admin Dashboard">
-      <div className="space-y-8">
-        {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="border-primary/20 shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
-              <Users className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">{stats.totalPatients}</div>
-            </CardContent>
-          </Card>
+      <div className="space-y-4">
+  
 
-          <Card className="border-secondary/20 shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Appointments</CardTitle>
-              <CalendarIcon className="h-4 w-4 text-secondary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-secondary">{stats.activeAppointments}</div>
-            </CardContent>
-          </Card>
 
-          <Card className="border-accent/20 shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">System Users</CardTitle>
-              <Activity className="h-4 w-4 text-accent" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-accent">{stats.totalUsers}</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-green-200 shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Medical Services</CardTitle>
-              <Stethoscope className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{stats.totalServices}</div>
-              <p className="text-xs text-muted-foreground">Available services</p>
-              {/* Add Service action is available in Medical Services page only */}
-            {/* CSV Import moved to Medical Services page */}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Common administrative tasks</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Overview
+            </CardTitle>
+            <CardDescription>Key metrics</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.href = '/services'}>
-                <Stethoscope className="h-6 w-6" />
-                <span>Medical Services</span>
-                <span className="text-xs text-muted-foreground">Manage catalog & imports</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => setDialogOpen(true)}>
-                <UserPlus className="h-6 w-6" />
-                <span>Add Patient</span>
-                <span className="text-xs text-muted-foreground">Register new patient</span>
-              </Button>
-              {/* Sample data action removed */}
-              <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.location.assign('/logs')}>
-                <Activity className="h-6 w-6" />
-                <span>Activity Logs</span>
-                <span className="text-xs text-muted-foreground">Audit recent actions</span>
-              </Button>
+            <div className="grid gap-4 md:grid-cols-4">
+              <StatCard title="Patients" value={stats.totalPatients} icon={Users} color="green" sub="Total registered" />
+              <StatCard title="Appointments" value={stats.activeAppointments} icon={CalendarIcon} color="blue" sub="Active now" />
+              <StatCard title="Users" value={stats.totalUsers} icon={User} color="purple" sub="Platform users" />
+              <StatCard title="Services" value={stats.totalServices} icon={ClipboardList} color="orange" sub="Active services" />
             </div>
           </CardContent>
         </Card>
 
-        {/* User Management */}
         <Card className="shadow-lg">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>User Management</CardTitle>
-                <CardDescription>Manage system users and assign roles</CardDescription>
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              User Management
+            </CardTitle>
+            <CardDescription>Manage users and roles</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>Active Role</TableHead>
+                    <TableHead>Roles</TableHead>
+                    <TableHead className="w-[160px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center space-x-2">
-                          <span>{user.full_name || 'No name'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{user.email}</TableCell>
+                  {users.map((u) => (
+                    <TableRow key={u.id}>
                       <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {user.activeRole || 'No role'}
-                        </Badge>
+                        <div className="font-medium">{u.full_name || u.user_metadata?.full_name || 'Unknown'}</div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end space-x-2">
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => handleEditUser(user)}
-                            className="h-8 w-8 p-0"
-                          >
+                      <TableCell>{u.email}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{u.activeRole || 'No role'}</Badge>
+                      </TableCell>
+                      <TableCell>{u.roles?.length || 0}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditUser(u)}>
                             <Edit className="h-4 w-4" />
                             <span className="sr-only">Edit</span>
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => handleDeleteUser(user.id)}
-                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-                          >
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleAssignRole(u)}>
+                            <Shield className="h-4 w-4" />
+                            <span className="sr-only">Assign Role</span>
+                          </Button>
+                          <Button variant="destructive" size="sm" className="h-8 w-8 p-0" onClick={() => handleDeleteUser(u.id)}>
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">Delete</span>
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => handleAssignRole(user)}
-                            className="h-8 px-3 text-sm"
-                          >
-                            <UserPlus className="h-4 w-4 mr-1" />
-                            Assign Role
                           </Button>
                         </div>
                       </TableCell>
@@ -1204,106 +1701,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Patients */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Recent Patients</CardTitle>
-                <CardDescription>Latest patient registrations</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <EnhancedAppointmentBooking patients={patients} onSuccess={fetchData} />
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Add Patient
-                    </Button>
-                  </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Add New Patient</DialogTitle>
-                    <DialogDescription>Enter patient details to register</DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleAddPatient} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="fullName">Full Name</Label>
-                        <Input id="fullName" name="fullName" required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="dob">Date of Birth</Label>
-                        <Input id="dob" name="dob" type="date" required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="gender">Gender</Label>
-                        <Select name="gender" required>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Male">Male</SelectItem>
-                            <SelectItem value="Female">Female</SelectItem>
-                            <SelectItem value="Other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="bloodGroup">Blood Group</Label>
-                        <Input id="bloodGroup" name="bloodGroup" placeholder="A+, B-, etc." />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">Phone</Label>
-                        <Input id="phone" name="phone" type="tel" required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
-                        <Input id="email" name="email" type="email" />
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label htmlFor="address">Address</Label>
-                        <Input id="address" name="address" />
-                      </div>
-                    </div>
-                    <Button type="submit" className="w-full">Add Patient</Button>
-                  </form>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Blood Group</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {patients.map((patient) => (
-                    <TableRow key={patient.id}>
-                      <TableCell className="font-medium">{patient.full_name || `${patient.first_name} ${patient.last_name}`}</TableCell>
-                      <TableCell>{patient.phone}</TableCell>
-                      <TableCell>{patient.blood_group || 'N/A'}</TableCell>
-                      <TableCell>
-                        <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                          {patient.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Edit User Dialog */}
         <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
           <DialogContent>
             <DialogHeader>
@@ -1313,38 +1710,109 @@ export default function AdminDashboard() {
             <form onSubmit={handleUpdateUser} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="full_name">Full Name</Label>
-                <Input
-                  id="full_name"
-                  value={userForm.full_name}
-                  onChange={(e) => setUserForm({...userForm, full_name: e.target.value})}
-                  required
-                />
+                <Input id="full_name" value={userForm.full_name} onChange={(e) => setUserForm({ ...userForm, full_name: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={userForm.email}
-                  onChange={(e) => setUserForm({...userForm, email: e.target.value})}
-                  required
-                />
+                <Input id="email" type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={userForm.phone}
-                  onChange={(e) => setUserForm({...userForm, phone: e.target.value})}
-                />
+                <Input id="phone" value={userForm.phone} onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} />
               </div>
-              <Button type="submit" className="w-full">
-                Update User
-              </Button>
+              <Button type="submit" className="w-full">Save Changes</Button>
             </form>
           </DialogContent>
         </Dialog>
+
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Activity Logs
+            </CardTitle>
+            <CardDescription>Recent system activity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Details</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {activityLogs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell>{format(new Date(log.created_at), 'MMM d, HH:mm')}</TableCell>
+                      <TableCell>{log.user_email || 'System'}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{log.action}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate">
+                        {JSON.stringify(log.details).slice(0, 60)}{JSON.stringify(log.details).length > 60 ? '…' : ''}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="ghost" size="sm" className="ml-2 h-8 w-8 p-0">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="max-w-md">
+                            {formatJson(log.details)}
+                          </PopoverContent>
+                        </Popover>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-lg">
+          <CardHeader className="space-y-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Patients
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search patients…"
+                  className="h-8 w-48"
+                />
+              </div>
+            </div>
+            <CardDescription>Quickly view and inspect patients</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PatientView
+              patients={patients.filter((p) => {
+                const name = (p.full_name || `${p.first_name} ${p.last_name}` || '').toLowerCase();
+                const phone = (p.phone || '').toLowerCase();
+                const q = searchTerm.toLowerCase();
+                return name.includes(q) || phone.includes(q);
+              })}
+              view={patientView}
+              onViewChange={setPatientView}
+              loading={loading}
+              onViewPatient={handleViewPatient}
+              selectedPatient={selectedPatient}
+              patientRecords={patientRecords}
+              patientAppointments={patientAppointments}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              onClosePatientView={handleClosePatientView}
+              isLoadingRecords={isLoadingRecords}
+            />
+          </CardContent>
+        </Card>
 
         {/* Medical services management moved to Medical Services page */}
         <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
