@@ -86,6 +86,23 @@ export default function DoctorDashboard() {
     return '';
   };
 
+  const getCurrentWeekRange = () => {
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    // Calculate start of week (Monday)
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1)); // If Sunday, go back 6 days to Monday
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    // Calculate end of week (Sunday)
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    
+    return { start: startOfWeek, end: endOfWeek };
+  };
+
   const getAppointmentStatusBadge = (appointment: any) => {
     const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
     const now = new Date();
@@ -1069,9 +1086,9 @@ export default function DoctorDashboard() {
               
               <TabsContent value="week" className="space-y-4">
                 {appointments.filter(appt => {
-                  const weekFromNow = new Date();
-                  weekFromNow.setDate(weekFromNow.getDate() + 7);
-                  return new Date(appt.appointment_date) <= weekFromNow;
+                  const { start, end } = getCurrentWeekRange();
+                  const apptDate = new Date(appt.appointment_date);
+                  return apptDate >= start && apptDate <= end;
                 }).length > 0 ? (
                   <Table>
                     <TableHeader>
@@ -1085,9 +1102,9 @@ export default function DoctorDashboard() {
                     <TableBody>
                       {appointments
                         .filter(appt => {
-                          const weekFromNow = new Date();
-                          weekFromNow.setDate(weekFromNow.getDate() + 7);
-                          return new Date(appt.appointment_date) <= weekFromNow;
+                          const { start, end } = getCurrentWeekRange();
+                          const apptDate = new Date(appt.appointment_date);
+                          return apptDate >= start && apptDate <= end;
                         })
                         .sort((a, b) => {
                           const timeA = new Date(`${a.appointment_date}T${a.appointment_time}`).getTime();
