@@ -17,7 +17,7 @@ import { format } from 'date-fns';
 export default function LabDashboard() {
   const [labTests, setLabTests] = useState<any[]>([]);
   const [stats, setStats] = useState({ pending: 0, inProgress: 0, completed: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedTest, setSelectedTest] = useState<any>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -313,7 +313,6 @@ export default function LabDashboard() {
       }
 
       toast.success('Ensured all patients have proper visits - check doctor dashboard');
-      fetchData();
     } catch (error) {
       console.error('Error ensuring patient visits:', error);
       toast.error('Failed to ensure patient visits');
@@ -407,8 +406,6 @@ export default function LabDashboard() {
           toast.success('Test workflow created - patient moved to doctor consultation');
         }
       }
-
-      fetchData();
     } catch (error) {
       console.error('Error in test workflow:', error);
       toast.error('Test workflow failed');

@@ -70,7 +70,7 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
               />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">{title}</h1>
+              <h1 className="text-xl font-bold text-foreground" style={{ contentVisibility: 'auto' }}>{title}</h1>
             </div>
           </div>
 

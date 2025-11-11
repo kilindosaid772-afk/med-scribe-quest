@@ -50,7 +50,7 @@ export default function NurseDashboard() {
     pendingVitals: 0,
     completedTasks: 0
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [pendingVisits, setPendingVisits] = useState<any[]>([]);
@@ -150,7 +150,9 @@ export default function NurseDashboard() {
       toast.success(`Vital signs recorded. Patient sent to doctor.`);
       setShowVitalsDialog(false);
       setSelectedPatient(null);
-      fetchData();
+      
+      // Update local state
+      setPendingVisits(prev => prev.filter(v => v.id !== visits[0].id));
     } catch (error) {
       console.error('Vitals submission error:', error);
       toast.error('Failed to record vital signs');
@@ -191,7 +193,6 @@ export default function NurseDashboard() {
       toast.success(`Follow-up scheduled for ${selectedPatient.full_name}`);
       setShowScheduleDialog(false);
       setSelectedPatient(null);
-      fetchData();
     } catch (error) {
       console.error('Schedule error:', error);
       toast.error('Failed to schedule follow-up');
@@ -279,8 +280,12 @@ export default function NurseDashboard() {
   if (loading) {
     return (
       <DashboardLayout title="Nurse Dashboard">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-8">
+          <div className="h-20 bg-gray-200 animate-pulse rounded-lg"></div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[1,2,3,4].map(i => <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>)}
+          </div>
+          <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
         </div>
       </DashboardLayout>
     );

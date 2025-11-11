@@ -744,7 +744,7 @@ export default function AdminDashboard() {
     totalUsers: 0, 
     totalServices: 0 
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [medicalServices, setMedicalServices] = useState<MedicalService[]>([]);
   const [serviceForm, setServiceForm] = useState({
     service_code: '',
@@ -1280,7 +1280,13 @@ export default function AdminDashboard() {
       
       toast.success('User updated successfully');
       setEditingUser(null);
-      fetchData();
+      
+      // Update local state
+      setUsers(prev => prev.map(u => 
+        u.id === editingUser.id 
+          ? { ...u, full_name: userForm.full_name, phone: userForm.phone, email: userForm.email }
+          : u
+      ));
     } catch (error) {
       console.error('Error updating user:', error);
       toast.error('Failed to update user');
@@ -1316,9 +1322,8 @@ export default function AdminDashboard() {
       
       toast.success('User deleted successfully');
       
-      // Refresh the users list
-      await fetchData();
-      
+      // Update local state
+      setUsers(prev => prev.filter(u => u.id !== userId));
     } catch (error) {
       console.error('Error deleting user:', error);
       
@@ -1442,7 +1447,14 @@ export default function AdminDashboard() {
 
       setRoleDialogOpen(false);
       setSelectedUserId(null);
-      fetchData();
+      
+      // Update local state
+      setUsers(prev => prev.map(u => {
+        if (u.id === selectedUserId) {
+          return { ...u, activeRole: isPrimary ? role : u.activeRole };
+        }
+        return u;
+      }));
     } catch (error) {
       console.error('Error assigning role:', error);
       const message = (error as { message?: string })?.message || 'Failed to assign role';
@@ -1607,8 +1619,11 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <DashboardLayout title="Admin Dashboard">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-4">
+            {[1,2,3,4].map(i => <div key={i} className="h-28 bg-gray-200 animate-pulse rounded-lg"></div>)}
+          </div>
+          <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
         </div>
       </DashboardLayout>
     );

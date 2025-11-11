@@ -35,7 +35,7 @@ export default function BillingDashboard() {
   const [insuranceCompanies, setInsuranceCompanies] = useState<any[]>([]);
   const [insuranceClaims, setInsuranceClaims] = useState<any[]>([]);
   const [stats, setStats] = useState({ unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
@@ -269,7 +269,6 @@ export default function BillingDashboard() {
       toast.success(`Invoice created successfully for TSh${calculatedCost.toFixed(2)}`);
       setDialogOpen(false);
       setSelectedPatientId('');
-      fetchData();
     }
   };
 
@@ -377,7 +376,6 @@ export default function BillingDashboard() {
           setTransactionId('');
           setSelectedInvoice(null);
           setPaymentMethod('');
-          fetchData();
         }, 3000);
       } else if (paymentData && paymentData.status === 'failed') {
         setPaymentStatus('failed');

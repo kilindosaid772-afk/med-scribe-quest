@@ -40,7 +40,7 @@ export default function ReceptionistDashboard() {
   const [doctors, setDoctors] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
 
   const [stats, setStats] = useState<{
     todayAppointments: number;
@@ -516,14 +516,9 @@ export default function ReceptionistDashboard() {
 
       toast.success('Patient checked in and sent to nurse queue');
       logActivity('appointment.check_in', { appointment_id: appointmentId });
-      
-      // Refresh stats and other data
-      fetchData();
     } catch (error) {
       console.error('Check-in error:', error);
       toast.error(`Failed to check in: ${error.message || 'Unknown error'}`);
-      // Revert by refetching
-      fetchData();
     }
   };
 
@@ -550,7 +545,9 @@ export default function ReceptionistDashboard() {
 
       toast.success('Appointment cancelled');
       logActivity('appointment.cancel', { appointment_id: appointmentId });
-      fetchData();
+      
+      // Remove from local state
+      setAppointments(prev => prev.filter(apt => apt.id !== appointmentId));
     } catch (error) {
       console.error('Cancel error:', error);
       toast.error('Failed to cancel appointment');
@@ -666,11 +663,12 @@ export default function ReceptionistDashboard() {
         toast.success('Patient registered and added to nurse queue successfully!');
       }
 
-      // Close registration dialog and refresh data
+      // Close registration dialog
       setShowRegisterDialog(false);
+      
+      // Add to local state
+      setPatients(prev => [newPatient, ...prev]);
 
-      // Refresh data to show the new patient and visit
-      fetchData();
       logActivity('patient.register', { patient_id: newPatient.id, full_name: registerForm.full_name });
     } catch (error) {
       console.error('Registration error:', error);
@@ -719,6 +717,12 @@ export default function ReceptionistDashboard() {
       toast.success(`Follow-up appointment booked successfully! ${appointmentForm.patient_id ? 'Patient will be notified of their scheduled visit.' : ''}`);
       setShowBookAppointmentDialog(false);
 
+      // Add to local state if it's for today
+      const today = new Date().toISOString().split('T')[0];
+      if (newAppointment.appointment_date === today) {
+        setAppointments(prev => [...prev, newAppointment]);
+      }
+
       // Reset form but keep patient selected for potential next appointment
       setAppointmentForm({
         patient_id: appointmentForm.patient_id, // Keep patient selected
@@ -728,8 +732,6 @@ export default function ReceptionistDashboard() {
         reason: '',
         department_id: '',
       });
-
-      fetchData();
     } catch (error) {
       console.error('Booking error:', error);
       toast.error('Failed to book appointment');
@@ -772,8 +774,18 @@ export default function ReceptionistDashboard() {
   if (loading) {
     return (
       <DashboardLayout title="Receptionist Dashboard">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-8">
+          {/* Skeleton stats */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[1,2,3,4].map(i => (
+              <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>
+            ))}
+          </div>
+          {/* Skeleton cards */}
+          <div className="grid gap-8 lg:grid-cols-2">
+            <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
+            <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
+          </div>
         </div>
       </DashboardLayout>
     );

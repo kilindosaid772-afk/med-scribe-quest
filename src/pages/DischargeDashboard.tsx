@@ -30,7 +30,7 @@ export default function DischargeDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
   const [visits, setVisits] = useState<any[]>([]);
   const [stats, setStats] = useState({ readyForDischarge: 0, completedToday: 0, followUps: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [dischargeDialogOpen, setDischargeDialogOpen] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<any>(null);
   const [dischargeForm, setDischargeForm] = useState({
@@ -178,8 +178,9 @@ export default function DischargeDashboard() {
       toast.success('Patient discharged successfully!');
       setDischargeDialogOpen(false);
       setSelectedVisit(null);
-      fetchData();
-
+      
+      // Update local state
+      setVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
     } catch (error) {
       console.error('Error processing discharge:', error);
       toast.error('Failed to process discharge');
