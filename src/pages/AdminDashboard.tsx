@@ -23,8 +23,8 @@ import { logActivity } from '@/lib/utils';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
 
-// Define the Patient interface
-interface Patient {
+// Define the Patient interface at the top level
+type Patient = {
   id: string;
   first_name: string;
   last_name: string;
@@ -38,7 +38,7 @@ interface Patient {
   status: 'Active' | 'Inactive' | 'Pending' | string;
   created_at: string;
   updated_at: string;
-}
+};
 
 // Patient View Component
 const PatientView = ({ 
@@ -975,17 +975,18 @@ export default function AdminDashboard() {
     );
   }
 
-  // Tabs for patient view
+    // Tabs for patient view
   const patientViewTabs = [
-    { id: 'all', label: 'All Patients' },
-    { id: 'week', label: 'This Week' },
-    { id: 'day', label: 'Today' },
+    { id: 'all' as const, label: 'All Patients' },
+    { id: 'week' as const, label: 'This Week' },
+    { id: 'day' as const, label: 'Today' },
   ];
-        }
-      }
-      
-      // Convert to formatted string with syntax highlighting
-      const jsonStr = JSON.stringify(obj, null, 2);
+
+  // Function to format JSON data with syntax highlighting
+  const formatJson = (data: unknown): React.ReactNode => {
+    try {
+      if (!data) return <span className="text-muted-foreground">No data</span>;
+      const jsonStr = JSON.stringify(data, null, 2);
       return (
         <pre className="bg-muted/50 p-3 rounded-md text-xs overflow-x-auto">
           <code className="language-json">
