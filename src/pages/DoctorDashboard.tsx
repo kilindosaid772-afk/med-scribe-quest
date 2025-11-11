@@ -336,19 +336,15 @@ export default function DoctorDashboard() {
                           <p className="text-sm text-red-600"><strong>Allergies:</strong> {visit.patient.allergies}</p>
                         )}
                       </div>
-                      <EnhancedDoctorFeatures
-                        patients={[visit.patient]}
-                        onSuccess={() => {
-                          fetchData();
-                          toast.success('Consultation completed successfully');
-                        }}
-                        labResults={[
-                          ...(visit.labTests.flatMap((test: any) => test.lab_results || [])),
-                          ...(visit.allCompletedLabTests.flatMap((test: any) => test.lab_results || []))
-                        ].filter((result: any, index: number, self: any[]) => 
-                          index === self.findIndex((r: any) => r.id === result.id)
-                        )}
-                      />
+                      <div className="flex flex-col items-end gap-2">
+                        <Badge variant="outline" className="flex items-center gap-1 bg-blue-50">
+                          <Clock className="h-3 w-3" />
+                          {format(new Date(visit.arrival_time || visit.created_at), 'HH:mm')}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          Waiting
+                        </Badge>
+                      </div>
                     </div>
 
                     {/* Lab Results for this patient */}
@@ -484,19 +480,15 @@ export default function DoctorDashboard() {
                           <p className="text-sm text-red-600"><strong>Allergies:</strong> {visit.patient.allergies}</p>
                         )}
                       </div>
-                      <EnhancedDoctorFeatures
-                        patients={[visit.patient]}
-                        onSuccess={() => {
-                          fetchData();
-                          toast.success('Consultation completed successfully');
-                        }}
-                        labResults={[
-                          ...(visit.labTests.flatMap((test: any) => test.lab_results || [])),
-                          ...(visit.allCompletedLabTests.flatMap((test: any) => test.lab_results || []))
-                        ].filter((result: any, index: number, self: any[]) => 
-                          index === self.findIndex((r: any) => r.id === result.id)
-                        )}
-                      />
+                      <div className="flex flex-col items-end gap-2">
+                        <Badge variant="outline" className="flex items-center gap-1 bg-blue-50">
+                          <Clock className="h-3 w-3" />
+                          {format(new Date(visit.arrival_time || visit.created_at), 'HH:mm')}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          Waiting
+                        </Badge>
+                      </div>
                     </div>
 
                     {/* Lab Results - Full Width (for non-lab patients who might still have results) */}
@@ -613,7 +605,9 @@ export default function DoctorDashboard() {
                 <CardTitle>Upcoming Appointments</CardTitle>
                 <CardDescription>Your scheduled patient appointments</CardDescription>
               </div>
-              <EnhancedDoctorFeatures patients={patients} onSuccess={fetchData} />
+              <Button variant="outline" size="sm" onClick={() => window.location.href = '/appointments'}>
+                View All Appointments
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
