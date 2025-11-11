@@ -925,18 +925,24 @@ export default function AdminDashboard() {
       setImportError('Please choose a CSV file');
       return;
     }
+    
     setImporting(true);
     setImportError(null);
+    
     try {
       const text = await importFile.text();
       const rows = parseCSV(text);
+      
       if (rows.length === 0) {
         setImportError('No valid rows found in CSV');
         setImporting(false);
         return;
       }
+      
       const { error } = await supabase.from('medical_services').insert(rows);
+      
       if (error) throw error;
+      
       toast.success(`Imported ${rows.length} services successfully`);
       setImportDialogOpen(false);
       setImportFile(null);
@@ -951,19 +957,23 @@ export default function AdminDashboard() {
   };
 
   const downloadServicesTemplate = () => {
-    const headers = ['service_code','service_name','service_type','description','base_price','currency','is_active'];
-    const sample = [
-      'CONS-0001,General Consultation,Consultation,Initial consultation,50000,TSh,true',
-      'PROC-0001,ECG,Procedure,Electrocardiogram,30000,TSh,true'
-    ];
-    const csv = [headers.join(','), ...sample].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const csvContent = [
+      'service_code,service_name,service_type,description,base_price,currency,is_active',
+      'CONS-001,General Consultation,Consultation,General doctor consultation,50000,TSh,true',
+      'PROC-001,Blood Test,Procedure,Complete blood count test,25000,TSh,true',
+      'SURG-001,Minor Surgery,Surgery,Minor surgical procedure,150000,TSh,true',
+      'EMER-001,Emergency Care,Emergency,Emergency room visit,100000,TSh,true',
+      'WARD-001,Ward Admission,Ward Stay,General ward per day,75000,TSh,true'
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'medical_services_template.csv';
     a.click();
     URL.revokeObjectURL(url);
+  };
 
   if (loading) {
     return (
