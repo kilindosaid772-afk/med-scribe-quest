@@ -1750,6 +1750,89 @@ export default function DoctorDashboard() {
                         </div>
                       </div>
                     ) : null}
+
+                    {/* Action Buttons for Lab Results Queue */}
+                    <div className="flex flex-wrap gap-2 pt-3 border-t border-green-200">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleStartConsultation(visit)}
+                        className="flex items-center gap-2"
+                      >
+                        <Activity className="h-4 w-4" />
+                        Review & Diagnose
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleWritePrescription(visit)}
+                        className="flex items-center gap-2"
+                      >
+                        <Pill className="h-4 w-4" />
+                        Write Prescription
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOrderLabTests(visit)}
+                        className="flex items-center gap-2"
+                      >
+                        <FlaskConical className="h-4 w-4" />
+                        Order More Tests
+                      </Button>
+                      {visit.labTests && visit.labTests.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewLabResults(visit.labTests)}
+                          className="flex items-center gap-2"
+                        >
+                          <FlaskConical className="h-4 w-4" />
+                          View Lab Results ({visit.labTests.length})
+                        </Button>
+                      )}
+                      {visit.prescriptions && visit.prescriptions.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewPrescriptions(visit.prescriptions)}
+                          className="flex items-center gap-2"
+                        >
+                          <Pill className="h-4 w-4" />
+                          View Prescriptions ({visit.prescriptions.length})
+                        </Button>
+                      )}
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const { error } = await supabase
+                              .from('patient_visits')
+                              .update({
+                                doctor_status: 'Completed',
+                                doctor_completed_at: new Date().toISOString(),
+                                current_stage: 'pharmacy',
+                                pharmacy_status: 'Pending',
+                                updated_at: new Date().toISOString()
+                              })
+                              .eq('id', visit.id);
+
+                            if (error) throw error;
+
+                            toast.success('Consultation completed. Patient sent to pharmacy.');
+                            setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
+                          } catch (error: any) {
+                            console.error('Error completing consultation:', error);
+                            toast.error('Failed to complete consultation');
+                          }
+                        }}
+                        className="flex items-center gap-2 ml-auto bg-green-600 hover:bg-green-700"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        Send to Pharmacy
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
