@@ -245,7 +245,7 @@ export default function PharmacyDashboard() {
         .from('prescriptions')
         .update({
           status: 'Dispensed',
-          dispensed_at: new Date().toISOString(),
+          dispensed_date: new Date().toISOString(),
           dispensed_by: user.id,
           updated_at: new Date().toISOString()
         })
