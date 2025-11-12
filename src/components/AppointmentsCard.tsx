@@ -12,10 +12,17 @@ interface AppointmentsCardProps {
 export function AppointmentsCard({ appointments, onCheckIn, onCancel }: AppointmentsCardProps) {
   const today = new Date().toISOString().split('T')[0];
   
+  console.log('Filtering appointments. Today:', today, 'Total appointments:', appointments.length);
   // Filter for today's appointments that need action (Scheduled status only)
   const todayAppointments = appointments.filter(
-    a => a.appointment_date === today && a.status === 'Scheduled'
+    a => {
+      const isToday = a.appointment_date === today;
+      const isScheduled = a.status === 'Scheduled';
+      console.log('Appointment check:', a.id, 'Date match:', isToday, 'Status match:', isScheduled, 'Appointment:', a);
+      return isToday && isScheduled;
+    }
   );
+  console.log('Today appointments count:', todayAppointments.length);
 
   // Sort by appointment time
   const sortedAppointments = todayAppointments.sort((a, b) => {

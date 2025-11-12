@@ -35,6 +35,11 @@ export default function ReceptionistDashboard() {
 
   // State management
   const [appointments, setAppointments] = useState<any[]>([]);
+  
+  // Debug appointments changes
+  useEffect(() => {
+    console.log('Appointments state updated. Count:', appointments.length, 'Appointments:', appointments);
+  }, [appointments]);
   const [patients, setPatients] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
@@ -122,7 +127,7 @@ export default function ReceptionistDashboard() {
           // Merge doctor information into appointments
           appointmentsData = appointmentsBasic?.map(apt => ({
             ...apt,
-            doctor: doctorsData.find(doc => doc.id === apt.doctor_id)
+            doctor: doctorsData.find(doc => doc.id === apt.doctor_id) || null
           }));
         }
       }
@@ -684,6 +689,7 @@ export default function ReceptionistDashboard() {
       return;
     }
 
+    console.log('Booking appointment with form data:', appointmentForm);
     try {
       const { data: newAppointment, error: appointmentError } = await supabase
         .from('appointments')
@@ -700,27 +706,93 @@ export default function ReceptionistDashboard() {
         .single();
 
       if (appointmentError) throw appointmentError;
+      
+      console.log('New appointment created:', newAppointment);
+      console.log('Appointment date type:', typeof newAppointment.appointment_date, 'value:', newAppointment.appointment_date);
 
       // Create patient visit workflow for appointment (starts at reception for check-in)
-      const { error: visitError } = await supabase
-        .from('patient_visits')
-        .insert({
-          patient_id: appointmentForm.patient_id,
-          appointment_id: newAppointment.id,
-          reception_status: 'Pending',
-          current_stage: 'reception',
-          overall_status: 'Active'
-        });
+      try {
+        const { error: visitError } = await supabase
+          .from('patient_visits')
+          .insert({
+            patient_id: appointmentForm.patient_id,
+            appointment_id: newAppointment.id,
+            reception_status: 'Pending',
+            current_stage: 'reception',
+            overall_status: 'Active'
+          });
 
-      if (visitError) throw visitError;
+        console.log('Patient visit created for appointment:', newAppointment.id);
+
+        if (visitError) throw visitError;
+      } catch (visitError) {
+        console.error('Error creating patient visit:', visitError);
+        // Don't fail the appointment creation if visit creation fails
+        toast.warning('Appointment created but visit tracking failed');
+      }
 
       toast.success(`Follow-up appointment booked successfully! ${appointmentForm.patient_id ? 'Patient will be notified of their scheduled visit.' : ''}`);
       setShowBookAppointmentDialog(false);
+      
+      // Small delay to ensure UI updates properly
+      setTimeout(() => {
+        console.log('Appointment should now be visible in the UI');
+      }, 100);
 
-      // Add to local state if it's for today
+      // Add to local state if it's for today with full patient/doctor info
       const today = new Date().toISOString().split('T')[0];
-      if (newAppointment.appointment_date === today) {
-        setAppointments(prev => [...prev, newAppointment]);
+      console.log('Today date:', today);
+      console.log('New appointment date:', newAppointment.appointment_date);
+      
+      // More robust date comparison that handles different formats
+      let appointmentDate = newAppointment.appointment_date;
+      if (typeof appointmentDate === 'string') {
+        // Handle different date formats
+        if (appointmentDate.includes('T')) {
+          // ISO date-time format, extract date part
+          appointmentDate = appointmentDate.split('T')[0];
+        }
+        // If it's already in YYYY-MM-DD format, it will work as is
+      } else if (appointmentDate instanceof Date) {
+        // JavaScript Date object
+        appointmentDate = appointmentDate.toISOString().split('T')[0];
+      }
+      
+      console.log('Normalized appointment date:', appointmentDate);
+      console.log('Comparing dates:', appointmentDate, '===', today, appointmentDate === today);
+      // More robust date comparison
+      const isToday = appointmentDate === today;
+      console.log('Is today appointment:', isToday);
+      if (isToday) {
+        // Find the full patient and doctor objects to include in the appointment
+        const patient = patients.find(p => p.id === appointmentForm.patient_id);
+        const doctor = doctors.find(d => d.id === appointmentForm.doctor_id);
+        const department = departments.find(d => d.id === appointmentForm.department_id);
+        
+        // Create a complete appointment object with relations that matches the fetched structure
+        const completeAppointment = {
+          ...newAppointment,
+          appointment_date: appointmentDate, // Use the normalized date format
+          status: 'Scheduled', // Ensure status is set correctly
+          patient: patient ? { full_name: patient.full_name, phone: patient.phone, date_of_birth: patient.date_of_birth } : null,
+          doctor: doctor ? { id: doctor.id, full_name: doctor.full_name } : null,
+          department: department ? { id: department.id, name: department.name } : null
+        };
+        
+        console.log('Adding appointment to local state:', completeAppointment);
+        // Use functional update to ensure we're working with the latest state
+        setAppointments(prev => {
+          const newAppointments = [...prev, completeAppointment];
+          console.log('Updated appointments list:', newAppointments);
+          console.log('New appointments count:', newAppointments.length);
+          // Also update the stats to reflect the new appointment
+          setStats(prevStats => ({
+            ...prevStats,
+            todayAppointments: prevStats.todayAppointments + 1,
+            pendingAppointments: prevStats.pendingAppointments + 1
+          }));
+          return newAppointments;
+        });
       }
 
       // Reset form but keep patient selected for potential next appointment
@@ -1030,13 +1102,7 @@ export default function ReceptionistDashboard() {
       </Dialog>
 
       {/* Book Appointment Dialog */}
-      <Dialog open={showBookAppointmentDialog} onOpenChange={(open) => {
-        setShowBookAppointmentDialog(open);
-        if (!open) {
-          // Refresh data when dialog is closed to show any new patients/appointments
-          fetchData();
-        }
-      }}>
+      <Dialog open={showBookAppointmentDialog} onOpenChange={setShowBookAppointmentDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
