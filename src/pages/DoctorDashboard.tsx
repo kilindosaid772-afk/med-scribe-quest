@@ -837,11 +837,17 @@ export default function DoctorDashboard() {
   };
 
   const fetchData = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('No user found, skipping data fetch');
+      return;
+    }
+
+    console.log('Fetching doctor dashboard data for user:', user.id);
+    setLoading(true);
 
     try {
       // Fetch visits waiting for doctor (including those from lab workflow)
-      const { data: visitsData } = await supabase
+      const { data: visitsData, error: visitsError } = await supabase
         .from('patient_visits')
         .select(`
           *,
@@ -851,6 +857,11 @@ export default function DoctorDashboard() {
         .eq('overall_status', 'Active')
         .eq('doctor_status', 'Pending')
         .order('lab_completed_at', { ascending: true, nullsFirst: false });
+
+      if (visitsError) {
+        console.error('Error fetching visits:', visitsError);
+        throw visitsError;
+      }
 
       console.log('Doctor Dashboard Debug:', {
         visitsQuery: {
@@ -887,7 +898,7 @@ export default function DoctorDashboard() {
       })));
 
       // Fetch doctor's appointments
-      const { data: appointmentsData } = await supabase
+      const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
         .select(`
           *,
@@ -896,7 +907,14 @@ export default function DoctorDashboard() {
         `)
         .eq('doctor_id', user.id)
         .order('appointment_date', { ascending: true })
-        .limit(10);
+        .limit(50);
+
+      if (appointmentsError) {
+        console.error('Error fetching appointments:', appointmentsError);
+        throw appointmentsError;
+      }
+
+      console.log('Fetched appointments:', appointmentsData?.length || 0);
 
       // Fetch patients
       const { data: patientsData } = await supabase
@@ -1016,6 +1034,12 @@ export default function DoctorDashboard() {
     }
   };
 
+  // Fetch data when component mounts or user changes
+  useEffect(() => {
+    if (user?.id) {
+      fetchData();
+    }
+  }, [user?.id]);
 
   if (loading) {
     return (
@@ -1469,11 +1493,11 @@ export default function DoctorDashboard() {
               <CardDescription>Patients ready for doctor consultation</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {pendingVisits
                   .filter(visit => !visit.lab_completed_at)
                   .map((visit) => (
-                  <div key={visit.id} className="p-4 border rounded-lg bg-blue-50/50">
+                  <div key={visit.id} className="p-4 border rounded-lg bg-blue-50/50 space-y-3">
                     <div className="flex items-start justify-between mb-4">
                       <div className="space-y-2 flex-1">
                         <div>
@@ -1602,6 +1626,98 @@ export default function DoctorDashboard() {
                         </div>
                       </div>
                     ) : null}
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-2 pt-3 border-t">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          toast.info('Opening consultation form...');
+                          // TODO: Open consultation dialog with patient details
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <Activity className="h-4 w-4" />
+                        Start Consultation
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          toast.info('Opening lab test order form...');
+                          // TODO: Open lab test order dialog
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <FlaskConical className="h-4 w-4" />
+                        Order Lab Tests
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          toast.info('Opening prescription form...');
+                          // TODO: Open prescription dialog
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <Pill className="h-4 w-4" />
+                        Write Prescription
+                      </Button>
+                      {visit.labTests && visit.labTests.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewLabResults(visit.labTests)}
+                          className="flex items-center gap-2"
+                        >
+                          <FlaskConical className="h-4 w-4" />
+                          View Lab Results ({visit.labTests.length})
+                        </Button>
+                      )}
+                      {visit.prescriptions && visit.prescriptions.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewPrescriptions(visit.prescriptions)}
+                          className="flex items-center gap-2"
+                        >
+                          <Pill className="h-4 w-4" />
+                          View Prescriptions ({visit.prescriptions.length})
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const { error } = await supabase
+                              .from('patient_visits')
+                              .update({
+                                doctor_status: 'Completed',
+                                doctor_completed_at: new Date().toISOString(),
+                                current_stage: 'billing',
+                                billing_status: 'Pending',
+                                updated_at: new Date().toISOString()
+                              })
+                              .eq('id', visit.id);
+
+                            if (error) throw error;
+
+                            toast.success('Consultation completed. Patient sent to billing.');
+                            setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
+                          } catch (error: any) {
+                            console.error('Error completing consultation:', error);
+                            toast.error('Failed to complete consultation');
+                          }
+                        }}
+                        className="flex items-center gap-2 ml-auto"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        Complete Consultation
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

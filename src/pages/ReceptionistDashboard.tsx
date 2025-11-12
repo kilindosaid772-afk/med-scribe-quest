@@ -486,14 +486,13 @@ export default function ReceptionistDashboard() {
 
       if (appointmentError) throw appointmentError;
 
-      // Check if patient visit exists for this appointment
-      const { data: existingVisit, error: visitFetchError } = await supabase
+      // Use upsert to update existing visit or create new one (prevents duplicates)
+      // First, try to find existing visit
+      const { data: existingVisit } = await supabase
         .from('patient_visits')
         .select('id')
         .eq('appointment_id', appointmentId)
         .maybeSingle();
-
-      if (visitFetchError) throw visitFetchError;
 
       if (existingVisit) {
         // Update existing visit
@@ -510,7 +509,7 @@ export default function ReceptionistDashboard() {
 
         if (visitError) throw visitError;
       } else {
-        // Create new visit if doesn't exist
+        // Create new visit only if it doesn't exist
         const { error: visitError } = await supabase
           .from('patient_visits')
           .insert({
@@ -524,7 +523,25 @@ export default function ReceptionistDashboard() {
             overall_status: 'Active'
           });
 
-        if (visitError) throw visitError;
+        if (visitError) {
+          // If error is duplicate, just update the existing one
+          if (visitError.code === '23505') {
+            const { error: updateError } = await supabase
+              .from('patient_visits')
+              .update({
+                reception_status: 'Checked In',
+                reception_completed_at: new Date().toISOString(),
+                current_stage: 'nurse',
+                nurse_status: 'Pending',
+                updated_at: new Date().toISOString()
+              })
+              .eq('appointment_id', appointmentId);
+            
+            if (updateError) throw updateError;
+          } else {
+            throw visitError;
+          }
+        }
       }
 
       // Remove from local state immediately
@@ -637,6 +654,12 @@ export default function ReceptionistDashboard() {
       return;
     }
 
+    // Validate gender value
+    if (!['Male', 'Female', 'Other'].includes(registerForm.gender)) {
+      toast.error('Gender must be Male, Female, or Other');
+      return;
+    }
+
     try {
       // Insert patient
       const { data: newPatient, error: patientError } = await supabase
@@ -654,7 +677,21 @@ export default function ReceptionistDashboard() {
         .select()
         .single();
 
-      if (patientError) throw patientError;
+      if (patientError) {
+        console.error('Patient registration error:', patientError);
+        
+        // Provide specific error messages
+        if (patientError.code === '42501') {
+          toast.error('Permission denied. You need receptionist role to register patients. Please contact your administrator.');
+        } else if (patientError.message.includes('row-level security')) {
+          toast.error('Access denied. Please ensure you have receptionist permissions.');
+        } else if (patientError.code === '23505') {
+          toast.error('A patient with this information already exists.');
+        } else {
+          toast.error(`Registration failed: ${patientError.message}`);
+        }
+        return;
+      }
 
       // Success message
       toast.success('Patient registered successfully! Adding to nurse queue...');
@@ -686,9 +723,9 @@ export default function ReceptionistDashboard() {
       setPatients(prev => [newPatient, ...prev]);
 
       logActivity('patient.register', { patient_id: newPatient.id, full_name: registerForm.full_name });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Registration error:', error);
-      toast.error('Failed to register patient');
+      toast.error(`Failed to register patient: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -1099,7 +1136,18 @@ export default function ReceptionistDashboard() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="gender">Gender *</Label>
-                <Input id="gender" required value={registerForm.gender} onChange={(e) => setRegisterForm({ ...registerForm, gender: e.target.value })} placeholder="Male/Female" />
+                <select
+                  id="gender"
+                  className="w-full p-2 border rounded-md"
+                  value={registerForm.gender}
+                  onChange={(e) => setRegisterForm({ ...registerForm, gender: e.target.value })}
+                  required
+                >
+                  <option value="">Select Gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone *</Label>
