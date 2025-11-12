@@ -773,9 +773,31 @@ export default function DoctorDashboard() {
     );
   };
   
-  const handleViewLabResults = (tests: any[]) => {
+  const handleViewLabResults = async (tests: any[], visit?: any) => {
     setSelectedLabTests(tests);
     setShowLabResults(true);
+    
+    // If visit is provided and has lab results that haven't been reviewed, mark as reviewed
+    if (visit && visit.lab_completed_at && !visit.lab_results_reviewed) {
+      try {
+        await supabase
+          .from('patient_visits')
+          .update({
+            lab_results_reviewed: true,
+            lab_results_reviewed_at: new Date().toISOString()
+          })
+          .eq('id', visit.id);
+        
+        // Update local state
+        setPendingVisits(prev => prev.map(v => 
+          v.id === visit.id 
+            ? { ...v, lab_results_reviewed: true, lab_results_reviewed_at: new Date().toISOString() }
+            : v
+        ));
+      } catch (error) {
+        console.error('Error marking lab results as reviewed:', error);
+      }
+    }
   };
   
   const handleViewPrescriptions = (prescriptions: any[]) => {
@@ -784,13 +806,36 @@ export default function DoctorDashboard() {
   };
 
   // Handler for starting consultation
-  const handleStartConsultation = (visit: any) => {
+  const handleStartConsultation = async (visit: any) => {
     setSelectedVisit(visit);
     setConsultationForm({
       diagnosis: '',
       notes: '',
       treatment_plan: ''
     });
+    
+    // If this patient came from lab, mark lab results as reviewed
+    if (visit.lab_completed_at && !visit.lab_results_reviewed) {
+      try {
+        await supabase
+          .from('patient_visits')
+          .update({
+            lab_results_reviewed: true,
+            lab_results_reviewed_at: new Date().toISOString()
+          })
+          .eq('id', visit.id);
+        
+        // Update local state
+        setPendingVisits(prev => prev.map(v => 
+          v.id === visit.id 
+            ? { ...v, lab_results_reviewed: true, lab_results_reviewed_at: new Date().toISOString() }
+            : v
+        ));
+      } catch (error) {
+        console.error('Error marking lab results as reviewed:', error);
+      }
+    }
+    
     setShowConsultationDialog(true);
   };
 
