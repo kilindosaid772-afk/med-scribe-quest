@@ -35,18 +35,12 @@ export default function ReceptionistDashboard() {
 
   // State management
   const [appointments, setAppointments] = useState<any[]>([]);
-  
-  // Debug appointments changes
-  useEffect(() => {
-    console.log('Appointments state updated. Count:', appointments.length, 'Appointments:', appointments);
-  }, [appointments]);
   const [patients, setPatients] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-
   const [stats, setStats] = useState<{
     todayAppointments: number;
     pendingAppointments: number;
@@ -62,7 +56,7 @@ export default function ReceptionistDashboard() {
     nurseQueuePatients: 0,
     receptionQueuePatients: 0,
   });
-
+  
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [showBookAppointmentDialog, setShowBookAppointmentDialog] = useState(false);
   const [showAddDepartmentDialog, setShowAddDepartmentDialog] = useState(false);
@@ -88,6 +82,23 @@ export default function ReceptionistDashboard() {
     reason: '',
     department_id: '',
   });
+  
+  // Debug state changes
+  // useEffect(() => {
+  //   console.log('Appointments state updated. Count:', appointments.length, 'Appointments:', appointments);
+  // }, [appointments]);
+  
+  // useEffect(() => {
+  //   console.log('Departments state updated. Count:', departments.length, 'Departments:', departments);
+  // }, [departments]);
+  
+  // useEffect(() => {
+  //   console.log('Doctors state updated. Count:', doctors.length, 'Doctors:', doctors);
+  // }, [doctors]);
+  
+  // useEffect(() => {
+  //   console.log('Patients state updated. Count:', patients.length, 'Patients:', patients);
+  // }, [patients]);
 
   // Load data when component mounts or user changes
   useEffect(() => {
@@ -689,7 +700,7 @@ export default function ReceptionistDashboard() {
       return;
     }
 
-    console.log('Booking appointment with form data:', appointmentForm);
+    // console.log('Booking appointment with form data:', appointmentForm);
     try {
       const { data: newAppointment, error: appointmentError } = await supabase
         .from('appointments')
@@ -707,8 +718,8 @@ export default function ReceptionistDashboard() {
 
       if (appointmentError) throw appointmentError;
       
-      console.log('New appointment created:', newAppointment);
-      console.log('Appointment date type:', typeof newAppointment.appointment_date, 'value:', newAppointment.appointment_date);
+      // console.log('New appointment created:', newAppointment);
+      // console.log('Appointment date type:', typeof newAppointment.appointment_date, 'value:', newAppointment.appointment_date);
 
       // Create patient visit workflow for appointment (starts at reception for check-in)
       try {
@@ -722,7 +733,7 @@ export default function ReceptionistDashboard() {
             overall_status: 'Active'
           });
 
-        console.log('Patient visit created for appointment:', newAppointment.id);
+        // console.log('Patient visit created for appointment:', newAppointment.id);
 
         if (visitError) throw visitError;
       } catch (visitError) {
@@ -735,14 +746,14 @@ export default function ReceptionistDashboard() {
       setShowBookAppointmentDialog(false);
       
       // Small delay to ensure UI updates properly
-      setTimeout(() => {
-        console.log('Appointment should now be visible in the UI');
-      }, 100);
+      // setTimeout(() => {
+      //   console.log('Appointment should now be visible in the UI');
+      // }, 100);
 
       // Add to local state if it's for today with full patient/doctor info
       const today = new Date().toISOString().split('T')[0];
-      console.log('Today date:', today);
-      console.log('New appointment date:', newAppointment.appointment_date);
+      // console.log('Today date:', today);
+      // console.log('New appointment date:', newAppointment.appointment_date);
       
       // More robust date comparison that handles different formats
       let appointmentDate = newAppointment.appointment_date;
@@ -758,11 +769,11 @@ export default function ReceptionistDashboard() {
         appointmentDate = appointmentDate.toISOString().split('T')[0];
       }
       
-      console.log('Normalized appointment date:', appointmentDate);
-      console.log('Comparing dates:', appointmentDate, '===', today, appointmentDate === today);
+      // console.log('Normalized appointment date:', appointmentDate);
+      // console.log('Comparing dates:', appointmentDate, '===', today, appointmentDate === today);
       // More robust date comparison
       const isToday = appointmentDate === today;
-      console.log('Is today appointment:', isToday);
+      // console.log('Is today appointment:', isToday);
       if (isToday) {
         // Find the full patient and doctor objects to include in the appointment
         const patient = patients.find(p => p.id === appointmentForm.patient_id);
@@ -779,12 +790,12 @@ export default function ReceptionistDashboard() {
           department: department ? { id: department.id, name: department.name } : null
         };
         
-        console.log('Adding appointment to local state:', completeAppointment);
+        // console.log('Adding appointment to local state:', completeAppointment);
         // Use functional update to ensure we're working with the latest state
         setAppointments(prev => {
           const newAppointments = [...prev, completeAppointment];
-          console.log('Updated appointments list:', newAppointments);
-          console.log('New appointments count:', newAppointments.length);
+          // console.log('Updated appointments list:', newAppointments);
+          // console.log('New appointments count:', newAppointments.length);
           // Also update the stats to reflect the new appointment
           setStats(prevStats => ({
             ...prevStats,
@@ -812,6 +823,7 @@ export default function ReceptionistDashboard() {
 
   const handleAddDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
+    // console.log('Adding department with data:', newDepartment);
     if (!newDepartment.name.trim()) {
       toast.error('Department name is required');
       return;
@@ -832,7 +844,8 @@ export default function ReceptionistDashboard() {
 
       if (error) throw error;
 
-      setDepartments([...departments, data]);
+      // console.log('Department added successfully:', data);
+      setDepartments(prev => [...prev, data]);
       setNewDepartment({ name: '', description: '' });
       setShowAddDepartmentDialog(false);
       toast.success('Department added successfully');
@@ -1284,6 +1297,45 @@ export default function ReceptionistDashboard() {
               <p className="text-center text-muted-foreground py-8">No patients found matching your search.</p>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Department Dialog */}
+      <Dialog open={showAddDepartmentDialog} onOpenChange={setShowAddDepartmentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New Department</DialogTitle>
+            <DialogDescription>Add a new department to the hospital</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddDepartment} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="dept_name">Department Name *</Label>
+              <Input 
+                id="dept_name" 
+                required 
+                value={newDepartment.name} 
+                onChange={(e) => setNewDepartment({ ...newDepartment, name: e.target.value })} 
+                placeholder="e.g., Cardiology, Pediatrics"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dept_description">Description</Label>
+              <Input 
+                id="dept_description" 
+                value={newDepartment.description} 
+                onChange={(e) => setNewDepartment({ ...newDepartment, description: e.target.value })} 
+                placeholder="Brief description of the department"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button type="button" variant="outline" onClick={() => setShowAddDepartmentDialog(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                Add Department
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 
