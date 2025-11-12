@@ -140,11 +140,34 @@ export default function ReceptionistDashboard() {
       )
       .subscribe();
 
+    const rolesChannel = supabase
+      .channel('receptionist_roles')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'user_roles' },
+        (payload) => {
+          console.log('User roles updated:', payload);
+          
+          // Show specific feedback based on the change
+          if (payload.eventType === 'INSERT') {
+            toast.success(`New ${payload.new.role} role assigned to user`);
+          } else if (payload.eventType === 'UPDATE') {
+            toast.info(`User role updated to ${payload.new.role}`);
+          } else if (payload.eventType === 'DELETE') {
+            toast.warning(`${payload.old.role} role removed from user`);
+          }
+          
+          // Refresh data to show updated doctor lists
+          fetchData();
+        }
+      )
+      .subscribe();
+
     // Cleanup subscriptions
     return () => {
       supabase.removeChannel(appointmentsChannel);
       supabase.removeChannel(patientsChannel);
       supabase.removeChannel(visitsChannel);
+      supabase.removeChannel(rolesChannel);
     };
   }, [user]);
 

@@ -782,6 +782,64 @@ export default function AdminDashboard() {
     
     loadUser();
     fetchData();
+
+    // Set up real-time subscriptions for admin dashboard
+    const rolesChannel = supabase
+      .channel('admin_roles')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'user_roles' },
+        (payload) => {
+          console.log('User roles updated:', payload);
+          
+          // Show specific feedback based on the change
+          if (payload.eventType === 'INSERT') {
+            toast.success(`✅ New ${payload.new.role} role assigned successfully`);
+          } else if (payload.eventType === 'UPDATE') {
+            const oldRole = payload.old.role;
+            const newRole = payload.new.role;
+            if (payload.new.is_primary !== payload.old.is_primary) {
+              toast.info(`🔄 ${newRole} role set as ${payload.new.is_primary ? 'primary' : 'secondary'}`);
+            } else {
+              toast.info(`🔄 User role updated from ${oldRole} to ${newRole}`);
+            }
+          } else if (payload.eventType === 'DELETE') {
+            toast.warning(`🗑️ ${payload.old.role} role removed`);
+          }
+          
+          // Refresh data to show updated user lists and roles
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    const profilesChannel = supabase
+      .channel('admin_profiles')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => {
+          console.log('User profiles updated');
+          fetchData(); // Refresh data when profiles change
+        }
+      )
+      .subscribe();
+
+    const patientsChannel = supabase
+      .channel('admin_patients')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'patients' },
+        () => {
+          console.log('Patients updated');
+          fetchData(); // Refresh data when patients change
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscriptions
+    return () => {
+      supabase.removeChannel(rolesChannel);
+      supabase.removeChannel(profilesChannel);
+      supabase.removeChannel(patientsChannel);
+    };
   }, [user]);
 
   // Filter patients based on selected time period
