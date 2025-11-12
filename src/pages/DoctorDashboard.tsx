@@ -803,15 +803,34 @@ export default function DoctorDashboard() {
       notes: ''
     });
     
-    // Fetch available lab tests
+    // Fetch available lab tests from catalog, or use predefined list
     try {
       const { data, error } = await supabase
         .from('lab_test_catalog')
         .select('*')
         .order('test_name');
       
-      if (error) throw error;
-      setAvailableLabTests(data || []);
+      if (error) {
+        console.warn('Lab test catalog not found, using predefined list:', error);
+        // Use predefined list if catalog doesn't exist
+        const predefinedTests = [
+          { id: 'cbc', test_name: 'Complete Blood Count (CBC)', test_type: 'Hematology', description: 'Measures blood components' },
+          { id: 'glucose', test_name: 'Blood Glucose (Fasting)', test_type: 'Chemistry', description: 'Measures blood sugar' },
+          { id: 'lipid', test_name: 'Lipid Panel', test_type: 'Chemistry', description: 'Cholesterol and triglycerides' },
+          { id: 'lft', test_name: 'Liver Function Test', test_type: 'Chemistry', description: 'Evaluates liver health' },
+          { id: 'kft', test_name: 'Kidney Function Test', test_type: 'Chemistry', description: 'Evaluates kidney health' },
+          { id: 'urinalysis', test_name: 'Urinalysis', test_type: 'Urinalysis', description: 'Examines urine' },
+          { id: 'thyroid', test_name: 'Thyroid Function Test', test_type: 'Endocrinology', description: 'Thyroid hormones' },
+          { id: 'hba1c', test_name: 'Hemoglobin A1C', test_type: 'Chemistry', description: '3-month blood sugar average' },
+          { id: 'electrolytes', test_name: 'Electrolytes Panel', test_type: 'Chemistry', description: 'Sodium, potassium, chloride' },
+          { id: 'malaria', test_name: 'Malaria Test (RDT)', test_type: 'Microbiology', description: 'Rapid malaria test' },
+          { id: 'xray', test_name: 'X-Ray Chest', test_type: 'Radiology', description: 'Chest X-ray' },
+          { id: 'ultrasound', test_name: 'Ultrasound Abdomen', test_type: 'Radiology', description: 'Abdominal ultrasound' }
+        ];
+        setAvailableLabTests(predefinedTests);
+      } else {
+        setAvailableLabTests(data || []);
+      }
     } catch (error) {
       console.error('Error fetching lab tests:', error);
       toast.error('Failed to load lab tests');
@@ -840,11 +859,27 @@ export default function DoctorDashboard() {
         .select('*')
         .order('name');
       
-      if (error) throw error;
-      setAvailableMedications(data || []);
-    } catch (error) {
+      if (error) {
+        console.error('Error fetching medications:', error);
+        toast.error(`Failed to load medications: ${error.message}`);
+        // Use predefined list as fallback
+        const predefinedMeds = [
+          { id: 'amox', name: 'Amoxicillin', strength: '500mg', dosage_form: 'Capsule' },
+          { id: 'para', name: 'Paracetamol', strength: '500mg', dosage_form: 'Tablet' },
+          { id: 'ibu', name: 'Ibuprofen', strength: '400mg', dosage_form: 'Tablet' },
+          { id: 'met', name: 'Metformin', strength: '500mg', dosage_form: 'Tablet' },
+          { id: 'ome', name: 'Omeprazole', strength: '20mg', dosage_form: 'Capsule' },
+          { id: 'aml', name: 'Amlodipine', strength: '5mg', dosage_form: 'Tablet' },
+          { id: 'cipro', name: 'Ciprofloxacin', strength: '500mg', dosage_form: 'Tablet' },
+          { id: 'azith', name: 'Azithromycin', strength: '250mg', dosage_form: 'Tablet' }
+        ];
+        setAvailableMedications(predefinedMeds);
+      } else {
+        setAvailableMedications(data || []);
+      }
+    } catch (error: any) {
       console.error('Error fetching medications:', error);
-      toast.error('Failed to load medications');
+      toast.error(`Failed to load medications: ${error.message || 'Unknown error'}`);
     }
     
     setShowPrescriptionDialog(true);
@@ -903,7 +938,7 @@ export default function DoctorDashboard() {
           status: 'Pending',
           priority: labTestForm.priority,
           notes: labTestForm.notes,
-          ordered_by: user?.id,
+          ordered_by_doctor_id: user?.id,
           ordered_date: new Date().toISOString()
         };
       });
@@ -956,16 +991,16 @@ export default function DoctorDashboard() {
         .from('prescriptions')
         .insert({
           patient_id: selectedVisit.patient_id,
-          medication_id: prescriptionForm.medication_id,
+          doctor_id: user?.id,
+          medication_id: prescriptionForm.medication_id || null,
           medication_name: prescriptionForm.medication_name,
           dosage: prescriptionForm.dosage,
           frequency: prescriptionForm.frequency,
           duration: prescriptionForm.duration,
-          quantity: prescriptionForm.quantity,
-          instructions: prescriptionForm.instructions,
-          prescribed_by: user?.id,
-          prescribed_date: new Date().toISOString(),
-          status: 'Active'
+          quantity: parseInt(prescriptionForm.quantity) || 1,
+          instructions: prescriptionForm.instructions || null,
+          status: 'Pending',
+          prescribed_date: new Date().toISOString()
         });
 
       if (error) throw error;
