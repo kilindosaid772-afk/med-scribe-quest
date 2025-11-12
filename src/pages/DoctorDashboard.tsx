@@ -1951,18 +1951,18 @@ export default function DoctorDashboard() {
           </Card>
         )}
 
-        {/* Regular Pending Consultations (non-lab) */}
-        {pendingVisits.filter(v => !v.lab_completed_at).length > 0 && (
+        {/* Regular Pending Consultations (includes new patients and reviewed lab patients) */}
+        {pendingVisits.filter(v => !v.lab_completed_at || v.lab_results_reviewed).length > 0 && (
           <Card className="shadow-lg border-blue-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-blue-600" />
                 Patients Waiting for Consultation
                 <Badge variant="secondary" className="ml-auto">
-                  {pendingVisits.filter(v => !v.lab_completed_at).length} patient{pendingVisits.filter(v => !v.lab_completed_at).length !== 1 ? 's' : ''}
+                  {pendingVisits.filter(v => !v.lab_completed_at || v.lab_results_reviewed).length} patient{pendingVisits.filter(v => !v.lab_completed_at || v.lab_results_reviewed).length !== 1 ? 's' : ''}
                 </Badge>
               </CardTitle>
-              <CardDescription>Patients ready for doctor consultation</CardDescription>
+              <CardDescription>Patients ready for doctor consultation (includes reviewed lab results)</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
