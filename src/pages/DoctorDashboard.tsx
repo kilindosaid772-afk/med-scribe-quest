@@ -950,13 +950,13 @@ export default function DoctorDashboard() {
       if (error) throw error;
 
       // Update patient visit to lab stage
+      // Keep doctor_status as 'In Progress' so patient returns to doctor queue after lab
       const { error: visitError } = await supabase
         .from('patient_visits')
         .update({
           current_stage: 'lab',
           lab_status: 'Pending',
-          doctor_status: 'Completed',
-          doctor_completed_at: new Date().toISOString(),
+          doctor_status: 'In Progress',
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedVisit.id);
