@@ -828,6 +828,12 @@ export default function ReceptionistDashboard() {
       toast.error('Department name is required');
       return;
     }
+    
+    // Additional validation
+    if (newDepartment.name.trim().length < 2) {
+      toast.error('Department name must be at least 2 characters long');
+      return;
+    }
 
     try {
       const { data, error } = await supabase
@@ -835,8 +841,7 @@ export default function ReceptionistDashboard() {
         .insert([
           { 
             name: newDepartment.name.trim(),
-            description: newDepartment.description.trim() || null,
-            created_by: user?.id
+            description: newDepartment.description.trim() || null
           }
         ])
         .select()
@@ -849,9 +854,18 @@ export default function ReceptionistDashboard() {
       setNewDepartment({ name: '', description: '' });
       setShowAddDepartmentDialog(false);
       toast.success('Department added successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding department:', error);
-      toast.error('Failed to add department');
+      // Handle specific error cases
+      if (error.code === '23505') {
+        // Unique constraint violation (duplicate name)
+        toast.error('A department with this name already exists');
+      } else if (error.code === '42501') {
+        // RLS policy violation
+        toast.error('You do not have permission to add departments');
+      } else {
+        toast.error('Failed to add department');
+      }
     }
   };
 
