@@ -64,6 +64,7 @@ export default function BillingDashboard() {
   const [rawClaimsData, setRawClaimsData] = useState<any[]>([]);
   const [patientServices, setPatientServices] = useState<any[]>([]);
   const [patientCosts, setPatientCosts] = useState<Record<string, number>>({});
+  const [billingVisits, setBillingVisits] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
@@ -183,6 +184,24 @@ export default function BillingDashboard() {
   const fetchData = async () => {
     try {
       setLoading(true);
+
+      // Fetch patient visits waiting for billing (from pharmacy)
+      const { data: billingVisitsData, error: visitsError } = await supabase
+        .from('patient_visits')
+        .select(`
+          *,
+          patient:patients(id, full_name, phone, insurance_company_id, insurance_policy_number)
+        `)
+        .eq('current_stage', 'billing')
+        .eq('overall_status', 'Active')
+        .neq('billing_status', 'Paid')
+        .order('pharmacy_completed_at', { ascending: true });
+
+      if (visitsError) {
+        console.error('Error fetching billing visits:', visitsError);
+      }
+
+      console.log('Billing visits from pharmacy:', billingVisitsData?.length || 0);
 
       // Fetch invoices with patient details
       // Filter to show only unpaid and partially paid invoices by default
