@@ -63,6 +63,7 @@ export default function ReceptionistDashboard() {
   const [newDepartment, setNewDepartment] = useState({ name: '', description: '' });
   const [showPatientSearch, setShowPatientSearch] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [roleUpdateIndicator, setRoleUpdateIndicator] = useState<string | null>(null);
 
   const [registerForm, setRegisterForm] = useState({
     full_name: '',
@@ -147,17 +148,23 @@ export default function ReceptionistDashboard() {
         (payload) => {
           console.log('User roles updated:', payload);
           
+          // Show visual indicator
+          setRoleUpdateIndicator('Updating user roles...');
+          
           // Show specific feedback based on the change
           if (payload.eventType === 'INSERT') {
-            toast.success(`New ${payload.new.role} role assigned to user`);
+            toast.success(`✅ New ${payload.new.role} role assigned - Doctor list updated`);
           } else if (payload.eventType === 'UPDATE') {
-            toast.info(`User role updated to ${payload.new.role}`);
+            toast.info(`🔄 User role updated to ${payload.new.role} - Doctor list refreshed`);
           } else if (payload.eventType === 'DELETE') {
-            toast.warning(`${payload.old.role} role removed from user`);
+            toast.warning(`🗑️ ${payload.old.role} role removed - Doctor list updated`);
           }
           
           // Refresh data to show updated doctor lists
-          fetchData();
+          fetchData().then(() => {
+            // Clear indicator after data is loaded
+            setTimeout(() => setRoleUpdateIndicator(null), 1000);
+          });
         }
       )
       .subscribe();
@@ -1146,7 +1153,15 @@ export default function ReceptionistDashboard() {
 
                 {/* Doctor Queue Status */}
                 <div className="md:col-span-2 lg:col-span-3">
-                  <h4 className="font-medium mb-3">Doctor Queue Status (Today)</h4>
+                  <div className="flex items-center gap-2 mb-3">
+                    <h4 className="font-medium">Doctor Queue Status (Today)</h4>
+                    {roleUpdateIndicator && (
+                      <div className="flex items-center gap-1 text-sm text-blue-600">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Updating...</span>
+                      </div>
+                    )}
+                  </div>
                   <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
                     {doctors.slice(0, 6).map((doctor) => {
                       const today = new Date().toISOString().split('T')[0];
@@ -1275,18 +1290,28 @@ export default function ReceptionistDashboard() {
             <div className="space-y-2">
               <Label htmlFor="appt_doctor">Doctor *</Label>
               <div className="flex gap-2">
-                <select
-                  id="appt_doctor"
-                  className="flex-1 p-2 border rounded-md"
-                  value={appointmentForm.doctor_id}
-                  onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
-                  required
-                >
-                  <option value="">Select Doctor</option>
-                  {doctors.map(d => (
-                    <option key={d.id} value={d.id}>{d.full_name}</option>
-                  ))}
-                </select>
+                <div className="flex-1 relative">
+                  <select
+                    id="appt_doctor"
+                    className="w-full p-2 border rounded-md"
+                    value={appointmentForm.doctor_id}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
+                    required
+                    disabled={roleUpdateIndicator !== null}
+                  >
+                    <option value="">
+                      {roleUpdateIndicator ? 'Updating doctors...' : 'Select Doctor'}
+                    </option>
+                    {doctors.map(d => (
+                      <option key={d.id} value={d.id}>{d.full_name}</option>
+                    ))}
+                  </select>
+                  {roleUpdateIndicator && (
+                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                    </div>
+                  )}
+                </div>
                 {appointmentForm.department_id && (
                   <Button
                     type="button"

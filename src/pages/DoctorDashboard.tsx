@@ -1126,6 +1126,9 @@ export default function DoctorDashboard() {
     try {
       // Fetch visits waiting for doctor (including those from lab workflow)
       // Only show patients who are actually at doctor stage and haven't been completed
+      // This includes:
+      // 1. New patients (doctor_status = 'Pending' or 'In Progress')
+      // 2. Patients returning from lab ONLY if consultation is NOT complete
       const { data: visitsData, error: visitsError } = await supabase
         .from('patient_visits')
         .select(`
@@ -1134,7 +1137,7 @@ export default function DoctorDashboard() {
         `)
         .eq('current_stage', 'doctor')
         .eq('overall_status', 'Active')
-        .in('doctor_status', ['Pending', 'In Progress'])
+        .neq('doctor_status', 'Completed')
         .order('lab_completed_at', { ascending: true, nullsFirst: false });
 
       if (visitsError) {
@@ -1281,8 +1284,11 @@ export default function DoctorDashboard() {
       // Filter out visits that shouldn't be in doctor queue
       // Only show visits where:
       // 1. current_stage is 'doctor'
-      // 2. doctor_status is NOT 'Completed'
+      // 2. doctor_status is NOT 'Completed' (this ensures patients from lab only show if consultation incomplete)
       // 3. overall_status is 'Active'
+      // This filtering ensures that:
+      // - New patients appear in the queue
+      // - Patients returning from lab ONLY appear if their consultation is not yet complete
       const activeVisits = visitsWithLabTests.filter(visit => 
         visit.current_stage === 'doctor' && 
         visit.doctor_status !== 'Completed' &&

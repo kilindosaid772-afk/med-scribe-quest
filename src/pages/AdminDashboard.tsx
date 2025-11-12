@@ -767,6 +767,7 @@ export default function AdminDashboard() {
   const [importError, setImportError] = useState<string | null>(null);
   const { user } = useAuth();
   const [patientView, setPatientView] = useState<'day' | 'week' | 'all'>('day');
+  const [roleUpdateIndicator, setRoleUpdateIndicator] = useState<string | null>(null);
 
   useEffect(() => {
     const loadUser = async () => {
