@@ -141,13 +141,13 @@ export default function PharmacyDashboard() {
       setPrescriptions(combinedPrescriptions);
       setMedications(medicationsData || []);
 
-      const pending = prescriptionsData.filter(p => p.status === 'Pending').length;
-      const lowStock = medicationsData.filter(m => m.quantity_in_stock <= m.reorder_level).length;
+      const pending = (prescriptionsData || []).filter(p => p.status === 'Pending').length;
+      const lowStock = (medicationsData || []).filter(m => m.quantity_in_stock <= m.reorder_level).length;
 
       setStats({
         pendingPrescriptions: pending,
         lowStock,
-        totalMedications: medicationsData.length
+        totalMedications: (medicationsData || []).length
       });
       
       if (showToast) {
@@ -274,8 +274,9 @@ export default function PharmacyDashboard() {
             pharmacy_status: 'Completed',
             pharmacy_completed_at: new Date().toISOString(),
             pharmacy_completed_by: user.id,
-            overall_status: 'Completed',
-            current_stage: 'completed',
+            current_stage: 'billing',
+            billing_status: 'Pending',
+            overall_status: 'Active',
             updated_at: new Date().toISOString()
           })
           .eq('id', visits[0].id);
@@ -294,21 +295,48 @@ export default function PharmacyDashboard() {
 
       if (updateStockError) throw updateStockError;
 
-      // Create invoice
+      // Create invoice for billing
       const invoiceNumber = generateInvoiceNumber();
-      await supabase
+      const unitPrice = medicationData.unit_price || 0;
+      const invoiceAmount = unitPrice * prescription.quantity;
+      
+      const { data: newInvoice, error: invoiceError } = await supabase
         .from('invoices')
         .insert([
           {
             invoice_number: invoiceNumber,
             patient_id: patientId,
-            prescription_id: prescriptionId,
-            amount: medicationData.price * prescription.quantity,
-            status: 'Paid',
-            created_by: user.id,
+            total_amount: invoiceAmount,
+            paid_amount: 0,
+            status: 'Unpaid',
+            invoice_date: new Date().toISOString(),
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }
-        ]);
+        ])
+        .select()
+        .single();
+
+      if (invoiceError) {
+        console.error('Error creating invoice:', invoiceError);
+        throw invoiceError;
+      }
+
+      // Create invoice item for the medication
+      if (newInvoice) {
+        await supabase
+          .from('invoice_items')
+          .insert([
+            {
+              invoice_id: newInvoice.id,
+              description: `${prescription.medication_name} - ${prescription.dosage}`,
+              item_type: 'Medication',
+              quantity: prescription.quantity,
+              unit_price: unitPrice,
+              total_price: invoiceAmount
+            }
+          ]);
+      }
 
       // Log successful dispense
       await logActivity('pharmacy.dispense.success', {

@@ -127,12 +127,13 @@ export default function BillingDashboard() {
     const unpaid = processedPatients.filter((p: any) => p.status === 'Unpaid').length;
     const partiallyPaid = processedPatients.filter((p: any) => p.status === 'Partially Paid').length;
 
-    const totalRevenue: number = processedPatients
+    let totalRevenue = 0;
+    processedPatients
       .filter((p: any) => p.totalPaid > 0)
-      .reduce((sum: number, p: any) => {
-        const paidAmount: number = typeof p.totalPaid === 'number' ? p.totalPaid : Number(p.totalPaid) || 0;
-        return sum + paidAmount;
-      }, 0);
+      .forEach((p: any) => {
+        const paidAmount = typeof p.totalPaid === 'number' ? p.totalPaid : Number(p.totalPaid) || 0;
+        totalRevenue += paidAmount;
+      });
 
     const pendingClaims: number = rawClaimsData?.filter(c => c.status === 'Pending').length || 0;
 
@@ -150,6 +151,7 @@ export default function BillingDashboard() {
       setLoading(true);
 
       // Fetch invoices with patient details
+      // Filter to show only unpaid and partially paid invoices by default
       const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
@@ -157,6 +159,7 @@ export default function BillingDashboard() {
           patient:patients(full_name, phone, insurance_company_id, insurance_policy_number),
           invoice_items(*)
         `)
+        .in('status', ['Unpaid', 'Partially Paid'])
         .order('invoice_date', { ascending: false })
         .limit(100);
 
