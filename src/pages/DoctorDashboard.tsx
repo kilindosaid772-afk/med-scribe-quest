@@ -17,6 +17,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { formatInTimeZone } from 'date-fns-tz';
 
 interface LabTestResult {
@@ -68,6 +70,70 @@ export default function DoctorDashboard() {
   const [selectedLabTests, setSelectedLabTests] = useState<LabTestResult[]>([]);
   const [selectedPrescriptions, setSelectedPrescriptions] = useState<Prescription[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // New dialog states for consultation, lab tests, and prescriptions
+  const [showConsultationDialog, setShowConsultationDialog] = useState(false);
+  const [showLabTestDialog, setShowLabTestDialog] = useState(false);
+  const [showPrescriptionDialog, setShowPrescriptionDialog] = useState(false);
+  const [selectedVisit, setSelectedVisit] = useState<any>(null);
+  const [availableLabTests, setAvailableLabTests] = useState<any[]>([]);
+  const [availableMedications, setAvailableMedications] = useState<any[]>([]);
+  
+  // Consultation form state
+  const [consultationForm, setConsultationForm] = useState({
+    diagnosis: '',
+    notes: '',
+    treatment_plan: ''
+  });
+  
+  // Lab test order form state
+  const [labTestForm, setLabTestForm] = useState({
+    selectedTests: [] as string[],
+    priority: 'Routine',
+    notes: ''
+  });
+  
+  // Prescription form state
+  const [prescriptionForm, setPrescriptionForm] = useState({
+    medication_id: '',
+    medication_name: '',
+    dosage: '',
+    frequency: '',
+    duration: '',
+    quantity: '',
+    instructions: ''
+  });
+  
+  // New dialog states for consultation, lab tests, and prescriptions
+  const [showConsultationDialog, setShowConsultationDialog] = useState(false);
+  const [showLabTestDialog, setShowLabTestDialog] = useState(false);
+  const [showPrescriptionDialog, setShowPrescriptionDialog] = useState(false);
+  const [selectedVisit, setSelectedVisit] = useState<any>(null);
+  
+  // Consultation form state
+  const [consultationForm, setConsultationForm] = useState({
+    diagnosis: '',
+    notes: '',
+    treatment_plan: '',
+  });
+  
+  // Lab test form state
+  const [availableLabTests, setAvailableLabTests] = useState<any[]>([]);
+  const [selectedTests, setSelectedTests] = useState<string[]>([]);
+  const [labTestPriority, setLabTestPriority] = useState('Routine');
+  const [labTestNotes, setLabTestNotes] = useState('');
+  
+  // Prescription form state
+  const [availableMedications, setAvailableMedications] = useState<any[]>([]);
+  const [prescriptionForm, setPrescriptionForm] = useState({
+    medication_id: '',
+    medication_name: '',
+    dosage: '',
+    frequency: '',
+    duration: '',
+    quantity: '',
+    instructions: '',
+  });
 
   // Generate time slots for the time selector
   const generateTimeSlots = useCallback(() => {
@@ -746,6 +812,382 @@ export default function DoctorDashboard() {
   const handleViewPrescriptions = (prescriptions: any[]) => {
     setSelectedPrescriptions(prescriptions);
     setShowPrescriptions(true);
+  };
+
+  // Handler for starting consultation
+  const handleStartConsultation = (visit: any) => {
+    setSelectedVisit(visit);
+    setConsultationForm({
+      diagnosis: '',
+      notes: '',
+      treatment_plan: ''
+    });
+    setShowConsultationDialog(true);
+  };
+
+  // Handler for ordering lab tests
+  const handleOrderLabTests = async (visit: any) => {
+    setSelectedVisit(visit);
+    setLabTestForm({
+      selectedTests: [],
+      priority: 'Routine',
+      notes: ''
+    });
+    
+    // Fetch available lab tests
+    try {
+      const { data, error } = await supabase
+        .from('lab_test_catalog')
+        .select('*')
+        .order('test_name');
+      
+      if (error) throw error;
+      setAvailableLabTests(data || []);
+    } catch (error) {
+      console.error('Error fetching lab tests:', error);
+      toast.error('Failed to load lab tests');
+    }
+    
+    setShowLabTestDialog(true);
+  };
+
+  // Handler for writing prescription
+  const handleWritePrescription = async (visit: any) => {
+    setSelectedVisit(visit);
+    setPrescriptionForm({
+      medication_id: '',
+      medication_name: '',
+      dosage: '',
+      frequency: '',
+      duration: '',
+      quantity: '',
+      instructions: ''
+    });
+    
+    // Fetch available medications
+    try {
+      const { data, error } = await supabase
+        .from('medications')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      setAvailableMedications(data || []);
+    } catch (error) {
+      console.error('Error fetching medications:', error);
+      toast.error('Failed to load medications');
+    }
+    
+    setShowPrescriptionDialog(true);
+  };
+
+  // Submit consultation
+  const submitConsultation = async () => {
+    if (!selectedVisit || !consultationForm.diagnosis) {
+      toast.error('Please enter a diagnosis');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('patient_visits')
+        .update({
+          doctor_diagnosis: consultationForm.diagnosis,
+          doctor_notes: consultationForm.notes,
+          doctor_treatment_plan: consultationForm.treatment_plan,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedVisit.id);
+
+      if (error) throw error;
+
+      toast.success('Consultation notes saved');
+      setShowConsultationDialog(false);
+      
+      // Update local state
+      setPendingVisits(prev => prev.map(v => 
+        v.id === selectedVisit.id 
+          ? { ...v, doctor_diagnosis: consultationForm.diagnosis, doctor_notes: consultationForm.notes }
+          : v
+      ));
+    } catch (error) {
+      console.error('Error saving consultation:', error);
+      toast.error('Failed to save consultation notes');
+    }
+  };
+
+  // Submit lab test order
+  const submitLabTestOrder = async () => {
+    if (!selectedVisit || labTestForm.selectedTests.length === 0) {
+      toast.error('Please select at least one lab test');
+      return;
+    }
+
+    try {
+      // Create lab test orders
+      const labTests = labTestForm.selectedTests.map(testId => {
+        const test = availableLabTests.find(t => t.id === testId);
+        return {
+          patient_id: selectedVisit.patient_id,
+          test_name: test?.test_name || '',
+          test_type: test?.test_type || '',
+          status: 'Pending',
+          priority: labTestForm.priority,
+          notes: labTestForm.notes,
+          ordered_by: user?.id,
+          ordered_date: new Date().toISOString()
+        };
+      });
+
+      const { error } = await supabase
+        .from('lab_tests')
+        .insert(labTests);
+
+      if (error) throw error;
+
+      // Update patient visit to lab stage
+      const { error: visitError } = await supabase
+        .from('patient_visits')
+        .update({
+          current_stage: 'lab',
+          lab_status: 'Pending',
+          doctor_status: 'Completed',
+          doctor_completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedVisit.id);
+
+      if (visitError) throw visitError;
+
+      toast.success(`${labTests.length} lab test(s) ordered. Patient sent to lab.`);
+      setShowLabTestDialog(false);
+      
+      // Remove from pending visits
+      setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
+    } catch (error) {
+      console.error('Error ordering lab tests:', error);
+      toast.error('Failed to order lab tests');
+    }
+  };
+
+  // Submit prescription
+  const submitPrescription = async () => {
+    if (!selectedVisit || !prescriptionForm.medication_id) {
+      toast.error('Please select a medication');
+      return;
+    }
+
+    if (!prescriptionForm.dosage || !prescriptionForm.frequency || !prescriptionForm.duration) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('prescriptions')
+        .insert({
+          patient_id: selectedVisit.patient_id,
+          medication_id: prescriptionForm.medication_id,
+          medication_name: prescriptionForm.medication_name,
+          dosage: prescriptionForm.dosage,
+          frequency: prescriptionForm.frequency,
+          duration: prescriptionForm.duration,
+          quantity: prescriptionForm.quantity,
+          instructions: prescriptionForm.instructions,
+          prescribed_by: user?.id,
+          prescribed_date: new Date().toISOString(),
+          status: 'Active'
+        });
+
+      if (error) throw error;
+
+      toast.success('Prescription written successfully');
+      setShowPrescriptionDialog(false);
+      
+      // Reset form for next prescription
+      setPrescriptionForm({
+        medication_id: '',
+        medication_name: '',
+        dosage: '',
+        frequency: '',
+        duration: '',
+        quantity: '',
+        instructions: ''
+      });
+    } catch (error) {
+      console.error('Error writing prescription:', error);
+      toast.error('Failed to write prescription');
+    }
+  };
+
+  // New handlers for consultation, lab tests, and prescriptions
+  const handleStartConsultation = async (visit: any) => {
+    setSelectedVisit(visit);
+    
+    // Load existing consultation data if any
+    const { data: existingConsultation } = await supabase
+      .from('patient_visits')
+      .select('doctor_diagnosis, doctor_notes')
+      .eq('id', visit.id)
+      .single();
+    
+    if (existingConsultation) {
+      setConsultationForm({
+        diagnosis: existingConsultation.doctor_diagnosis || '',
+        notes: existingConsultation.doctor_notes || '',
+        treatment_plan: '',
+      });
+    }
+    
+    setShowConsultationDialog(true);
+  };
+
+  const handleOrderLabTests = async (visit: any) => {
+    setSelectedVisit(visit);
+    setSelectedTests([]);
+    setLabTestPriority('Routine');
+    setLabTestNotes('');
+    
+    // Fetch available lab tests
+    const { data: tests } = await supabase
+      .from('lab_test_catalog')
+      .select('*')
+      .order('test_name');
+    
+    setAvailableLabTests(tests || []);
+    setShowLabTestDialog(true);
+  };
+
+  const handleWritePrescription = async (visit: any) => {
+    setSelectedVisit(visit);
+    setPrescriptionForm({
+      medication_id: '',
+      medication_name: '',
+      dosage: '',
+      frequency: '',
+      duration: '',
+      quantity: '',
+      instructions: '',
+    });
+    
+    // Fetch available medications
+    const { data: meds } = await supabase
+      .from('medications')
+      .select('*')
+      .order('name');
+    
+    setAvailableMedications(meds || []);
+    setShowPrescriptionDialog(true);
+  };
+
+  const submitConsultation = async () => {
+    if (!selectedVisit || !consultationForm.diagnosis) {
+      toast.error('Please enter a diagnosis');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('patient_visits')
+        .update({
+          doctor_diagnosis: consultationForm.diagnosis,
+          doctor_notes: consultationForm.notes,
+          doctor_status: 'In Progress',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedVisit.id);
+
+      if (error) throw error;
+
+      toast.success('Consultation notes saved successfully');
+      setShowConsultationDialog(false);
+      fetchData(); // Refresh data
+    } catch (error: any) {
+      console.error('Error saving consultation:', error);
+      toast.error('Failed to save consultation notes');
+    }
+  };
+
+  const submitLabTests = async () => {
+    if (!selectedVisit || selectedTests.length === 0) {
+      toast.error('Please select at least one lab test');
+      return;
+    }
+
+    try {
+      // Create lab test orders
+      const labTestOrders = selectedTests.map(testId => {
+        const test = availableLabTests.find(t => t.id === testId);
+        return {
+          patient_id: selectedVisit.patient_id,
+          test_name: test?.test_name,
+          test_type: test?.test_type,
+          status: 'Pending',
+          priority: labTestPriority,
+          notes: labTestNotes,
+          ordered_by: user?.id,
+          ordered_date: new Date().toISOString(),
+        };
+      });
+
+      const { error } = await supabase
+        .from('lab_tests')
+        .insert(labTestOrders);
+
+      if (error) throw error;
+
+      // Update patient visit to lab stage
+      await supabase
+        .from('patient_visits')
+        .update({
+          current_stage: 'lab',
+          lab_status: 'Pending',
+          doctor_status: 'Completed',
+          doctor_completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedVisit.id);
+
+      toast.success(`${selectedTests.length} lab test(s) ordered. Patient sent to lab.`);
+      setShowLabTestDialog(false);
+      setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
+    } catch (error: any) {
+      console.error('Error ordering lab tests:', error);
+      toast.error('Failed to order lab tests');
+    }
+  };
+
+  const submitPrescription = async () => {
+    if (!selectedVisit || !prescriptionForm.medication_name || !prescriptionForm.dosage) {
+      toast.error('Please fill in medication name and dosage');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('prescriptions')
+        .insert({
+          patient_id: selectedVisit.patient_id,
+          doctor_id: user?.id,
+          medication_name: prescriptionForm.medication_name,
+          dosage: prescriptionForm.dosage,
+          frequency: prescriptionForm.frequency,
+          duration: prescriptionForm.duration,
+          quantity: prescriptionForm.quantity,
+          instructions: prescriptionForm.instructions,
+          status: 'Pending',
+          prescribed_date: new Date().toISOString(),
+        });
+
+      if (error) throw error;
+
+      toast.success('Prescription written successfully');
+      setShowPrescriptionDialog(false);
+      fetchData(); // Refresh data
+    } catch (error: any) {
+      console.error('Error writing prescription:', error);
+      toast.error('Failed to write prescription');
+    }
   };
 
   const handleRescheduleAppointment = async () => {
@@ -1632,10 +2074,7 @@ export default function DoctorDashboard() {
                       <Button
                         variant="default"
                         size="sm"
-                        onClick={() => {
-                          toast.info('Opening consultation form...');
-                          // TODO: Open consultation dialog with patient details
-                        }}
+                        onClick={() => handleStartConsultation(visit)}
                         className="flex items-center gap-2"
                       >
                         <Activity className="h-4 w-4" />
@@ -1644,10 +2083,7 @@ export default function DoctorDashboard() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          toast.info('Opening lab test order form...');
-                          // TODO: Open lab test order dialog
-                        }}
+                        onClick={() => handleOrderLabTests(visit)}
                         className="flex items-center gap-2"
                       >
                         <FlaskConical className="h-4 w-4" />
@@ -1656,10 +2092,7 @@ export default function DoctorDashboard() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          toast.info('Opening prescription form...');
-                          // TODO: Open prescription dialog
-                        }}
+                        onClick={() => handleWritePrescription(visit)}
                         className="flex items-center gap-2"
                       >
                         <Pill className="h-4 w-4" />
@@ -2156,6 +2589,242 @@ export default function DoctorDashboard() {
                 'Reschedule Appointment'
               )}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Consultation Dialog */}
+      <Dialog open={showConsultationDialog} onOpenChange={setShowConsultationDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Consultation Notes</DialogTitle>
+            <DialogDescription>
+              Record consultation notes for {selectedVisit?.patient?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="diagnosis">Diagnosis *</Label>
+              <Textarea
+                id="diagnosis"
+                placeholder="Enter diagnosis..."
+                value={consultationForm.diagnosis}
+                onChange={(e) => setConsultationForm({...consultationForm, diagnosis: e.target.value})}
+                rows={2}
+              />
+            </div>
+            <div>
+              <Label htmlFor="notes">Consultation Notes</Label>
+              <Textarea
+                id="notes"
+                placeholder="Enter consultation notes..."
+                value={consultationForm.notes}
+                onChange={(e) => setConsultationForm({...consultationForm, notes: e.target.value})}
+                rows={4}
+              />
+            </div>
+            <div>
+              <Label htmlFor="treatment_plan">Treatment Plan</Label>
+              <Textarea
+                id="treatment_plan"
+                placeholder="Enter treatment plan..."
+                value={consultationForm.treatment_plan}
+                onChange={(e) => setConsultationForm({...consultationForm, treatment_plan: e.target.value})}
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowConsultationDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submitConsultation}>
+                Save Consultation
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lab Test Order Dialog */}
+      <Dialog open={showLabTestDialog} onOpenChange={setShowLabTestDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Order Lab Tests</DialogTitle>
+            <DialogDescription>
+              Select lab tests to order for {selectedVisit?.patient?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Select Tests *</Label>
+              <div className="border rounded-lg p-4 max-h-96 overflow-y-auto space-y-2">
+                {availableLabTests.length > 0 ? (
+                  availableLabTests.map((test) => (
+                    <div key={test.id} className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        id={`test-${test.id}`}
+                        checked={labTestForm.selectedTests.includes(test.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setLabTestForm({
+                              ...labTestForm,
+                              selectedTests: [...labTestForm.selectedTests, test.id]
+                            });
+                          } else {
+                            setLabTestForm({
+                              ...labTestForm,
+                              selectedTests: labTestForm.selectedTests.filter(id => id !== test.id)
+                            });
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <label htmlFor={`test-${test.id}`} className="flex-1 cursor-pointer">
+                        <div className="font-medium">{test.test_name}</div>
+                        <div className="text-sm text-muted-foreground">{test.test_type}</div>
+                        {test.description && (
+                          <div className="text-xs text-muted-foreground">{test.description}</div>
+                        )}
+                      </label>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">No lab tests available</p>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground mt-2">
+                Selected: {labTestForm.selectedTests.length} test(s)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="priority">Priority</Label>
+              <Select value={labTestForm.priority} onValueChange={(value) => setLabTestForm({...labTestForm, priority: value})}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Routine">Routine</SelectItem>
+                  <SelectItem value="Urgent">Urgent</SelectItem>
+                  <SelectItem value="STAT">STAT (Immediate)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="lab_notes">Notes</Label>
+              <Textarea
+                id="lab_notes"
+                placeholder="Additional notes for lab..."
+                value={labTestForm.notes}
+                onChange={(e) => setLabTestForm({...labTestForm, notes: e.target.value})}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowLabTestDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submitLabTestOrder} disabled={labTestForm.selectedTests.length === 0}>
+                Order {labTestForm.selectedTests.length} Test(s)
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Prescription Dialog */}
+      <Dialog open={showPrescriptionDialog} onOpenChange={setShowPrescriptionDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Write Prescription</DialogTitle>
+            <DialogDescription>
+              Write a prescription for {selectedVisit?.patient?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="medication">Medication *</Label>
+              <Select 
+                value={prescriptionForm.medication_id} 
+                onValueChange={(value) => {
+                  const med = availableMedications.find(m => m.id === value);
+                  setPrescriptionForm({
+                    ...prescriptionForm,
+                    medication_id: value,
+                    medication_name: med?.name || ''
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select medication" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableMedications.map((med) => (
+                    <SelectItem key={med.id} value={med.id}>
+                      {med.name} {med.strength && `- ${med.strength}`} {med.dosage_form && `(${med.dosage_form})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="dosage">Dosage *</Label>
+                <Input
+                  id="dosage"
+                  placeholder="e.g., 500mg"
+                  value={prescriptionForm.dosage}
+                  onChange={(e) => setPrescriptionForm({...prescriptionForm, dosage: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="frequency">Frequency *</Label>
+                <Input
+                  id="frequency"
+                  placeholder="e.g., Twice daily"
+                  value={prescriptionForm.frequency}
+                  onChange={(e) => setPrescriptionForm({...prescriptionForm, frequency: e.target.value})}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="duration">Duration *</Label>
+                <Input
+                  id="duration"
+                  placeholder="e.g., 7 days"
+                  value={prescriptionForm.duration}
+                  onChange={(e) => setPrescriptionForm({...prescriptionForm, duration: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="quantity">Quantity</Label>
+                <Input
+                  id="quantity"
+                  placeholder="e.g., 14 tablets"
+                  value={prescriptionForm.quantity}
+                  onChange={(e) => setPrescriptionForm({...prescriptionForm, quantity: e.target.value})}
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="instructions">Instructions</Label>
+              <Textarea
+                id="instructions"
+                placeholder="e.g., Take with food"
+                value={prescriptionForm.instructions}
+                onChange={(e) => setPrescriptionForm({...prescriptionForm, instructions: e.target.value})}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowPrescriptionDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submitPrescription}>
+                Write Prescription
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
