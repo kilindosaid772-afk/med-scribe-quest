@@ -1332,9 +1332,51 @@ export default function DoctorDashboard() {
 
   // Fetch data when component mounts or user changes
   useEffect(() => {
-    if (user?.id) {
-      fetchData();
-    }
+    if (!user?.id) return;
+    
+    fetchData();
+
+    // Set up real-time subscription for patient visits at doctor stage
+    const visitsChannel = supabase
+      .channel('doctor_visits_changes')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patient_visits',
+          filter: 'current_stage=eq.doctor'
+        },
+        (payload) => {
+          console.log('Patient visit change detected:', payload);
+          fetchData(); // Refresh when patients move to/from doctor
+        }
+      )
+      .subscribe();
+
+    // Set up real-time subscription for lab tests (for results)
+    const labTestsChannel = supabase
+      .channel('doctor_lab_tests_changes')
+      .on('postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'lab_tests'
+        },
+        (payload) => {
+          console.log('Lab test updated:', payload);
+          // Only refresh if status changed to Completed
+          if (payload.new && (payload.new as any).status === 'Completed') {
+            fetchData();
+          }
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      supabase.removeChannel(visitsChannel);
+      supabase.removeChannel(labTestsChannel);
+    };
   }, [user?.id]);
 
   if (loading) {

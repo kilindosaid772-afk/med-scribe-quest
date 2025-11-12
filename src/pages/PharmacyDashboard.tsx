@@ -171,9 +171,46 @@ export default function PharmacyDashboard() {
     }
   };
 
-  // Initial data load
+  // Initial data load and real-time subscriptions
   useEffect(() => {
+    if (!user) return;
+    
     loadPharmacyData();
+
+    // Set up real-time subscription for prescriptions
+    const prescriptionsChannel = supabase
+      .channel('pharmacy_prescriptions_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'prescriptions' },
+        (payload) => {
+          console.log('Prescription change detected:', payload);
+          loadPharmacyData(false); // Refresh without toast
+        }
+      )
+      .subscribe();
+
+    // Set up real-time subscription for patient visits at pharmacy stage
+    const visitsChannel = supabase
+      .channel('pharmacy_visits_changes')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patient_visits',
+          filter: 'current_stage=eq.pharmacy'
+        },
+        (payload) => {
+          console.log('Patient visit change detected:', payload);
+          loadPharmacyData(false); // Refresh without toast
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      supabase.removeChannel(prescriptionsChannel);
+      supabase.removeChannel(visitsChannel);
+    };
   }, [user]);
 
   const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {

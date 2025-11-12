@@ -102,7 +102,50 @@ export default function ReceptionistDashboard() {
 
   // Load data when component mounts or user changes
   useEffect(() => {
+    if (!user) return;
+    
     fetchData();
+
+    // Set up real-time subscriptions
+    const appointmentsChannel = supabase
+      .channel('receptionist_appointments')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'appointments' },
+        () => {
+          console.log('Appointments updated');
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    const patientsChannel = supabase
+      .channel('receptionist_patients')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'patients' },
+        () => {
+          console.log('Patients updated');
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    const visitsChannel = supabase
+      .channel('receptionist_visits')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'patient_visits' },
+        () => {
+          console.log('Patient visits updated');
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscriptions
+    return () => {
+      supabase.removeChannel(appointmentsChannel);
+      supabase.removeChannel(patientsChannel);
+      supabase.removeChannel(visitsChannel);
+    };
   }, [user]);
 
   const fetchData = async () => {

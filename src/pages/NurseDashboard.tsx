@@ -200,7 +200,26 @@ export default function NurseDashboard() {
   };
 
   useEffect(() => {
+    if (!user) return;
+    
     fetchData();
+
+    // Set up real-time subscription for patient visits
+    const visitsChannel = supabase
+      .channel('nurse_visits')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'patient_visits', filter: `current_stage=eq.nurse` },
+        () => {
+          console.log('Nurse queue updated');
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    // Cleanup
+    return () => {
+      supabase.removeChannel(visitsChannel);
+    };
   }, [user]);
 
   const fetchData = async () => {

@@ -23,6 +23,23 @@ export default function LabDashboard() {
 
   useEffect(() => {
     fetchData();
+
+    // Set up real-time subscription for lab tests
+    const labTestsChannel = supabase
+      .channel('lab_tests_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'lab_tests' },
+        () => {
+          console.log('Lab tests updated');
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    // Cleanup
+    return () => {
+      supabase.removeChannel(labTestsChannel);
+    };
   }, []);
 
   const fetchData = async () => {

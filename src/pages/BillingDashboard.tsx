@@ -67,6 +67,40 @@ export default function BillingDashboard() {
 
   useEffect(() => {
     fetchData();
+
+    // Set up real-time subscription for invoices and patient visits
+    const invoicesChannel = supabase
+      .channel('billing_invoices_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'invoices' },
+        (payload) => {
+          console.log('Invoice change detected:', payload);
+          fetchData(); // Refresh data when invoices change
+        }
+      )
+      .subscribe();
+
+    const visitsChannel = supabase
+      .channel('billing_visits_changes')
+      .on('postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'patient_visits',
+          filter: 'current_stage=eq.billing'
+        },
+        (payload) => {
+          console.log('Patient visit change detected:', payload);
+          fetchData(); // Refresh when patients move to billing
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      supabase.removeChannel(invoicesChannel);
+      supabase.removeChannel(visitsChannel);
+    };
   }, []);
 
   // Memoize expensive computations at component level
