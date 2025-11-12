@@ -1125,6 +1125,7 @@ export default function DoctorDashboard() {
 
     try {
       // Fetch visits waiting for doctor (including those from lab workflow)
+      // Only show patients who are actually at doctor stage and haven't been completed
       const { data: visitsData, error: visitsError } = await supabase
         .from('patient_visits')
         .select(`
@@ -1133,7 +1134,7 @@ export default function DoctorDashboard() {
         `)
         .eq('current_stage', 'doctor')
         .eq('overall_status', 'Active')
-        .eq('doctor_status', 'Pending')
+        .in('doctor_status', ['Pending', 'In Progress'])
         .order('lab_completed_at', { ascending: true, nullsFirst: false });
 
       if (visitsError) {
@@ -1277,14 +1278,31 @@ export default function DoctorDashboard() {
       const today = new Date().toISOString().split('T')[0];
       const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
 
-      setPendingVisits(visitsWithLabTests);
+      // Filter out visits that shouldn't be in doctor queue
+      // Only show visits where:
+      // 1. current_stage is 'doctor'
+      // 2. doctor_status is NOT 'Completed'
+      // 3. overall_status is 'Active'
+      const activeVisits = visitsWithLabTests.filter(visit => 
+        visit.current_stage === 'doctor' && 
+        visit.doctor_status !== 'Completed' &&
+        visit.overall_status === 'Active'
+      );
+
+      console.log('Filtered visits:', {
+        total: visitsWithLabTests.length,
+        active: activeVisits.length,
+        filtered_out: visitsWithLabTests.length - activeVisits.length
+      });
+
+      setPendingVisits(activeVisits);
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
       setStats({
         totalAppointments: appointmentsData?.length || 0,
         todayAppointments,
         totalPatients: patientsData?.length || 0,
-        pendingConsultations: visitsWithLabTests.length
+        pendingConsultations: activeVisits.length
       });
     } catch (error) {
       console.error('Error fetching doctor data:', error);
