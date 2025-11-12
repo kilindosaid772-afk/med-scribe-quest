@@ -1967,7 +1967,7 @@ export default function DoctorDashboard() {
             <CardContent>
               <div className="space-y-4">
                 {pendingVisits
-                  .filter(visit => !visit.lab_completed_at)
+                  .filter(visit => !visit.lab_completed_at || visit.lab_results_reviewed)
                   .map((visit) => (
                   <div key={visit.id} className="p-4 border rounded-lg bg-blue-50/50 space-y-3">
                     <div className="flex items-start justify-between mb-4">
