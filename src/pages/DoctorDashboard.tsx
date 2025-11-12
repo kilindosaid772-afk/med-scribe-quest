@@ -2132,7 +2132,7 @@ export default function DoctorDashboard() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleViewLabResults(visit.labTests)}
+                          onClick={() => handleViewLabResults(visit.labTests, visit)}
                           className="flex items-center gap-2"
                         >
                           <FlaskConical className="h-4 w-4" />
