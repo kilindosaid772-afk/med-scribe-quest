@@ -1422,8 +1422,7 @@ export default function AdminDashboard() {
             { 
               user_id: selectedUserId, 
               role, 
-              is_primary: isPrimary,
-              updated_at: new Date().toISOString()
+              is_primary: isPrimary
             },
             { 
               onConflict: 'user_id,role',
