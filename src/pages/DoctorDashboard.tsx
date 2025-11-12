@@ -1722,24 +1722,24 @@ export default function DoctorDashboard() {
         </Dialog>
 
         {/* Lab Workflow Queue - Highlighted Section */}
-        {pendingVisits.some(v => v.lab_completed_at) && (
+        {pendingVisits.some(v => v.lab_completed_at && !v.lab_results_reviewed) && (
           <Card className="shadow-lg border-green-300 bg-green-50/30">
             <CardHeader className="bg-green-100/50">
               <CardTitle className="flex items-center gap-2 text-green-800">
                 <FlaskConical className="h-5 w-5" />
                 Lab Results Queue
                 <Badge variant="default" className="bg-green-600">
-                  {pendingVisits.filter(v => v.lab_completed_at).length} patient{pendingVisits.filter(v => v.lab_completed_at).length !== 1 ? 's' : ''}
+                  {pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed).length} patient{pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed).length !== 1 ? 's' : ''}
                 </Badge>
               </CardTitle>
               <CardDescription className="text-green-700">
-                Patients who have completed lab work and are waiting for doctor consultation
+                Patients with new lab results waiting for doctor review
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 {pendingVisits
-                  .filter(visit => visit.lab_completed_at)
+                  .filter(visit => visit.lab_completed_at && !visit.lab_results_reviewed)
                   .map((visit) => (
                   <div key={visit.id} className="p-4 border rounded-lg bg-white border-green-200">
                     <div className="flex items-start justify-between mb-4">
@@ -1895,7 +1895,7 @@ export default function DoctorDashboard() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleViewLabResults(visit.labTests)}
+                          onClick={() => handleViewLabResults(visit.labTests, visit)}
                           className="flex items-center gap-2"
                         >
                           <FlaskConical className="h-4 w-4" />
