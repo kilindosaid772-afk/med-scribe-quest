@@ -463,29 +463,38 @@ export default function BillingDashboard() {
           .update({ paid_amount: newPaidAmount, status: newStatus })
           .eq('id', invoiceId);
 
-        // If fully paid, move to discharge stage instead of completing
+        // If fully paid, complete the visit
         if (newStatus === 'Paid') {
-          const { data: visits } = await supabase
-            .from('patient_visits')
-            .select('*')
-            .eq('patient_id', invoice.patient_id)
-            .eq('current_stage', 'billing')
-            .eq('overall_status', 'Active')
-            .order('created_at', { ascending: false })
-            .limit(1);
+          const { data: invoice_with_patient } = await supabase
+            .from('invoices')
+            .select('patient_id')
+            .eq('id', invoiceId)
+            .single();
 
-          if (visits && visits.length > 0) {
-            await supabase
+          if (invoice_with_patient) {
+            const { data: visits } = await supabase
               .from('patient_visits')
-              .update({
-                billing_status: 'Paid',
-                billing_completed_at: new Date().toISOString(),
-                current_stage: 'discharge_ready',
-                discharge_status: 'Pending'
-              })
-              .eq('id', visits[0].id);
+              .select('*')
+              .eq('patient_id', invoice_with_patient.patient_id)
+              .eq('current_stage', 'billing')
+              .eq('overall_status', 'Active')
+              .order('created_at', { ascending: false })
+              .limit(1);
 
-            toast.success('Payment completed! Patient ready for discharge processing');
+            if (visits && visits.length > 0) {
+              await supabase
+                .from('patient_visits')
+                .update({
+                  billing_status: 'Paid',
+                  billing_completed_at: new Date().toISOString(),
+                  current_stage: 'completed',
+                  overall_status: 'Completed',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', visits[0].id);
+
+              console.log('Patient visit completed and removed from billing queue');
+            }
           }
         }
       }
@@ -547,7 +556,7 @@ export default function BillingDashboard() {
       .update({ paid_amount: newPaidAmount, status: newStatus })
       .eq('id', selectedInvoice.id);
 
-    // If fully paid, move to discharge stage instead of completing
+    // If fully paid, complete the visit
     if (newStatus === 'Paid') {
       const { data: visits } = await supabase
         .from('patient_visits')
@@ -564,12 +573,14 @@ export default function BillingDashboard() {
           .update({
             billing_status: 'Paid',
             billing_completed_at: new Date().toISOString(),
-            current_stage: 'discharge_ready',
-            discharge_status: 'Pending'
+            current_stage: 'completed',
+            overall_status: 'Completed',
+            updated_at: new Date().toISOString()
           })
           .eq('id', visits[0].id);
 
-        toast.success('Payment completed! Patient ready for discharge processing');
+        console.log('Patient visit completed and removed from billing queue');
+        toast.success('Payment completed! Patient visit finished.');
       }
     }
 
