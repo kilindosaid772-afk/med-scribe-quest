@@ -751,8 +751,46 @@ const BillingAnalysis = () => {
     );
   }
 
+  const getFilterLabel = () => {
+    switch (timeFilter) {
+      case 'day': return 'Today';
+      case 'week': return 'This Week';
+      case 'month': return 'This Month';
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Filter Buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Showing:</span>
+          <div className="flex gap-2">
+            <Button
+              variant={timeFilter === 'day' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTimeFilter('day')}
+            >
+              Today
+            </Button>
+            <Button
+              variant={timeFilter === 'week' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTimeFilter('week')}
+            >
+              This Week
+            </Button>
+            <Button
+              variant={timeFilter === 'month' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTimeFilter('month')}
+            >
+              This Month
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-green-200">
