@@ -112,14 +112,20 @@ export default function MedicalServicesDashboard() {
     const headers = ['service_code','service_name','service_type','description','base_price','currency','is_active'];
     const sample = [
       'CONS-0001,General Consultation,Consultation,Initial consultation,50000,TSh,true',
-      'PROC-0001,ECG,Procedure,Electrocardiogram,30000,TSh,true'
+      'LAB-0001,Complete Blood Count (CBC),Test,Full blood analysis,25000,TSh,true',
+      'LAB-0002,Malaria Test,Test,Rapid diagnostic test for malaria,15000,TSh,true',
+      'LAB-0003,HIV Test,Test,HIV screening test,20000,TSh,true',
+      'LAB-0004,Urinalysis,Test,Complete urine analysis,10000,TSh,true',
+      'LAB-0005,Blood Sugar Test,Test,Fasting blood glucose,8000,TSh,true',
+      'PROC-0001,ECG,Procedure,Electrocardiogram,30000,TSh,true',
+      'PROC-0002,X-Ray Chest,Procedure,Chest X-ray imaging,40000,TSh,true'
     ];
     const csv = [headers.join(','), ...sample].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'medical_services_template.csv';
+    a.download = 'medical_services_lab_tests_template.csv';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -251,8 +257,8 @@ export default function MedicalServicesDashboard() {
         {/* Header with Actions */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Medical Services</h1>
-            <p className="text-muted-foreground">Manage medical problems, tests, and their pricing</p>
+            <h1 className="text-2xl font-bold">Medical Services & Lab Tests</h1>
+            <p className="text-muted-foreground">Manage medical services, lab tests, procedures, and their pricing</p>
           </div>
           <div className="flex gap-2">
             <Button onClick={() => setShowAddDialog(true)}>
@@ -313,8 +319,11 @@ export default function MedicalServicesDashboard() {
         {/* Services Table */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Medical Services Catalog</CardTitle>
-            <CardDescription>All available medical services and their pricing</CardDescription>
+            <CardTitle>Medical Services & Lab Tests Catalog</CardTitle>
+            <CardDescription>
+              All available medical services, lab tests, procedures, and their pricing. 
+              Use the import feature to bulk upload lab tests from CSV.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -500,9 +509,11 @@ export default function MedicalServicesDashboard() {
         }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Import Medical Services (CSV)</DialogTitle>
+              <DialogTitle>Import Medical Services & Lab Tests (CSV)</DialogTitle>
               <DialogDescription>
-                Upload a CSV file with columns: service_code, service_name, service_type, description, base_price, currency, is_active
+                Upload a CSV file to bulk import lab tests and medical services. 
+                Required columns: service_code, service_name, service_type, description, base_price, currency, is_active.
+                Download the template for examples of lab tests.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
