@@ -777,6 +777,7 @@ export default function AdminDashboard() {
     consultation_fee: '50000',
     currency: 'TSh',
     hospital_name: 'Medical Center',
+    report_header: 'Healthcare Management System Report',
     enable_appointment_fees: 'true'
   });
   const [departmentFees, setDepartmentFees] = useState<Record<string, string>>({});
@@ -1866,7 +1867,7 @@ export default function AdminDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="p-4 border rounded-lg bg-blue-50/50">
                 <div className="text-sm text-muted-foreground mb-1">Default Consultation Fee</div>
                 <div className="text-2xl font-bold text-blue-600">
@@ -1877,6 +1878,12 @@ export default function AdminDashboard() {
                 <div className="text-sm text-muted-foreground mb-1">Hospital Name</div>
                 <div className="text-lg font-semibold text-green-700">
                   {systemSettings.hospital_name}
+                </div>
+              </div>
+              <div className="p-4 border rounded-lg bg-amber-50/50">
+                <div className="text-sm text-muted-foreground mb-1">Report Header</div>
+                <div className="text-sm font-semibold text-amber-700 line-clamp-2">
+                  {systemSettings.report_header || 'Not set'}
                 </div>
               </div>
               <div className="p-4 border rounded-lg bg-purple-50/50">
@@ -2150,7 +2157,7 @@ export default function AdminDashboard() {
 
         {/* Settings Dialog */}
         <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5" />
@@ -2161,11 +2168,11 @@ export default function AdminDashboard() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-6 py-4">
+            <div className="space-y-6 py-4 overflow-y-auto flex-1 px-6 -mx-6">
               {/* General Settings */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2">General Settings</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="hospital_name">Hospital/Clinic Name</Label>
                     <Input
@@ -2174,6 +2181,21 @@ export default function AdminDashboard() {
                       onChange={(e) => setSystemSettings({...systemSettings, hospital_name: e.target.value})}
                       placeholder="Enter hospital name"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      This name will appear on reports, invoices, and system headers
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="report_header">Report Header</Label>
+                    <Input
+                      id="report_header"
+                      value={systemSettings.report_header}
+                      onChange={(e) => setSystemSettings({...systemSettings, report_header: e.target.value})}
+                      placeholder="Enter report header text"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Custom header text for printed reports and documents
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="currency">Currency</Label>
@@ -2288,7 +2310,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex justify-end gap-3 pt-4 border-t sticky bottom-0 bg-white z-10 -mx-6 px-6 pb-2">
               <Button 
                 variant="outline" 
                 onClick={() => setShowSettingsDialog(false)}

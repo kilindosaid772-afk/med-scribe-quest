@@ -67,6 +67,7 @@ export default function ReceptionistDashboard() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [selectedAppointmentForPayment, setSelectedAppointmentForPayment] = useState<any>(null);
   const [consultationFee, setConsultationFee] = useState(2000);
+  const [departmentFees, setDepartmentFees] = useState<Record<string, number>>({});
   const [paymentForm, setPaymentForm] = useState({
     amount_paid: '',
     payment_method: 'Cash'
@@ -550,6 +551,7 @@ export default function ReceptionistDashboard() {
   // ---------------- FETCH DATA ----------------
   const fetchConsultationFee = async () => {
     try {
+      // Fetch default consultation fee
       const { data, error } = await supabase
         .from('system_settings')
         .select('value')
@@ -559,15 +561,35 @@ export default function ReceptionistDashboard() {
       if (!error && data) {
         setConsultationFee(Number(data.value));
       }
+
+      // Fetch department-specific fees
+      const { data: deptFeesData, error: deptError } = await supabase
+        .from('department_fees')
+        .select('department_id, fee_amount');
+
+      if (!deptError && deptFeesData) {
+        const feesMap: Record<string, number> = {};
+        deptFeesData.forEach(fee => {
+          feesMap[fee.department_id] = fee.fee_amount;
+        });
+        setDepartmentFees(feesMap);
+      }
     } catch (error) {
       console.log('Using default consultation fee');
     }
   };
 
+  // Get consultation fee for a specific department
+  const getDepartmentFee = (departmentId: string | null) => {
+    if (!departmentId) return consultationFee;
+    return departmentFees[departmentId] || consultationFee;
+  };
+
   const handleInitiateCheckIn = async (appointment: any) => {
     setSelectedAppointmentForPayment(appointment);
+    const fee = getDepartmentFee(appointment.department_id);
     setPaymentForm({
-      amount_paid: consultationFee.toString(),
+      amount_paid: fee.toString(),
       payment_method: 'Cash'
     });
     setShowPaymentDialog(true);
@@ -1328,10 +1350,11 @@ export default function ReceptionistDashboard() {
 
       {/* Book Appointment Dialog */}
       <Dialog open={showBookAppointmentDialog} onOpenChange={setShowBookAppointmentDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {appointmentForm.patient_id ? 'Book Follow-up Appointment' : 'Book Appointment'}
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <Calendar className="h-5 w-5 text-blue-600" />
+              {appointmentForm.patient_id ? 'Book Follow-up Appointment' : 'Book New Appointment'}
             </DialogTitle>
             <DialogDescription>
               {appointmentForm.patient_id
@@ -1340,7 +1363,7 @@ export default function ReceptionistDashboard() {
               }
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 overflow-y-auto flex-1">
             <div className="space-y-2">
               <Label htmlFor="appt_patient">Patient *</Label>
               <select
@@ -1464,10 +1487,38 @@ export default function ReceptionistDashboard() {
                 placeholder="e.g., Regular checkup, Follow-up"
               />
             </div>
+
+            {/* Consultation Fee Display */}
+            {appointmentForm.department_id && (
+              <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-blue-900">Consultation Fee</div>
+                    <div className="text-xs text-blue-600 mt-1">
+                      {departments.find(d => d.id === appointmentForm.department_id)?.name || 'Selected Department'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-blue-700">
+                      TSh {getDepartmentFee(appointmentForm.department_id).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-blue-600">
+                      {departmentFees[appointmentForm.department_id] ? 'Department rate' : 'Default rate'}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs text-blue-700 bg-blue-100/50 p-2 rounded">
+                  💡 This fee will be collected at reception during check-in
+                </div>
+              </div>
+            )}
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={() => setShowBookAppointmentDialog(false)}>Cancel</Button>
-            <Button onClick={submitBookAppointment}>Book Appointment</Button>
+            <Button onClick={submitBookAppointment} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+              <Calendar className="h-4 w-4 mr-2" />
+              Book Appointment
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

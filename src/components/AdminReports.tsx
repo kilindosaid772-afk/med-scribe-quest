@@ -55,56 +55,52 @@ export default function AdminReports() {
         .select('*');
 
       if (!error && data) {
-        const consultationFeeSetting = data.find(s => s.key === 'consultation_fee');
-        if (consultationFeeSetting) {
-          setSettings(prev => ({ ...prev, consultationFee: Number(consultationFeeSetting.value) }));
-        }
+        const settingsMap: Record<string, string> = {};
+        data.forEach(setting => {
+          settingsMap[setting.key] = setting.value;
+        });
+
+        setSettings(prev => ({
+          ...prev,
+          consultationFee: Number(settingsMap.consultation_fee || prev.consultationFee),
+          hospitalName: settingsMap.hospital_name || prev.hospitalName,
+          reportHeader: settingsMap.report_header || prev.reportHeader
+        }));
       }
     } catch (error) {
       console.log('Using default settings');
     }
   };
 
-  const saveConsultationFee = async () => {
+  const saveAllSettings = async () => {
     try {
-      // First check if the setting exists
-      const { data: existing } = await supabase
-        .from('system_settings')
-        .select('*')
-        .eq('key', 'consultation_fee')
-        .single();
+      // Save all settings to database
+      const settingsToSave = [
+        { key: 'hospital_name', value: settings.hospitalName, description: 'Hospital or clinic name' },
+        { key: 'report_header', value: settings.reportHeader, description: 'Report header text' },
+        { key: 'consultation_fee', value: settings.consultationFee.toString(), description: 'Consultation fee charged at reception' }
+      ];
 
-      if (existing) {
-        // Update existing
+      for (const setting of settingsToSave) {
         const { error } = await supabase
           .from('system_settings')
-          .update({
-            value: settings.consultationFee.toString(),
+          .upsert({
+            key: setting.key,
+            value: setting.value,
+            description: setting.description,
             updated_at: new Date().toISOString()
-          })
-          .eq('key', 'consultation_fee');
-
-        if (error) throw error;
-      } else {
-        // Insert new
-        const { error } = await supabase
-          .from('system_settings')
-          .insert({
-            key: 'consultation_fee',
-            value: settings.consultationFee.toString(),
-            description: 'Consultation fee charged at reception',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'key'
           });
 
         if (error) throw error;
       }
 
-      toast.success('Consultation fee updated successfully');
+      toast.success('Settings saved successfully');
       setSettingsOpen(false);
     } catch (error: any) {
-      console.error('Error saving consultation fee:', error);
-      toast.error(`Failed to update consultation fee: ${error.message}`);
+      console.error('Error saving settings:', error);
+      toast.error(`Failed to save settings: ${error.message}`);
     }
   };
 
@@ -325,7 +321,11 @@ export default function AdminReports() {
                     id="hospitalName"
                     value={settings.hospitalName}
                     onChange={(e) => setSettings({...settings, hospitalName: e.target.value})}
+                    placeholder="Enter hospital name"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This name will appear on all reports
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="reportHeader">Report Header</Label>
@@ -333,21 +333,21 @@ export default function AdminReports() {
                     id="reportHeader"
                     value={settings.reportHeader}
                     onChange={(e) => setSettings({...settings, reportHeader: e.target.value})}
+                    placeholder="Enter report header"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Custom header text for printed reports
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="consultationFee">Consultation Fee (TSh)</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="consultationFee"
-                      type="number"
-                      value={settings.consultationFee}
-                      onChange={(e) => setSettings({...settings, consultationFee: Number(e.target.value)})}
-                    />
-                    <Button onClick={saveConsultationFee} size="sm">
-                      Save
-                    </Button>
-                  </div>
+                  <Input
+                    id="consultationFee"
+                    type="number"
+                    value={settings.consultationFee}
+                    onChange={(e) => setSettings({...settings, consultationFee: Number(e.target.value)})}
+                    placeholder="Enter consultation fee"
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
                     This fee will be collected at reception before patient check-in
                   </p>
@@ -397,6 +397,14 @@ export default function AdminReports() {
                     </label>
                   </div>
                 </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setSettingsOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={saveAllSettings}>
+                  Save All Settings
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
