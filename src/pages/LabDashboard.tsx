@@ -719,6 +719,18 @@ export default function LabDashboard() {
                                 size="sm"
                                 onClick={() => {
                                   setSelectedPatientTests(tests);
+                                  // Initialize batch results with empty values
+                                  const initialResults: Record<string, any> = {};
+                                  tests.forEach(test => {
+                                    initialResults[test.id] = {
+                                      result_value: '',
+                                      reference_range: '',
+                                      unit: '',
+                                      abnormal_flag: false,
+                                      notes: ''
+                                    };
+                                  });
+                                  setBatchResults(initialResults);
                                   setBatchDialogOpen(true);
                                 }}
                                 className="flex items-center gap-1"
@@ -760,20 +772,51 @@ export default function LabDashboard() {
         <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Batch Submit Lab Results</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5" />
+                Lab Tests for {selectedPatientTests[0]?.patient?.full_name}
+              </DialogTitle>
               <DialogDescription>
-                Submit results for {selectedPatientTests.length} test(s) for {selectedPatientTests[0]?.patient?.full_name}
+                {selectedPatientTests.filter(t => t.status === 'Pending' || t.status === 'In Progress').length > 0 
+                  ? `Submit results for ${selectedPatientTests.length} test(s)`
+                  : `Viewing ${selectedPatientTests.length} test(s)`
+                }
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-6">
+            <div className="space-y-4">
               {selectedPatientTests.map((test, index) => (
-                <Card key={test.id} className="p-4">
-                  <div className="space-y-4">
+                <Card key={test.id} className="border-2">
+                  <div className="p-4 space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-semibold text-lg">{index + 1}. {test.test_name}</h4>
-                      <Badge variant={test.priority === 'STAT' ? 'destructive' : 'default'}>
-                        {test.priority}
-                      </Badge>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-semibold">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-lg">{test.test_name}</h4>
+                          <p className="text-sm text-muted-foreground">{test.test_type}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={
+                            test.priority === 'STAT' ? 'destructive' : 
+                            test.priority === 'Urgent' ? 'warning' : 
+                            'secondary'
+                          }
+                        >
+                          {test.priority}
+                        </Badge>
+                        <Badge 
+                          variant={
+                            test.status === 'Completed' ? 'success' :
+                            test.status === 'In Progress' ? 'info' :
+                            'outline'
+                          }
+                        >
+                          {test.status}
+                        </Badge>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
