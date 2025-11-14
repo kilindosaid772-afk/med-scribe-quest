@@ -67,19 +67,44 @@ export default function AdminReports() {
 
   const saveConsultationFee = async () => {
     try {
-      const { error } = await supabase
+      // First check if the setting exists
+      const { data: existing } = await supabase
         .from('system_settings')
-        .upsert({
-          key: 'consultation_fee',
-          value: settings.consultationFee.toString(),
-          updated_at: new Date().toISOString()
-        });
+        .select('*')
+        .eq('key', 'consultation_fee')
+        .single();
 
-      if (error) throw error;
+      if (existing) {
+        // Update existing
+        const { error } = await supabase
+          .from('system_settings')
+          .update({
+            value: settings.consultationFee.toString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('key', 'consultation_fee');
+
+        if (error) throw error;
+      } else {
+        // Insert new
+        const { error } = await supabase
+          .from('system_settings')
+          .insert({
+            key: 'consultation_fee',
+            value: settings.consultationFee.toString(),
+            description: 'Consultation fee charged at reception',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+
+        if (error) throw error;
+      }
+
       toast.success('Consultation fee updated successfully');
-    } catch (error) {
+      setSettingsOpen(false);
+    } catch (error: any) {
       console.error('Error saving consultation fee:', error);
-      toast.error('Failed to update consultation fee');
+      toast.error(`Failed to update consultation fee: ${error.message}`);
     }
   };
 
