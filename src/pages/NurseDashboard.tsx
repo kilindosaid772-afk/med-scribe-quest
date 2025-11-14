@@ -486,150 +486,200 @@ export default function NurseDashboard() {
 
       {/* Vitals Dialog */}
       <Dialog open={showVitalsDialog} onOpenChange={setShowVitalsDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Record Vital Signs</DialogTitle>
-            <DialogDescription>
-              Record vital signs for {selectedPatient?.full_name}
-            </DialogDescription>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-4 border-b">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-full">
+                <Thermometer className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl">Record Vital Signs</DialogTitle>
+                <DialogDescription className="text-sm">
+                  Recording vitals for <span className="font-semibold text-foreground">{selectedPatient?.full_name}</span>
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="blood_pressure">Blood Pressure</Label>
-                <Input
-                  id="blood_pressure"
-                  placeholder="120/80"
-                  value={vitalsForm.blood_pressure}
-                  onChange={(e) => setVitalsForm({...vitalsForm, blood_pressure: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label htmlFor="heart_rate">Heart Rate</Label>
-                <Input
-                  id="heart_rate"
-                  placeholder="72 bpm"
-                  value={vitalsForm.heart_rate}
-                  onChange={(e) => setVitalsForm({...vitalsForm, heart_rate: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label htmlFor="temperature">Temperature</Label>
-                <Input
-                  id="temperature"
-                  placeholder="98.6°F"
-                  value={vitalsForm.temperature}
-                  onChange={(e) => setVitalsForm({...vitalsForm, temperature: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label htmlFor="oxygen_saturation">Oxygen Saturation</Label>
-                <Input
-                  id="oxygen_saturation"
-                  placeholder="98%"
-                  value={vitalsForm.oxygen_saturation}
-                  onChange={(e) => setVitalsForm({...vitalsForm, oxygen_saturation: e.target.value})}
-                />
-              </div>
-              <div className="col-span-2">
-                <Label htmlFor="weight">Weight</Label>
-                <div className="flex gap-2">
+          
+          <div className="space-y-6 py-4">
+            {/* Primary Vitals Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                <Heart className="h-4 w-4" />
+                Primary Vitals
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="blood_pressure" className="text-sm font-medium flex items-center gap-2">
+                    Blood Pressure <span className="text-xs text-muted-foreground">(mmHg)</span>
+                  </Label>
                   <Input
-                    id="weight"
-                    type="number"
-                    step="0.1"
-                    placeholder="70.5"
-                    value={vitalsForm.weight}
-                    onChange={(e) => setVitalsForm({...vitalsForm, weight: e.target.value})}
-                    className="flex-1"
+                    id="blood_pressure"
+                    placeholder="120/80"
+                    value={vitalsForm.blood_pressure}
+                    onChange={(e) => setVitalsForm({...vitalsForm, blood_pressure: e.target.value})}
+                    className="h-11 text-base"
                   />
-                  <Select 
-                    value={vitalsForm.weight_unit} 
-                    onValueChange={(value) => setVitalsForm({...vitalsForm, weight_unit: value})}
-                  >
-                    <SelectTrigger className="w-24">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="kg">kg</SelectItem>
-                      <SelectItem value="lbs">lbs</SelectItem>
-                      <SelectItem value="g">g</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
-              </div>
-              <div className="col-span-2">
-                <Label htmlFor="height">Height</Label>
-                <div className="flex gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="heart_rate" className="text-sm font-medium flex items-center gap-2">
+                    Heart Rate <span className="text-xs text-muted-foreground">(bpm)</span>
+                  </Label>
                   <Input
-                    id="height"
+                    id="heart_rate"
                     type="number"
-                    step="0.1"
-                    placeholder="175"
-                    value={vitalsForm.height}
-                    onChange={(e) => setVitalsForm({...vitalsForm, height: e.target.value})}
-                    className="flex-1"
+                    placeholder="72"
+                    value={vitalsForm.heart_rate}
+                    onChange={(e) => setVitalsForm({...vitalsForm, heart_rate: e.target.value})}
+                    className="h-11 text-base"
                   />
-                  <Select 
-                    value={vitalsForm.height_unit} 
-                    onValueChange={(value) => setVitalsForm({...vitalsForm, height_unit: value})}
-                  >
-                    <SelectTrigger className="w-24">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cm">cm</SelectItem>
-                      <SelectItem value="m">m</SelectItem>
-                      <SelectItem value="ft">ft</SelectItem>
-                      <SelectItem value="in">in</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
-              </div>
-              <div className="col-span-2">
-                <Label htmlFor="muac">MUAC (Mean Upper Arm Circumference)</Label>
-                <div className="flex gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="temperature" className="text-sm font-medium flex items-center gap-2">
+                    Temperature <span className="text-xs text-muted-foreground">(°C or °F)</span>
+                  </Label>
                   <Input
-                    id="muac"
+                    id="temperature"
                     type="number"
                     step="0.1"
-                    placeholder="25.5"
-                    value={vitalsForm.muac}
-                    onChange={(e) => setVitalsForm({...vitalsForm, muac: e.target.value})}
-                    className="flex-1"
-                    title="Mean Upper Arm Circumference"
+                    placeholder="37.0"
+                    value={vitalsForm.temperature}
+                    onChange={(e) => setVitalsForm({...vitalsForm, temperature: e.target.value})}
+                    className="h-11 text-base"
                   />
-                  <Select 
-                    value={vitalsForm.muac_unit} 
-                    onValueChange={(value) => setVitalsForm({...vitalsForm, muac_unit: value})}
-                  >
-                    <SelectTrigger className="w-24">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cm">cm</SelectItem>
-                      <SelectItem value="mm">mm</SelectItem>
-                      <SelectItem value="in">in</SelectItem>
-                    </SelectContent>
-                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="oxygen_saturation" className="text-sm font-medium flex items-center gap-2">
+                    Oxygen Saturation <span className="text-xs text-muted-foreground">(%)</span>
+                  </Label>
+                  <Input
+                    id="oxygen_saturation"
+                    type="number"
+                    placeholder="98"
+                    value={vitalsForm.oxygen_saturation}
+                    onChange={(e) => setVitalsForm({...vitalsForm, oxygen_saturation: e.target.value})}
+                    className="h-11 text-base"
+                  />
                 </div>
               </div>
             </div>
-            <div>
-              <Label htmlFor="vitals_notes">Notes</Label>
+
+            {/* Body Measurements Section */}
+            <div className="space-y-4 pt-4 border-t">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Body Measurements
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="weight" className="text-sm font-medium">Weight</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="weight"
+                      type="number"
+                      step="0.1"
+                      placeholder="70.5"
+                      value={vitalsForm.weight}
+                      onChange={(e) => setVitalsForm({...vitalsForm, weight: e.target.value})}
+                      className="flex-1 h-11 text-base"
+                    />
+                    <Select 
+                      value={vitalsForm.weight_unit} 
+                      onValueChange={(value) => setVitalsForm({...vitalsForm, weight_unit: value})}
+                    >
+                      <SelectTrigger className="w-24 h-11">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="kg">kg</SelectItem>
+                        <SelectItem value="lbs">lbs</SelectItem>
+                        <SelectItem value="g">g</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="height" className="text-sm font-medium">Height</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="height"
+                      type="number"
+                      step="0.1"
+                      placeholder="175"
+                      value={vitalsForm.height}
+                      onChange={(e) => setVitalsForm({...vitalsForm, height: e.target.value})}
+                      className="flex-1 h-11 text-base"
+                    />
+                    <Select 
+                      value={vitalsForm.height_unit} 
+                      onValueChange={(value) => setVitalsForm({...vitalsForm, height_unit: value})}
+                    >
+                      <SelectTrigger className="w-24 h-11">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cm">cm</SelectItem>
+                        <SelectItem value="m">m</SelectItem>
+                        <SelectItem value="ft">ft</SelectItem>
+                        <SelectItem value="in">in</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="muac" className="text-sm font-medium">
+                    MUAC <span className="text-xs text-muted-foreground">(Mid-Upper Arm Circumference)</span>
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="muac"
+                      type="number"
+                      step="0.1"
+                      placeholder="25.5"
+                      value={vitalsForm.muac}
+                      onChange={(e) => setVitalsForm({...vitalsForm, muac: e.target.value})}
+                      className="flex-1 h-11 text-base"
+                      title="Mid-Upper Arm Circumference"
+                    />
+                    <Select 
+                      value={vitalsForm.muac_unit} 
+                      onValueChange={(value) => setVitalsForm({...vitalsForm, muac_unit: value})}
+                    >
+                      <SelectTrigger className="w-24 h-11">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cm">cm</SelectItem>
+                        <SelectItem value="mm">mm</SelectItem>
+                        <SelectItem value="in">in</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes Section */}
+            <div className="space-y-2 pt-4 border-t">
+              <Label htmlFor="vitals_notes" className="text-sm font-medium">Additional Notes</Label>
               <Textarea
                 id="vitals_notes"
-                placeholder="Additional notes..."
+                placeholder="Any observations or additional information..."
                 value={vitalsForm.notes}
                 onChange={(e) => setVitalsForm({...vitalsForm, notes: e.target.value})}
+                rows={3}
+                className="resize-none"
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowVitalsDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={submitVitals}>Record Vitals</Button>
-            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={() => setShowVitalsDialog(false)} className="min-w-24">
+              Cancel
+            </Button>
+            <Button onClick={submitVitals} className="min-w-32 bg-blue-600 hover:bg-blue-700">
+              <Thermometer className="h-4 w-4 mr-2" />
+              Record Vitals
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
