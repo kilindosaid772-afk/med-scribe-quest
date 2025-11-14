@@ -143,10 +143,10 @@ export default function DoctorDashboard() {
   const handleStartAppointment = async (appointment: any) => {
     try {
       setLoading(true);
-      // Update appointment status to 'In Progress' to match database constraint
+      // Update appointment status to 'Confirmed' (valid status per DB constraint)
       const { error } = await supabase
         .from('appointments')
-        .update({ status: 'In Progress' })
+        .update({ status: 'Confirmed' })
         .eq('id', appointment.id);
 
       if (error) throw error;
@@ -155,7 +155,7 @@ export default function DoctorDashboard() {
       setAppointments(prev => 
         prev.map(a => 
           a.id === appointment.id 
-            ? { ...a, status: 'In Progress' } 
+            ? { ...a, status: 'Confirmed' } 
             : a
         )
       );
@@ -281,7 +281,7 @@ export default function DoctorDashboard() {
             </Button>
           </div>
         );
-      case 'In Progress':
+      case 'Confirmed':
         return (
           <div className="flex flex-wrap gap-2">
             <Button 
@@ -336,14 +336,14 @@ export default function DoctorDashboard() {
     const now = new Date();
     
     if (appointment.status === 'Completed') return 'bg-gray-400';
-    if (appointment.status === 'In Progress') return 'bg-green-500 animate-pulse';
+    if (appointment.status === 'Confirmed') return 'bg-green-500 animate-pulse';
     if (isBefore(now, apptTime)) return 'bg-blue-500';
     return 'bg-amber-500';
   };
 
   const getAppointmentRowClass = (appointment: any) => {
     if (appointment.status === 'Completed') return 'opacity-60';
-    if (appointment.status === 'In Progress') return 'bg-blue-50';
+    if (appointment.status === 'Confirmed') return 'bg-blue-50';
     return '';
   };
 
@@ -411,13 +411,13 @@ export default function DoctorDashboard() {
         const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
         const appointmentEndTime = addMinutes(appointmentDateTime, 30); // Assuming 30 min appointments
         
-        // If current time is within the appointment window and status is not 'Completed' or 'In Progress'
+        // If current time is within the appointment window and status is not 'Completed' or 'Confirmed'
         if (
           isAfter(currentTime, appointmentDateTime) && 
           isBefore(currentTime, appointmentEndTime) &&
-          !['Completed', 'In Progress'].includes(appointment.status)
+          !['Completed', 'Confirmed'].includes(appointment.status)
         ) {
-          updateAppointmentStatus(appointment.id, 'In Progress');
+          updateAppointmentStatus(appointment.id, 'Confirmed');
         }
       });
     }, 60000); // Check every minute
@@ -482,7 +482,7 @@ export default function DoctorDashboard() {
         totalAppointments: processedAppointments.length,
         todayAppointments: todayApps,
         pendingConsultations: processedAppointments.filter(
-          appt => appt.status === 'Scheduled' || appt.status === 'In Progress'
+          appt => appt.status === 'Scheduled' || appt.status === 'Confirmed'
         ).length
       }));
       
@@ -579,7 +579,7 @@ export default function DoctorDashboard() {
         return;
       }
 
-      const validStatuses = ['Scheduled', 'In Progress', 'Completed', 'No Show', 'Cancelled'];
+      const validStatuses = ['Scheduled', 'Confirmed', 'Completed', 'Cancelled'];
       if (!validStatuses.includes(newStatus)) {
         console.error('Invalid status provided:', newStatus);
         toast.error(`Error: Invalid status. Must be one of: ${validStatuses.join(', ')}`);
@@ -636,9 +636,8 @@ export default function DoctorDashboard() {
       
       const statusMessages = {
         'Scheduled': `Appointment with ${patientName} has been rescheduled`,
-        'In Progress': `Started consultation with ${patientName}`,
+        'Confirmed': `Started consultation with ${patientName}`,
         'Completed': `Completed appointment with ${patientName}`,
-        'No Show': `Marked appointment with ${patientName} as No Show`,
         'Cancelled': `Cancelled appointment with ${patientName}`
       };
 
@@ -695,22 +694,22 @@ export default function DoctorDashboard() {
       );
     }
     
-    // If appointment time has arrived but not yet marked in progress
-    if (isBefore(now, apptEndTime) && appointment.status !== 'In Progress') {
+    // If appointment time has arrived but not yet confirmed
+    if (isBefore(now, apptEndTime) && appointment.status !== 'Confirmed') {
       return (
         <Button 
           variant="default" 
           size="sm" 
           className="h-7 text-xs"
-          onClick={() => updateAppointmentStatus(appointment.id, 'In Progress')}
+          onClick={() => updateAppointmentStatus(appointment.id, 'Confirmed')}
         >
           Start Consultation
         </Button>
       );
     }
     
-    // If appointment is in progress
-    if (appointment.status === 'In Progress') {
+    // If appointment is confirmed (in progress)
+    if (appointment.status === 'Confirmed') {
       return (
         <div className="flex gap-2">
           <Button 
@@ -1003,13 +1002,13 @@ export default function DoctorDashboard() {
       console.log('Lab tests created:', data);
 
       // Update patient visit to lab stage
-      // Keep doctor_status as 'In Progress' so patient returns to doctor queue after lab
+      // Keep doctor_status as 'In Consultation' so patient returns to doctor queue after lab
       const { error: visitError } = await supabase
         .from('patient_visits')
         .update({
           current_stage: 'lab',
           lab_status: 'Pending',
-          doctor_status: 'In Progress',
+          doctor_status: 'In Consultation',
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedVisit.id);
@@ -1190,7 +1189,7 @@ export default function DoctorDashboard() {
       // Fetch visits waiting for doctor (including those from lab workflow)
       // Only show patients who are actually at doctor stage and haven't been completed
       // This includes:
-      // 1. New patients (doctor_status = 'Pending' or 'In Progress')
+      // 1. New patients (doctor_status = 'Pending' or 'In Consultation')
       // 2. Patients returning from lab ONLY if consultation is NOT complete
       const { data: visitsData, error: visitsError } = await supabase
         .from('patient_visits')
@@ -2335,7 +2334,7 @@ export default function DoctorDashboard() {
                                 <Badge variant={getAppointmentBadgeVariant(appointment.status)}>
                                   {appointment.status}
                                 </Badge>
-                                {appointment.status === 'In Progress' && (
+                                {appointment.status === 'Confirmed' && (
                                   <Button 
                                     variant="outline" 
                                     size="sm" 

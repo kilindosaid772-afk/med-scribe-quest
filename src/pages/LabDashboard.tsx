@@ -18,11 +18,10 @@ export default function LabDashboard() {
   const [labTests, setLabTests] = useState<any[]>([]);
   const [stats, setStats] = useState({ pending: 0, inProgress: 0, completed: 0 });
   const [loading, setLoading] = useState(false);
-  const [selectedTest, setSelectedTest] = useState<any>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedPatientTests, setSelectedPatientTests] = useState<any[]>([]);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchResults, setBatchResults] = useState<Record<string, any>>({});
+  const [groupedTests, setGroupedTests] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     fetchData();
@@ -71,6 +70,17 @@ export default function LabDashboard() {
 
       setLabTests(uniqueTests);
 
+      // Group tests by patient
+      const grouped = uniqueTests.reduce((acc: Record<string, any[]>, test) => {
+        const patientId = test.patient_id;
+        if (!acc[patientId]) {
+          acc[patientId] = [];
+        }
+        acc[patientId].push(test);
+        return acc;
+      }, {});
+      setGroupedTests(grouped);
+
       const pending = uniqueTests.filter(t => t.status === 'Pending').length;
       const inProgress = uniqueTests.filter(t => t.status === 'In Progress').length;
       const completed = uniqueTests.filter(t => t.status === 'Completed').length;
@@ -84,34 +94,7 @@ export default function LabDashboard() {
     }
   };
 
-  const handleSubmitResult = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
 
-    const resultData = {
-      lab_test_id: selectedTest.id,
-      result_value: formData.get('resultValue') as string,
-      reference_range: formData.get('referenceRange') as string,
-      unit: formData.get('unit') as string,
-      abnormal_flag: formData.get('abnormalFlag') === 'true',
-      notes: formData.get('notes') as string,
-    };
-
-    // First, insert the lab result
-    const { error: resultError } = await supabase.from('lab_results').insert([resultData]);
-
-    if (resultError) {
-      toast.error('Failed to submit result');
-      return;
-    }
-
-    // Then update the test status and trigger workflow
-    await handleUpdateStatus(selectedTest.id, 'Completed', selectedTest.patient_id);
-
-    toast.success('Lab result submitted and sent back to doctor');
-    setDialogOpen(false);
-    setSelectedTest(null);
-  };
 
   const handleBatchTestSubmit = async (patientId: string) => {
     // Get all tests for this patient that are pending or in progress
@@ -643,136 +626,88 @@ export default function LabDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Patient</TableHead>
-                    <TableHead>Test Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Priority</TableHead>
+                    <TableHead>Tests</TableHead>
+                    <TableHead>Pending</TableHead>
+                    <TableHead>In Progress</TableHead>
+                    <TableHead>Completed</TableHead>
                     <TableHead>Ordered Date</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
-                    <TableHead>Batch</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {labTests.map((test) => (
-                    <TableRow key={test.id}>
-                      <TableCell className="font-medium">
-                        {test.patient?.full_name || 'Unknown'}
-                      </TableCell>
-                      <TableCell>{test.test_name}</TableCell>
-                      <TableCell>{test.test_type}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            test.priority === 'STAT' ? 'destructive' :
-                            test.priority === 'Urgent' ? 'default' :
-                            'secondary'
-                          }
-                        >
-                          {test.priority}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {format(new Date(test.ordered_date), 'MMM dd, yyyy')}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            test.status === 'Completed' ? 'default' :
-                            test.status === 'In Progress' ? 'secondary' :
-                            'outline'
-                          }
-                        >
-                          {test.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {test.status === 'Pending' && (
+                  {Object.entries(groupedTests).map(([patientId, tests]) => {
+                    const pendingCount = tests.filter(t => t.status === 'Pending').length;
+                    const inProgressCount = tests.filter(t => t.status === 'In Progress').length;
+                    const completedCount = tests.filter(t => t.status === 'Completed').length;
+                    const hasActiveTests = pendingCount > 0 || inProgressCount > 0;
+                    const latestTest = tests.sort((a, b) => 
+                      new Date(b.ordered_date).getTime() - new Date(a.ordered_date).getTime()
+                    )[0];
+
+                    return (
+                      <TableRow key={patientId} className={!hasActiveTests ? 'opacity-60' : ''}>
+                        <TableCell className="font-medium">
+                          <div>
+                            <div>{latestTest.patient?.full_name || 'Unknown'}</div>
+                            <div className="text-xs text-gray-500">{latestTest.patient?.phone}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {tests.map(test => (
+                              <div key={test.id} className="text-sm flex items-center gap-2">
+                                <span>{test.test_name}</span>
+                                <Badge
+                                  variant={
+                                    test.priority === 'STAT' ? 'destructive' :
+                                    test.priority === 'Urgent' ? 'default' :
+                                    'secondary'
+                                  }
+                                  className="text-xs"
+                                >
+                                  {test.priority}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-yellow-50">
+                            {pendingCount}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-blue-50">
+                            {inProgressCount}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-green-50">
+                            {completedCount}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(latestTest.ordered_date), 'MMM dd, yyyy')}
+                        </TableCell>
+                        <TableCell>
+                          {hasActiveTests && (
                             <Button
                               size="sm"
-                              variant="outline"
-                              onClick={() => handleUpdateStatus(test.id, 'In Progress')}
+                              onClick={() => handleBatchTestSubmit(patientId)}
+                              className="w-full"
                             >
-                              Start
+                              Submit Results ({pendingCount + inProgressCount})
                             </Button>
                           )}
-                          {test.status === 'In Progress' && (
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                setSelectedTest(test);
-                                setDialogOpen(true);
-                              }}
-                            >
-                              Submit Result
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {(test.status === 'Pending' || test.status === 'In Progress') && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleBatchTestSubmit(test.patient_id)}
-                            title="Submit all tests for this patient"
-                          >
-                            Batch Submit
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
           </CardContent>
         </Card>
-
-        {/* Submit Result Dialog */}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Submit Lab Result</DialogTitle>
-              <DialogDescription>
-                Enter test results for {selectedTest?.test_name}
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmitResult} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="resultValue">Result Value</Label>
-                <Input id="resultValue" name="resultValue" required />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="unit">Unit</Label>
-                  <Input id="unit" name="unit" placeholder="mg/dL, mmol/L, etc." />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="referenceRange">Reference Range</Label>
-                  <Input id="referenceRange" name="referenceRange" placeholder="e.g., 70-100" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="abnormalFlag">Abnormal Result?</Label>
-                <Select name="abnormalFlag" defaultValue="false">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="false">Normal</SelectItem>
-                    <SelectItem value="true">Abnormal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea id="notes" name="notes" />
-              </div>
-              <Button type="submit" className="w-full">Submit Result</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
 
         {/* Batch Test Submission Dialog */}
         <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>

@@ -30,9 +30,6 @@ export function DispenseDialog({
     ? (medication.unit_price || 0) * (prescription.quantity || 0)
     : 0;
   const [dispenseForm, setDispenseForm] = useState({
-    actual_dosage: prescription?.dosage || '',
-    dosage_mg: '',
-    quantity_dispensed: prescription?.quantity || 0,
     in_stock: true,
     out_of_stock_reason: '',
     alternative_medication: '',
@@ -115,44 +112,6 @@ export function DispenseDialog({
             </div>
           </div>
 
-          {/* Dosage Verification */}
-          <div className="space-y-2">
-            <Label htmlFor="actual_dosage">Actual Dosage Instructions *</Label>
-            <Textarea
-              id="actual_dosage"
-              value={dispenseForm.actual_dosage}
-              onChange={(e) => setDispenseForm({...dispenseForm, actual_dosage: e.target.value})}
-              placeholder="e.g., Take 1 tablet twice daily after meals"
-              rows={2}
-            />
-            <p className="text-xs text-muted-foreground">
-              Verify and correct if doctor's prescription has errors
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="dosage_mg">Dosage Strength (mg) *</Label>
-              <Input
-                id="dosage_mg"
-                type="number"
-                value={dispenseForm.dosage_mg}
-                onChange={(e) => setDispenseForm({...dispenseForm, dosage_mg: e.target.value})}
-                placeholder="e.g., 500"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="quantity_dispensed">Quantity to Dispense *</Label>
-              <Input
-                id="quantity_dispensed"
-                type="number"
-                value={dispenseForm.quantity_dispensed}
-                onChange={(e) => setDispenseForm({...dispenseForm, quantity_dispensed: Number(e.target.value)})}
-                max={medication?.quantity_in_stock || 0}
-              />
-            </div>
-          </div>
-
           {/* Stock Status Selection */}
           <div className="space-y-2">
             <Label htmlFor="in_stock">Stock Status *</Label>
@@ -211,7 +170,7 @@ export function DispenseDialog({
             </Button>
             <Button 
               onClick={handleSubmit} 
-              disabled={loading || !dispenseForm.actual_dosage || !dispenseForm.dosage_mg}
+              disabled={loading}
             >
               {loading ? 'Processing...' : dispenseForm.in_stock ? 'Dispense Medication' : 'Mark as Unavailable'}
             </Button>

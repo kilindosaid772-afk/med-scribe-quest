@@ -23,20 +23,22 @@ INSERT INTO invoices (id, invoice_number, patient_id, total_amount, tax, paid_am
 ('770e8400-e29b-41d4-a716-446655440003', 'INV-003', '550e8400-e29b-41d4-a716-446655440003', 80000.00, 8000.00, 88000.00, 'Paid', '2024-11-10', '2024-10-10', 'Routine checkup', NOW(), NOW()),
 ('770e8400-e29b-41d4-a716-446655440004', 'INV-004', '550e8400-e29b-41d4-a716-446655440004', 120000.00, 12000.00, 60000.00, 'Partially Paid', '2024-11-25', '2024-10-25', 'Emergency treatment', NOW(), NOW()),
 ('770e8400-e29b-41d4-a716-446655440005', 'INV-005', '550e8400-e29b-41d4-a716-446655440001', 95000.00, 9500.00, 0.00, 'Unpaid', '2024-12-01', '2024-11-01', 'Follow-up consultation', NOW(), NOW())
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (invoice_number) DO NOTHING;
 
 -- 4. Insert sample payments for testing
 INSERT INTO payments (id, invoice_id, amount, payment_method, reference_number, status, notes, created_at) VALUES
 ('880e8400-e29b-41d4-a716-446655440001', '770e8400-e29b-41d4-a716-446655440002', 50000.00, 'Cash', 'TXN123456789', 'completed', 'Partial payment via cash', NOW()),
 ('880e8400-e29b-41d4-a716-446655440002', '770e8400-e29b-41d4-a716-446655440002', 50000.00, 'Bank Transfer', 'TXN987654321', 'completed', 'Second partial payment', NOW()),
 ('880e8400-e29b-41d4-a716-446655440003', '770e8400-e29b-41d4-a716-446655440003', 88000.00, 'Cash', 'CASH001', 'completed', 'Full payment in cash', NOW()),
-('880e8400-e29b-41d4-a716-446655440004', '770e8400-e29b-41d4-a716-446655440004', 60000.00, 'Card', 'CARD567890', 'completed', 'Partial payment by card', NOW());
+('880e8400-e29b-41d4-a716-446655440004', '770e8400-e29b-41d4-a716-446655440004', 60000.00, 'Card', 'CARD567890', 'completed', 'Partial payment by card', NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- 5. Insert sample insurance claims
 INSERT INTO insurance_claims (id, claim_number, patient_id, insurance_company_id, invoice_id, claim_amount, approved_amount, status, submission_date, notes, created_at, updated_at) VALUES
 ('990e8400-e29b-41d4-a716-446655440001', 'CLM-001', '550e8400-e29b-41d4-a716-446655440001', '660e8400-e29b-41d4-a716-446655440001', '770e8400-e29b-41d4-a716-446655440001', 165000.00, 0.00, 'Pending', '2024-10-16', 'Initial claim submission', NOW(), NOW()),
 ('990e8400-e29b-41d4-a716-446655440002', 'CLM-002', '550e8400-e29b-41d4-a716-446655440002', '660e8400-e29b-41d4-a716-446655440002', '770e8400-e29b-41d4-a716-446655440002', 275000.00, 200000.00, 'Approved', '2024-10-21', 'Approved with partial coverage', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440003', 'CLM-003', '550e8400-e29b-41d4-a716-446655440004', '660e8400-e29b-41d4-a716-446655440001', '770e8400-e29b-41d4-a716-446655440004', 132000.00, 132000.00, 'Approved', '2024-10-26', 'Full coverage approved', NOW(), NOW());
+('990e8400-e29b-41d4-a716-446655440003', 'CLM-003', '550e8400-e29b-41d4-a716-446655440004', '660e8400-e29b-41d4-a716-446655440001', '770e8400-e29b-41d4-a716-446655440004', 132000.00, 132000.00, 'Approved', '2024-10-26', 'Full coverage approved', NOW(), NOW())
+ON CONFLICT (claim_number) DO NOTHING;
 
 -- 6. Insert sample patient visits (for workflow completion testing)
 -- Updated to show proper workflow progression: reception -> nurse -> lab -> doctor -> pharmacy
@@ -48,9 +50,10 @@ INSERT INTO patient_visits (id, patient_id, visit_date, current_stage, overall_s
 -- Patient 3: In DOCTOR stage (waiting for doctor consultation after lab)
 ('aa0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', '2024-10-10', 'doctor', 'Active', 'Checked In', 'Completed', 'Completed', 'Pending', NULL, NOW(), NOW()),
 -- Patient 4: Just started (reception stage)
-('aa0e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440004', '2024-10-25', 'reception', 'Active', 'In Progress', NULL, NULL, NULL, NULL, NOW(), NOW()),
+('aa0e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440004', '2024-10-25', 'reception', 'Active', 'Pending', 'Pending', 'Not Required', 'Pending', 'Not Required', NOW(), NOW()),
 -- Patient 1: Second visit in billing stage
-('aa0e8400-e29b-41d4-a716-446655440005', '550e8400-e29b-41d4-a716-446655440001', '2024-11-01', 'billing', 'Active', 'Checked In', 'Completed', 'Completed', 'Completed', 'In Progress', NOW(), NOW());
+('aa0e8400-e29b-41d4-a716-446655440005', '550e8400-e29b-41d4-a716-446655440001', '2024-11-01', 'billing', 'Active', 'Checked In', 'Completed', 'Completed', 'Completed', 'Completed', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- 7. Insert sample invoice items for detailed invoice view
 INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total_price, created_at) VALUES
@@ -64,7 +67,8 @@ INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, to
 ('bb0e8400-e29b-41d4-a716-446655440008', '770e8400-e29b-41d4-a716-446655440004', 'Emergency Treatment', 1, 80000.00, 80000.00, NOW()),
 ('bb0e8400-e29b-41d4-a716-446655440009', '770e8400-e29b-41d4-a716-446655440004', 'Pain Medication', 3, 10000.00, 30000.00, NOW()),
 ('bb0e8400-e29b-41d4-a716-446655440010', '770e8400-e29b-41d4-a716-446655440005', 'Follow-up Consultation', 1, 60000.00, 60000.00, NOW()),
-('bb0e8400-e29b-41d4-a716-446655440011', '770e8400-e29b-41d4-a716-446655440005', 'Specialist Referral', 1, 30000.00, 30000.00, NOW());
+('bb0e8400-e29b-41d4-a716-446655440011', '770e8400-e29b-41d4-a716-446655440005', 'Specialist Referral', 1, 30000.00, 30000.00, NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- Insert sample lab tests for workflow testing
 INSERT INTO lab_tests (id, patient_id, test_name, test_type, description, status, priority, ordered_date, notes, ordered_by_doctor_id) VALUES
@@ -82,4 +86,5 @@ INSERT INTO lab_results (id, lab_test_id, result_value, reference_range, unit, a
 ('dd0e8400-e29b-41d4-a716-446655440001', 'cc0e8400-e29b-41d4-a716-446655440002', '95', '70-100', 'mg/dL', false, 'Normal fasting glucose level'),
 -- Results for Patient 3's completed lipid profile
 ('dd0e8400-e29b-41d4-a716-446655440002', 'cc0e8400-e29b-41d4-a716-446655440003', '180', '<200', 'mg/dL', false, 'Total cholesterol within normal range'),
-('dd0e8400-e29b-41d4-a716-446655440003', 'cc0e8400-e29b-41d4-a716-446655440003', '45', '<100', 'mg/dL', false, 'LDL cholesterol normal');
+('dd0e8400-e29b-41d4-a716-446655440003', 'cc0e8400-e29b-41d4-a716-446655440003', '45', '<100', 'mg/dL', false, 'LDL cholesterol normal')
+ON CONFLICT (id) DO NOTHING;

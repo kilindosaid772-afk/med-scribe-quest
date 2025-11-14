@@ -239,7 +239,7 @@ export default function PharmacyDashboard() {
           .from('prescriptions')
           .update({
             status: 'Pending',
-            pharmacist_notes: `OUT OF STOCK: ${dispenseData.out_of_stock_reason}. Alternative: ${dispenseData.alternative_medication || 'None suggested'}`,
+            notes: `OUT OF STOCK: ${dispenseData.out_of_stock_reason}. Alternative: ${dispenseData.alternative_medication || 'None suggested'}`,
             updated_at: new Date().toISOString()
           })
           .eq('id', prescriptionId);
@@ -337,11 +337,9 @@ export default function PharmacyDashboard() {
         updated_at: new Date().toISOString()
       };
 
-      if (dispenseData) {
-        updateData.actual_dosage = dispenseData.actual_dosage;
-        updateData.dosage_mg = dispenseData.dosage_mg;
-        updateData.quantity_dispensed = dispenseData.quantity_dispensed;
-        updateData.pharmacist_notes = dispenseData.pharmacist_notes;
+      // Add notes if provided in dispenseData
+      if (dispenseData?.pharmacist_notes) {
+        updateData.notes = dispenseData.pharmacist_notes;
       }
 
       const { error: updateError } = await supabase
