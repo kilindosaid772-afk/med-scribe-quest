@@ -369,6 +369,7 @@ export default function PharmacyDashboard() {
         .limit(1);
 
       if (!visitsError && visits && visits.length > 0) {
+        console.log('Updating patient visit to billing stage:', visits[0].id);
         const { error: visitUpdateError } = await supabase
           .from('patient_visits')
           .update({
@@ -383,8 +384,25 @@ export default function PharmacyDashboard() {
         
         if (visitUpdateError) {
           console.error('Error updating patient visit:', visitUpdateError);
-          // Don't throw, just log - this is not critical
+          toast.error(`Failed to update patient visit: ${visitUpdateError.message}`);
+          return;
         }
+        
+        console.log('Patient visit successfully moved to billing stage');
+        await logActivity('pharmacy.visit.moved_to_billing', {
+          visit_id: visits[0].id,
+          patient_id: patientId,
+          user_id: user.id
+        });
+      } else {
+        console.warn('No active patient visit found for pharmacy stage', {
+          patient_id: patientId,
+          visits_found: visits?.length || 0,
+          visits_error: visitsError
+        });
+        
+        // Still create invoice even if visit not found
+        toast.warning('Patient visit not found, but invoice will be created');
       }
 
       // Update medication stock
