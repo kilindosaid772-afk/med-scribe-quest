@@ -43,6 +43,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -783,6 +784,14 @@ export default function AdminDashboard() {
   });
   const [departmentFees, setDepartmentFees] = useState<Record<string, string>>({});
   const [savingSettings, setSavingSettings] = useState(false);
+  
+  // Department management state
+  const [showDepartmentDialog, setShowDepartmentDialog] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState<any>(null);
+  const [departmentForm, setDepartmentForm] = useState({
+    name: '',
+    description: ''
+  });
 
   useEffect(() => {
     const loadUser = async () => {
@@ -1032,6 +1041,79 @@ export default function AdminDashboard() {
       toast.error('Failed to save settings');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  // Department management functions
+  const handleAddDepartment = () => {
+    setEditingDepartment(null);
+    setDepartmentForm({ name: '', description: '' });
+    setShowDepartmentDialog(true);
+  };
+
+  const handleEditDepartment = (dept: any) => {
+    setEditingDepartment(dept);
+    setDepartmentForm({ name: dept.name, description: dept.description || '' });
+    setShowDepartmentDialog(true);
+  };
+
+  const handleSaveDepartment = async () => {
+    if (!departmentForm.name.trim()) {
+      toast.error('Department name is required');
+      return;
+    }
+
+    try {
+      if (editingDepartment) {
+        // Update existing department
+        const { error } = await supabase
+          .from('departments')
+          .update({
+            name: departmentForm.name,
+            description: departmentForm.description
+          })
+          .eq('id', editingDepartment.id);
+
+        if (error) throw error;
+        toast.success('Department updated successfully');
+      } else {
+        // Create new department
+        const { error } = await supabase
+          .from('departments')
+          .insert([{
+            name: departmentForm.name,
+            description: departmentForm.description
+          }]);
+
+        if (error) throw error;
+        toast.success('Department created successfully');
+      }
+
+      setShowDepartmentDialog(false);
+      fetchData(); // Refresh data
+    } catch (error: any) {
+      console.error('Error saving department:', error);
+      toast.error(error.message || 'Failed to save department');
+    }
+  };
+
+  const handleDeleteDepartment = async (deptId: string) => {
+    if (!confirm('Are you sure you want to delete this department? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('departments')
+        .delete()
+        .eq('id', deptId);
+
+      if (error) throw error;
+      toast.success('Department deleted successfully');
+      fetchData(); // Refresh data
+    } catch (error: any) {
+      console.error('Error deleting department:', error);
+      toast.error(error.message || 'Failed to delete department');
     }
   };
 
@@ -1987,6 +2069,130 @@ export default function AdminDashboard() {
         </Dialog>
 
         <ActivityLogsView />
+
+        {/* Department Management */}
+        <Card className="shadow-lg border-purple-200">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Stethoscope className="h-5 w-5 text-purple-600" />
+                  Department Management
+                </CardTitle>
+                <CardDescription>Manage hospital departments</CardDescription>
+              </div>
+              <Button onClick={handleAddDepartment} size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Department
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {departments.length === 0 ? (
+              <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/20">
+                <Stethoscope className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p className="font-medium text-muted-foreground">No departments found</p>
+                <p className="text-xs text-muted-foreground mt-1">Create your first department to get started</p>
+                <Button onClick={handleAddDepartment} variant="outline" size="sm" className="mt-4">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Department
+                </Button>
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {departments.map((dept) => (
+                      <TableRow key={dept.id}>
+                        <TableCell className="font-medium">{dept.name}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {dept.description || 'No description'}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {format(new Date(dept.created_at), 'MMM dd, yyyy')}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditDepartment(dept)}
+                            >
+                              <Edit className="h-3 w-3 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteDepartment(dept.id)}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Department Dialog */}
+        <Dialog open={showDepartmentDialog} onOpenChange={setShowDepartmentDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {editingDepartment ? 'Edit Department' : 'Add New Department'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingDepartment 
+                  ? 'Update the department information below'
+                  : 'Create a new department for your hospital'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="dept_name">Department Name *</Label>
+                <Input
+                  id="dept_name"
+                  value={departmentForm.name}
+                  onChange={(e) => setDepartmentForm({ ...departmentForm, name: e.target.value })}
+                  placeholder="e.g., Cardiology, Pediatrics"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dept_description">Description</Label>
+                <Textarea
+                  id="dept_description"
+                  value={departmentForm.description}
+                  onChange={(e) => setDepartmentForm({ ...departmentForm, description: e.target.value })}
+                  placeholder="Brief description of the department"
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowDepartmentDialog(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveDepartment}>
+                  {editingDepartment ? 'Update' : 'Create'} Department
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Card className="shadow-lg">
           <CardHeader className="space-y-2">

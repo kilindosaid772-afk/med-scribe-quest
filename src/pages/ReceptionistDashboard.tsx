@@ -1302,7 +1302,14 @@ export default function ReceptionistDashboard() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="date_of_birth">Date of Birth *</Label>
-                <Input type="date" id="date_of_birth" required value={registerForm.date_of_birth} onChange={(e) => setRegisterForm({ ...registerForm, date_of_birth: e.target.value })} />
+                <Input 
+                  type="date" 
+                  id="date_of_birth" 
+                  required 
+                  max={new Date().toISOString().split('T')[0]}
+                  value={registerForm.date_of_birth} 
+                  onChange={(e) => setRegisterForm({ ...registerForm, date_of_birth: e.target.value })} 
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

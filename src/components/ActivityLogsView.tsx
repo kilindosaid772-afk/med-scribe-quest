@@ -4,17 +4,17 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { Activity, Search, Download, RefreshCw, Loader2, FileText, User, Calendar, AlertCircle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
-import { format as formatDate } from 'date-fns';
 
-type DateFilter = 'today' | 'week' | 'month' | 'all';
+type DateFilter = 'today' | 'week' | 'month' | 'all' | 'custom';
 
 interface ActivityLog {
   id: string;
@@ -111,16 +111,41 @@ export default function ActivityLogsView() {
       // Fetch activity logs
       const { data: logsData, error: logsError } = await supabase
         .from('activity_logs')
-        .select(`
-          *,
-          user:profiles(full_name, email)
-        `)
+        .select('*')
         .gte('created_at', startStr)
         .lte('created_at', endStr)
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (logsError) throw logsError;
+      if (logsError) {
+        console.error('Error fetching activity logs:', logsError);
+        throw logsError;
+      }
+
+      // Get unique user IDs
+      const userIds = [...new Set((logsData || []).map(log => log.user_id).filter(Boolean))];
+      
+      // Fetch all users at once
+      let userMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const { data: usersData } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', userIds);
+        
+        if (usersData) {
+          userMap = usersData.reduce((acc, user) => {
+            acc[user.id] = user;
+            return acc;
+          }, {} as Record<string, any>);
+        }
+      }
+
+      // Enrich logs with user information
+      const enrichedLogs = (logsData || []).map(log => ({
+        ...log,
+        user: log.user_id ? userMap[log.user_id] : null
+      }));
 
       // Fetch stats for all time periods
       const now = new Date();
@@ -140,7 +165,7 @@ export default function ActivityLogsView() {
         supabase.from('activity_logs').select('*', { count: 'exact', head: true })
       ]);
 
-      setLogs(logsData || []);
+      setLogs(enrichedLogs || []);
       setStats({
         total: totalCount || 0,
         today: todayCount || 0,
@@ -234,7 +259,7 @@ export default function ActivityLogsView() {
 
   const getFilterLabel = () => {
     if (dateRange.from && dateRange.to) {
-      return `${formatDate(dateRange.from, 'MMM d, yyyy')} - ${formatDate(dateRange.to, 'MMM d, yyyy')}`;
+      return `${format(dateRange.from, 'MMM d, yyyy')} - ${format(dateRange.to, 'MMM d, yyyy')}`;
     }
     switch (dateFilter) {
       case 'today': return 'Today';
@@ -412,10 +437,10 @@ export default function ActivityLogsView() {
                     {dateRange?.from ? (
                       dateRange.to ? (
                         <span>
-                          {formatDate(dateRange.from, "MMM d")} - {formatDate(dateRange.to, "MMM d")}
+                          {format(dateRange.from, "MMM d")} - {format(dateRange.to, "MMM d")}
                         </span>
                       ) : (
-                        <span>{formatDate(dateRange.from, "MMM d, y")}</span>
+                        <span>{format(dateRange.from, "MMM d, y")}</span>
                       )
                     ) : (
                       <span>Date Range</span>
@@ -532,7 +557,7 @@ export default function ActivityLogsView() {
                     <TableHead>Timestamp</TableHead>
                     <TableHead>Action</TableHead>
                     <TableHead>User</TableHead>
-                    <TableHead>Details</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -558,14 +583,64 @@ export default function ActivityLogsView() {
                           {log.user?.email || log.user_email || 'No email'}
                         </div>
                       </TableCell>
-                      <TableCell className="max-w-md">
-                        <div className="text-sm text-muted-foreground truncate">
-                          {log.details ? (
-                            typeof log.details === 'string' 
-                              ? log.details 
-                              : JSON.stringify(log.details).substring(0, 100)
-                          ) : 'No details'}
-                        </div>
+                      <TableCell className="text-right">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              <FileText className="h-3 w-3 mr-1" />
+                              View Details
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-2xl">
+                            <DialogHeader>
+                              <DialogTitle className="flex items-center gap-2">
+                                <span className="text-2xl">{getActionIcon(log.action)}</span>
+                                Activity Details
+                              </DialogTitle>
+                              <DialogDescription>
+                                {format(new Date(log.created_at), 'MMMM dd, yyyy HH:mm:ss')}
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">Action</Label>
+                                  <div className="mt-1">
+                                    <Badge variant={getActionBadgeVariant(log.action)}>
+                                      {log.action}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">User</Label>
+                                  <div className="mt-1 font-medium">
+                                    {log.user?.full_name || 'Unknown User'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {log.user?.email || log.user_email || 'No email'}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Details</Label>
+                                <div className="mt-2 p-4 bg-muted rounded-lg">
+                                  {log.details ? (
+                                    typeof log.details === 'string' ? (
+                                      <p className="text-sm">{log.details}</p>
+                                    ) : (
+                                      <pre className="text-xs overflow-auto max-h-96 whitespace-pre-wrap">
+                                        {JSON.stringify(log.details, null, 2)}
+                                      </pre>
+                                    )
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No details available</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       </TableCell>
                     </TableRow>
                   ))}
