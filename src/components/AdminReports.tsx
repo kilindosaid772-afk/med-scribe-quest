@@ -31,7 +31,6 @@ export default function AdminReports() {
     totalLabTests: 0
   });
   const [loading, setLoading] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({
     hospitalName: 'Medical Center',
     reportHeader: 'Healthcare Management System Report',
@@ -69,38 +68,6 @@ export default function AdminReports() {
       }
     } catch (error) {
       console.log('Using default settings');
-    }
-  };
-
-  const saveAllSettings = async () => {
-    try {
-      // Save all settings to database
-      const settingsToSave = [
-        { key: 'hospital_name', value: settings.hospitalName, description: 'Hospital or clinic name' },
-        { key: 'report_header', value: settings.reportHeader, description: 'Report header text' },
-        { key: 'consultation_fee', value: settings.consultationFee.toString(), description: 'Consultation fee charged at reception' }
-      ];
-
-      for (const setting of settingsToSave) {
-        const { error } = await supabase
-          .from('system_settings')
-          .upsert({
-            key: setting.key,
-            value: setting.value,
-            description: setting.description,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'key'
-          });
-
-        if (error) throw error;
-      }
-
-      toast.success('Settings saved successfully');
-      setSettingsOpen(false);
-    } catch (error: any) {
-      console.error('Error saving settings:', error);
-      toast.error(`Failed to save settings: ${error.message}`);
     }
   };
 
@@ -302,112 +269,6 @@ export default function AdminReports() {
           <p className="text-muted-foreground">Generate and export system reports</p>
         </div>
         <div className="flex gap-2">
-          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Report Settings</DialogTitle>
-                <DialogDescription>Configure report preferences</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="hospitalName">Hospital Name</Label>
-                  <Input
-                    id="hospitalName"
-                    value={settings.hospitalName}
-                    onChange={(e) => setSettings({...settings, hospitalName: e.target.value})}
-                    placeholder="Enter hospital name"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    This name will appear on all reports
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="reportHeader">Report Header</Label>
-                  <Input
-                    id="reportHeader"
-                    value={settings.reportHeader}
-                    onChange={(e) => setSettings({...settings, reportHeader: e.target.value})}
-                    placeholder="Enter report header"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Custom header text for printed reports
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="consultationFee">Consultation Fee (TSh)</Label>
-                  <Input
-                    id="consultationFee"
-                    type="number"
-                    value={settings.consultationFee}
-                    onChange={(e) => setSettings({...settings, consultationFee: Number(e.target.value)})}
-                    placeholder="Enter consultation fee"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    This fee will be collected at reception before patient check-in
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Include in Report</Label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={settings.includePatientDetails}
-                        onChange={(e) => setSettings({...settings, includePatientDetails: e.target.checked})}
-                      />
-                      <span>Patient Details</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={settings.includeAppointments}
-                        onChange={(e) => setSettings({...settings, includeAppointments: e.target.checked})}
-                      />
-                      <span>Appointments</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={settings.includeVisits}
-                        onChange={(e) => setSettings({...settings, includeVisits: e.target.checked})}
-                      />
-                      <span>Patient Visits</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={settings.includePrescriptions}
-                        onChange={(e) => setSettings({...settings, includePrescriptions: e.target.checked})}
-                      />
-                      <span>Prescriptions</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={settings.includeLabTests}
-                        onChange={(e) => setSettings({...settings, includeLabTests: e.target.checked})}
-                      />
-                      <span>Lab Tests</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => setSettingsOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={saveAllSettings}>
-                  Save All Settings
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
           <Select value={dateFilter} onValueChange={(value: DateFilter) => setDateFilter(value)}>
             <SelectTrigger className="w-40">
               <SelectValue />
