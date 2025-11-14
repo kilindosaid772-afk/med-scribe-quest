@@ -349,7 +349,12 @@ export default function PharmacyDashboard() {
 
       if (updateError) {
         console.error('Error updating prescription:', updateError);
-        toast.error('Failed to update prescription status');
+        await logActivity('pharmacy.dispense.error', { 
+          error: 'Failed to update prescription',
+          details: updateError.message,
+          prescription_id: prescriptionId
+        });
+        toast.error(`Failed to update prescription: ${updateError.message}`);
         return;
       }
 
@@ -364,22 +369,37 @@ export default function PharmacyDashboard() {
         .limit(1);
 
       if (!visitsError && visits && visits.length > 0) {
-        await supabase
+        const { error: visitUpdateError } = await supabase
           .from('patient_visits')
           .update({
             pharmacy_status: 'Completed',
             pharmacy_completed_at: new Date().toISOString(),
-            pharmacy_completed_by: user.id,
             current_stage: 'billing',
             billing_status: 'Pending',
             overall_status: 'Active',
             updated_at: new Date().toISOString()
           })
           .eq('id', visits[0].id);
+        
+        if (visitUpdateError) {
+          console.error('Error updating patient visit:', visitUpdateError);
+          // Don't throw, just log - this is not critical
+        }
       }
 
       // Update medication stock
       const newStock = medicationData.quantity_in_stock - prescription.quantity;
+      
+      if (newStock < 0) {
+        toast.error('Insufficient stock to dispense this prescription');
+        await logActivity('pharmacy.dispense.error', { 
+          error: 'Insufficient stock',
+          medication_id: prescription.medication_id,
+          required: prescription.quantity,
+          available: medicationData.quantity_in_stock
+        });
+        return;
+      }
       
       const { error: updateStockError } = await supabase
         .from('medications')
@@ -389,7 +409,11 @@ export default function PharmacyDashboard() {
         })
         .eq('id', prescription.medication_id);
 
-      if (updateStockError) throw updateStockError;
+      if (updateStockError) {
+        console.error('Error updating stock:', updateStockError);
+        toast.error(`Failed to update stock: ${updateStockError.message}`);
+        return;
+      }
 
       // Create invoice for billing
       const invoiceNumber = generateInvoiceNumber();
