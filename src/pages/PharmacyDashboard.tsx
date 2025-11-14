@@ -439,12 +439,17 @@ export default function PharmacyDashboard() {
 
       if (invoiceError) {
         console.error('Error creating invoice:', invoiceError);
-        throw invoiceError;
+        toast.error(`Failed to create invoice: ${invoiceError.message}`);
+        await logActivity('pharmacy.dispense.error', { 
+          error: 'Failed to create invoice',
+          details: invoiceError.message
+        });
+        return;
       }
 
       // Create invoice item for the medication
       if (newInvoice) {
-        await supabase
+        const { error: itemError } = await supabase
           .from('invoice_items')
           .insert([
             {
@@ -456,6 +461,16 @@ export default function PharmacyDashboard() {
               total_price: invoiceAmount
             }
           ]);
+        
+        if (itemError) {
+          console.error('Error creating invoice item:', itemError);
+          toast.error(`Failed to create invoice item: ${itemError.message}`);
+          await logActivity('pharmacy.dispense.error', { 
+            error: 'Failed to create invoice item',
+            details: itemError.message
+          });
+          return;
+        }
       }
 
       // Log successful dispense
