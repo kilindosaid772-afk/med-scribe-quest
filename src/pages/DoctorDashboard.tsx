@@ -93,7 +93,9 @@ export default function DoctorDashboard() {
     notes: ''
   });
   
-  // Prescription form state
+  // Prescription form state - now supports multiple medications
+  const [selectedMedications, setSelectedMedications] = useState<string[]>([]);
+  const [prescriptionForms, setPrescriptionForms] = useState<Record<string, any>>({});
   const [prescriptionForm, setPrescriptionForm] = useState({
     medication_id: '',
     medication_name: '',
@@ -886,6 +888,8 @@ export default function DoctorDashboard() {
   // Handler for writing prescription
   const handleWritePrescription = async (visit: any) => {
     setSelectedVisit(visit);
+    setSelectedMedications([]);
+    setPrescriptionForms({});
     setPrescriptionForm({
       medication_id: '',
       medication_name: '',
@@ -1036,41 +1040,54 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Submit prescription
+  // Submit prescriptions (multiple)
   const submitPrescription = async () => {
-    if (!selectedVisit || !prescriptionForm.medication_id) {
-      toast.error('Please select a medication');
+    if (!selectedVisit || selectedMedications.length === 0) {
+      toast.error('Please select at least one medication');
       return;
     }
 
-    if (!prescriptionForm.dosage || !prescriptionForm.frequency || !prescriptionForm.duration) {
-      toast.error('Please fill in all required fields');
-      return;
+    // Validate all selected medications have required fields
+    for (const medId of selectedMedications) {
+      const form = prescriptionForms[medId];
+      if (!form || !form.dosage || !form.frequency || !form.duration) {
+        toast.error('Please fill in all required fields for all selected medications');
+        return;
+      }
     }
 
     try {
-      const { error } = await supabase
-        .from('prescriptions')
-        .insert({
+      // Create prescriptions for all selected medications
+      const prescriptionsToInsert = selectedMedications.map(medId => {
+        const form = prescriptionForms[medId];
+        const med = availableMedications.find(m => m.id === medId);
+        return {
           patient_id: selectedVisit.patient_id,
           doctor_id: user?.id,
-          medication_id: prescriptionForm.medication_id || null,
-          medication_name: prescriptionForm.medication_name,
-          dosage: prescriptionForm.dosage,
-          frequency: prescriptionForm.frequency,
-          duration: prescriptionForm.duration,
-          quantity: parseInt(prescriptionForm.quantity) || 1,
-          instructions: prescriptionForm.instructions || null,
+          medication_id: medId,
+          medication_name: med?.name || '',
+          dosage: form.dosage,
+          frequency: form.frequency,
+          duration: form.duration,
+          quantity: parseInt(form.quantity) || 1,
+          instructions: form.instructions || null,
           status: 'Pending',
           prescribed_date: new Date().toISOString()
-        });
+        };
+      });
+
+      const { error } = await supabase
+        .from('prescriptions')
+        .insert(prescriptionsToInsert);
 
       if (error) throw error;
 
-      toast.success('Prescription written successfully');
+      toast.success(`${selectedMedications.length} prescription(s) written successfully`);
       setShowPrescriptionDialog(false);
       
       // Reset form for next prescription
+      setSelectedMedications([]);
+      setPrescriptionForms({});
       setPrescriptionForm({
         medication_id: '',
         medication_name: '',
@@ -2788,88 +2805,139 @@ export default function DoctorDashboard() {
               Write a prescription for {selectedVisit?.patient?.full_name}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="medication">Medication *</Label>
-              <Select 
-                value={prescriptionForm.medication_id} 
-                onValueChange={(value) => {
-                  const med = availableMedications.find(m => m.id === value);
-                  setPrescriptionForm({
-                    ...prescriptionForm,
-                    medication_id: value,
-                    medication_name: med?.name || ''
-                  });
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select medication" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableMedications.map((med) => (
-                    <SelectItem key={med.id} value={med.id}>
-                      {med.name} {med.strength && `- ${med.strength}`} {med.dosage_form && `(${med.dosage_form})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="dosage">Dosage *</Label>
-                <Input
-                  id="dosage"
-                  placeholder="e.g., 500mg"
-                  value={prescriptionForm.dosage}
-                  onChange={(e) => setPrescriptionForm({...prescriptionForm, dosage: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label htmlFor="frequency">Frequency *</Label>
-                <Input
-                  id="frequency"
-                  placeholder="e.g., Twice daily"
-                  value={prescriptionForm.frequency}
-                  onChange={(e) => setPrescriptionForm({...prescriptionForm, frequency: e.target.value})}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="duration">Duration *</Label>
-                <Input
-                  id="duration"
-                  placeholder="e.g., 7 days"
-                  value={prescriptionForm.duration}
-                  onChange={(e) => setPrescriptionForm({...prescriptionForm, duration: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label htmlFor="quantity">Quantity</Label>
-                <Input
-                  id="quantity"
-                  placeholder="e.g., 14 tablets"
-                  value={prescriptionForm.quantity}
-                  onChange={(e) => setPrescriptionForm({...prescriptionForm, quantity: e.target.value})}
-                />
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            {/* Medication Selection with Checkboxes */}
+            <div className="space-y-2">
+              <Label>Select Medications *</Label>
+              <div className="border rounded-lg p-4 space-y-2 max-h-60 overflow-y-auto">
+                {availableMedications.map((med) => (
+                  <div key={med.id} className="flex items-start space-x-2">
+                    <input
+                      type="checkbox"
+                      id={`med-${med.id}`}
+                      checked={selectedMedications.includes(med.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedMedications([...selectedMedications, med.id]);
+                          setPrescriptionForms({
+                            ...prescriptionForms,
+                            [med.id]: {
+                              dosage: '',
+                              frequency: '',
+                              duration: '',
+                              quantity: '1',
+                              instructions: ''
+                            }
+                          });
+                        } else {
+                          setSelectedMedications(selectedMedications.filter(id => id !== med.id));
+                          const newForms = { ...prescriptionForms };
+                          delete newForms[med.id];
+                          setPrescriptionForms(newForms);
+                        }
+                      }}
+                      className="mt-1"
+                    />
+                    <label htmlFor={`med-${med.id}`} className="flex-1 cursor-pointer">
+                      <div className="font-medium">{med.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {med.strength && `${med.strength} `}
+                        {med.dosage_form && `(${med.dosage_form})`}
+                        {med.quantity_in_stock !== undefined && ` • Stock: ${med.quantity_in_stock}`}
+                      </div>
+                    </label>
+                  </div>
+                ))}
               </div>
             </div>
-            <div>
-              <Label htmlFor="instructions">Instructions</Label>
-              <Textarea
-                id="instructions"
-                placeholder="e.g., Take with food"
-                value={prescriptionForm.instructions}
-                onChange={(e) => setPrescriptionForm({...prescriptionForm, instructions: e.target.value})}
-                rows={2}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
+
+            {/* Forms for each selected medication */}
+            {selectedMedications.map((medId) => {
+              const med = availableMedications.find(m => m.id === medId);
+              const form = prescriptionForms[medId] || {};
+              
+              return (
+                <Card key={medId} className="p-4 bg-blue-50/50">
+                  <h4 className="font-semibold mb-3 text-blue-900">{med?.name}</h4>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor={`dosage-${medId}`}>Dosage *</Label>
+                        <Input
+                          id={`dosage-${medId}`}
+                          placeholder="e.g., 500mg"
+                          value={form.dosage || ''}
+                          onChange={(e) => setPrescriptionForms({
+                            ...prescriptionForms,
+                            [medId]: { ...form, dosage: e.target.value }
+                          })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`frequency-${medId}`}>Frequency *</Label>
+                        <Input
+                          id={`frequency-${medId}`}
+                          placeholder="e.g., Twice daily"
+                          value={form.frequency || ''}
+                          onChange={(e) => setPrescriptionForms({
+                            ...prescriptionForms,
+                            [medId]: { ...form, frequency: e.target.value }
+                          })}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor={`duration-${medId}`}>Duration *</Label>
+                        <Input
+                          id={`duration-${medId}`}
+                          placeholder="e.g., 7 days"
+                          value={form.duration || ''}
+                          onChange={(e) => setPrescriptionForms({
+                            ...prescriptionForms,
+                            [medId]: { ...form, duration: e.target.value }
+                          })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`quantity-${medId}`}>Quantity</Label>
+                        <Input
+                          id={`quantity-${medId}`}
+                          placeholder="e.g., 14"
+                          value={form.quantity || '1'}
+                          onChange={(e) => setPrescriptionForms({
+                            ...prescriptionForms,
+                            [medId]: { ...form, quantity: e.target.value }
+                          })}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor={`instructions-${medId}`}>Instructions</Label>
+                      <Textarea
+                        id={`instructions-${medId}`}
+                        placeholder="e.g., Take with food"
+                        value={form.instructions || ''}
+                        onChange={(e) => setPrescriptionForms({
+                          ...prescriptionForms,
+                          [medId]: { ...form, instructions: e.target.value }
+                        })}
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-white">
               <Button variant="outline" onClick={() => setShowPrescriptionDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={submitPrescription}>
-                Write Prescription
+              <Button 
+                onClick={submitPrescription}
+                disabled={selectedMedications.length === 0}
+              >
+                Write {selectedMedications.length} Prescription{selectedMedications.length !== 1 ? 's' : ''}
               </Button>
             </div>
           </div>
