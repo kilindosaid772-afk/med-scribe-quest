@@ -669,27 +669,48 @@ const BillingAnalysis = () => {
   });
   const [recentInvoices, setRecentInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeFilter, setTimeFilter] = useState<'day' | 'week' | 'month'>('day');
 
   useEffect(() => {
     fetchBillingData();
-  }, []);
+  }, [timeFilter]);
 
   const fetchBillingData = async () => {
     try {
-      // Fetch all invoices
+      // Calculate date range based on filter
+      const now = new Date();
+      let startDate: Date;
+      
+      switch (timeFilter) {
+        case 'day':
+          startDate = new Date(now.setHours(0, 0, 0, 0));
+          break;
+        case 'week':
+          startDate = new Date(now.setDate(now.getDate() - 7));
+          break;
+        case 'month':
+          startDate = new Date(now.setMonth(now.getMonth() - 1));
+          break;
+      }
+
+      const startDateStr = startDate.toISOString();
+
+      // Fetch recent invoices with filter
       const { data: invoices } = await supabase
         .from('invoices')
         .select(`
           *,
           patient:patients(full_name)
         `)
+        .gte('invoice_date', startDateStr)
         .order('invoice_date', { ascending: false })
         .limit(10);
 
-      // Calculate statistics
+      // Calculate statistics with filter
       const { data: allInvoices } = await supabase
         .from('invoices')
-        .select('total_amount, paid_amount, status, invoice_date');
+        .select('total_amount, paid_amount, status, invoice_date')
+        .gte('invoice_date', startDateStr);
 
       if (allInvoices) {
         const totalRevenue = allInvoices
@@ -700,15 +721,14 @@ const BillingAnalysis = () => {
           .filter(inv => inv.status !== 'Paid')
           .reduce((sum, inv) => sum + (Number(inv.total_amount) - Number(inv.paid_amount || 0)), 0);
 
-        const today = new Date().toISOString().split('T')[0];
-        const paidToday = allInvoices
-          .filter(inv => inv.status === 'Paid' && inv.invoice_date?.startsWith(today))
+        const paidInPeriod = allInvoices
+          .filter(inv => inv.status === 'Paid')
           .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
 
         setBillingStats({
           totalRevenue,
           unpaidAmount,
-          paidToday,
+          paidToday: paidInPeriod,
           invoiceCount: allInvoices.length,
           paidCount: allInvoices.filter(inv => inv.status === 'Paid').length,
           unpaidCount: allInvoices.filter(inv => inv.status === 'Unpaid').length
