@@ -7,8 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
-import { Activity, Search, Download, RefreshCw, Loader2, FileText } from 'lucide-react';
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
+import { Activity, Search, Download, RefreshCw, Loader2, FileText, User, Calendar, AlertCircle } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
+import { format as formatDate } from 'date-fns';
 
 type DateFilter = 'today' | 'week' | 'month' | 'all';
 
@@ -31,6 +35,13 @@ export default function ActivityLogsView() {
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
+  const [userFilter, setUserFilter] = useState('all');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({ from: undefined, to: undefined });
+  const [users, setUsers] = useState<Array<{ id: string; email: string; full_name: string }>>([]);
   const [stats, setStats] = useState({
     total: 0,
     today: 0,
@@ -40,7 +51,23 @@ export default function ActivityLogsView() {
 
   useEffect(() => {
     fetchLogs();
+    fetchUsers();
   }, [dateFilter]);
+
+  const fetchUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name')
+        .order('full_name', { ascending: true });
+      
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      toast.error('Failed to load users');
+    }
+  };
 
   const getDateRange = () => {
     const now = new Date();
@@ -130,8 +157,10 @@ export default function ActivityLogsView() {
   };
 
   const getActionBadgeVariant = (action: string) => {
-    if (action.includes('create') || action.includes('add') || action.includes('register')) return 'default';
-    if (action.includes('update') || action.includes('edit')) return 'secondary';
+    if (action.includes('error') || action.includes('failed')) return 'destructive';
+    if (action.includes('warn') || action.includes('warning')) return 'warning';
+    if (action.includes('create') || action.includes('add') || action.includes('register')) return 'success';
+    if (action.includes('update') || action.includes('edit')) return 'info';
     if (action.includes('delete') || action.includes('remove')) return 'destructive';
     if (action.includes('login') || action.includes('auth')) return 'outline';
     return 'secondary';
@@ -169,23 +198,60 @@ export default function ActivityLogsView() {
   };
 
   const filteredLogs = logs.filter(log => {
+    // Search filter
     const matchesSearch = searchQuery === '' || 
       log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.user_email?.toLowerCase().includes(searchQuery.toLowerCase());
+      (log.user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+      (log.user_email?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+      (typeof log.details === 'string' && log.details.toLowerCase().includes(searchQuery.toLowerCase()));
     
+    // Action type filter
     const matchesAction = actionFilter === 'all' || log.action.includes(actionFilter);
     
-    return matchesSearch && matchesAction;
+    // User filter
+    const matchesUser = userFilter === 'all' || log.user_id === userFilter;
+    
+    // Severity filter
+    const getLogSeverity = (action: string) => {
+      if (action.includes('error') || action.includes('failed')) return 'error';
+      if (action.includes('warn') || action.includes('warning')) return 'warning';
+      if (action.includes('create') || action.includes('add') || action.includes('register')) return 'success';
+      if (action.includes('update') || action.includes('edit')) return 'info';
+      if (action.includes('delete') || action.includes('remove')) return 'destructive';
+      return 'info';
+    };
+    
+    const matchesSeverity = severityFilter === 'all' || 
+      getLogSeverity(log.action) === severityFilter;
+    
+    // Date range filter
+    const logDate = new Date(log.created_at);
+    const matchesDateRange = !dateRange.from || !dateRange.to || 
+      (logDate >= dateRange.from && logDate <= dateRange.to);
+    
+    return matchesSearch && matchesAction && matchesUser && matchesSeverity && matchesDateRange;
   });
 
   const getFilterLabel = () => {
+    if (dateRange.from && dateRange.to) {
+      return `${formatDate(dateRange.from, 'MMM d, yyyy')} - ${formatDate(dateRange.to, 'MMM d, yyyy')}`;
+    }
     switch (dateFilter) {
       case 'today': return 'Today';
       case 'week': return 'This Week';
       case 'month': return 'This Month';
       case 'all': return 'All Time';
-      default: return 'Today';
+      default: return 'Custom Range';
+    }
+  };
+
+  const handleDateRangeSelect = (range: { from: Date | undefined; to: Date | undefined } | undefined) => {
+    if (range?.from && range?.to) {
+      setDateRange(range);
+      setDateFilter('custom');
+    } else if (range?.from) {
+      setDateRange({ from: range.from, to: range.from });
+      setDateFilter('custom');
     }
   };
 
@@ -281,20 +347,165 @@ export default function ActivityLogsView() {
                 <SelectItem value="all">All Time</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={actionFilter} onValueChange={setActionFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by action" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Actions</SelectItem>
-                <SelectItem value="patient">Patient Actions</SelectItem>
-                <SelectItem value="appointment">Appointments</SelectItem>
-                <SelectItem value="prescription">Prescriptions</SelectItem>
-                <SelectItem value="lab">Lab Tests</SelectItem>
-                <SelectItem value="payment">Payments</SelectItem>
-                <SelectItem value="auth">Authentication</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-2">
+              <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20">
+                <Select value={actionFilter} onValueChange={setActionFilter}>
+                  <SelectTrigger className="h-6 border-0 p-0 text-xs font-semibold text-primary [&>span]:line-clamp-1 [&>span]:flex [&>span]:items-center [&>span]:gap-1">
+                    <SelectValue placeholder="All Actions" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Actions</SelectItem>
+                    <SelectItem value="patient">Patient Actions</SelectItem>
+                    <SelectItem value="appointment">Appointments</SelectItem>
+                    <SelectItem value="prescription">Prescriptions</SelectItem>
+                    <SelectItem value="lab">Lab Tests</SelectItem>
+                    <SelectItem value="payment">Payments</SelectItem>
+                    <SelectItem value="auth">Authentication</SelectItem>
+                    <SelectItem value="create">Create</SelectItem>
+                    <SelectItem value="update">Update</SelectItem>
+                    <SelectItem value="delete">Delete</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20">
+                <Select value={userFilter} onValueChange={setUserFilter}>
+                  <SelectTrigger className="h-6 border-0 p-0 text-xs font-semibold text-primary [&>span]:line-clamp-1 [&>span]:flex [&>span]:items-center [&>span]:gap-1">
+                    <div className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      <SelectValue placeholder="All Users" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Users</SelectItem>
+                    {users.map(user => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.full_name || user.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20">
+                <Select value={severityFilter} onValueChange={setSeverityFilter}>
+                  <SelectTrigger className="h-6 border-0 p-0 text-xs font-semibold text-primary [&>span]:line-clamp-1 [&>span]:flex [&>span]:items-center [&>span]:gap-1">
+                    <div className="flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      <SelectValue placeholder="All Severities" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Severities</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer">
+                    <Calendar className="mr-1 h-3 w-3" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <span>
+                          {formatDate(dateRange.from, "MMM d")} - {formatDate(dateRange.to, "MMM d")}
+                        </span>
+                      ) : (
+                        <span>{formatDate(dateRange.from, "MMM d, y")}</span>
+                      )
+                    ) : (
+                      <span>Date Range</span>
+                    )}
+                  </div>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-2">
+                    <div className="flex items-center justify-between mb-2 px-2">
+                      <h4 className="text-sm font-medium">Select Date Range</h4>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 text-xs"
+                        onClick={() => {
+                          setDateRange({ from: undefined, to: undefined });
+                          setDateFilter('all');
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                    <CalendarComponent
+                      initialFocus
+                      mode="range"
+                      defaultMonth={dateRange?.from}
+                      selected={dateRange}
+                      onSelect={handleDateRangeSelect}
+                      numberOfMonths={2}
+                      className="rounded-md border"
+                    />
+                    <div className="flex justify-between p-2 border-t">
+                      <Button 
+                        variant={dateFilter === 'today' ? 'default' : 'ghost'} 
+                        size="sm" 
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setDateFilter('today');
+                          setDateRange({
+                            from: startOfDay(new Date()),
+                            to: endOfDay(new Date())
+                          });
+                        }}
+                      >
+                        Today
+                      </Button>
+                      <Button 
+                        variant={dateFilter === 'week' ? 'default' : 'ghost'} 
+                        size="sm" 
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setDateFilter('week');
+                          setDateRange({
+                            from: startOfWeek(new Date()),
+                            to: endOfWeek(new Date())
+                          });
+                        }}
+                      >
+                        This Week
+                      </Button>
+                      <Button 
+                        variant={dateFilter === 'month' ? 'default' : 'ghost'} 
+                        size="sm" 
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setDateFilter('month');
+                          setDateRange({
+                            from: startOfMonth(new Date()),
+                            to: endOfMonth(new Date())
+                          });
+                        }}
+                      >
+                        This Month
+                      </Button>
+                      <Button 
+                        variant={dateFilter === 'all' ? 'default' : 'ghost'} 
+                        size="sm" 
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setDateFilter('all');
+                          setDateRange({ from: undefined, to: undefined });
+                        }}
+                      >
+                        All Time
+                      </Button>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
 
           {/* Logs Table */}

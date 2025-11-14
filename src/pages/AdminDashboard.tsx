@@ -53,6 +53,7 @@ import { supabaseAdmin } from '@/integrations/supabase/admin';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/utils';
 import AdminReports from '@/components/AdminReports';
+import ActivityLogsView from '@/components/ActivityLogsView';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
 
@@ -1985,79 +1986,7 @@ export default function AdminDashboard() {
           </DialogContent>
         </Dialog>
 
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ClipboardList className="h-5 w-5" />
-              Activity Logs
-            </CardTitle>
-            <CardDescription>Recent system activity</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Details</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {activityLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span title={format(new Date(log.created_at), 'MMM d, yyyy HH:mm')}>
-                            {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="font-mono">{log.user_email || 'System'}</Badge>
-                          {log.user_name && <span className="text-xs text-muted-foreground">{log.user_name}</span>}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          log.action?.includes('error') ? 'destructive' :
-                          log.action?.startsWith('appointment.') ? 'default' :
-                          log.action?.startsWith('patient.') ? 'secondary' :
-                          log.action?.startsWith('pharmacy.') ? 'default' :
-                          log.action?.startsWith('billing.') ? 'default' :
-                          log.action?.startsWith('service.') ? 'secondary' :
-                          'outline'
-                        }>
-                          {log.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {(() => {
-                          const details = log.details as any;
-                          const str = typeof details === 'string' ? details : JSON.stringify(details);
-                          return str.slice(0, 60) + (str.length > 60 ? '…' : '');
-                        })()}
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="ml-2 h-8 w-8 p-0">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="max-w-md">
-                            {formatJson(log.details)}
-                          </PopoverContent>
-                        </Popover>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <ActivityLogsView />
 
         <Card className="shadow-lg">
           <CardHeader className="space-y-2">
