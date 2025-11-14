@@ -25,6 +25,10 @@ export function DispenseDialog({
   onDispense,
   loading = false
 }: DispenseDialogProps) {
+  
+  const totalCost = medication && prescription 
+    ? (medication.unit_price || 0) * (prescription.quantity || 0)
+    : 0;
   const [dispenseForm, setDispenseForm] = useState({
     actual_dosage: prescription?.dosage || '',
     dosage_mg: '',
@@ -72,6 +76,14 @@ export function DispenseDialog({
               <div>
                 <span className="text-muted-foreground">Quantity Prescribed:</span>
                 <span className="ml-2 font-medium">{prescription?.quantity}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Unit Price:</span>
+                <span className="ml-2 font-medium">TSh {(medication?.unit_price || 0).toLocaleString()}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Total Cost:</span>
+                <span className="ml-2 font-bold text-lg text-blue-600">TSh {totalCost.toLocaleString()}</span>
               </div>
             </div>
           </div>
