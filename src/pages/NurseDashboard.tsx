@@ -30,6 +30,12 @@ export default function NurseDashboard() {
     heart_rate: '',
     temperature: '',
     oxygen_saturation: '',
+    weight: '',
+    weight_unit: 'kg',
+    height: '',
+    height_unit: 'cm',
+    muac: '',
+    muac_unit: 'cm',
     notes: ''
   });
   const [notesForm, setNotesForm] = useState({
@@ -63,6 +69,12 @@ export default function NurseDashboard() {
       heart_rate: '',
       temperature: '',
       oxygen_saturation: '',
+      weight: '',
+      weight_unit: 'kg',
+      height: '',
+      height_unit: 'cm',
+      muac: '',
+      muac_unit: 'cm',
       notes: ''
     });
     setShowVitalsDialog(true);
@@ -518,6 +530,89 @@ export default function NurseDashboard() {
                   value={vitalsForm.oxygen_saturation}
                   onChange={(e) => setVitalsForm({...vitalsForm, oxygen_saturation: e.target.value})}
                 />
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="weight">Weight</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="weight"
+                    type="number"
+                    step="0.1"
+                    placeholder="70.5"
+                    value={vitalsForm.weight}
+                    onChange={(e) => setVitalsForm({...vitalsForm, weight: e.target.value})}
+                    className="flex-1"
+                  />
+                  <Select 
+                    value={vitalsForm.weight_unit} 
+                    onValueChange={(value) => setVitalsForm({...vitalsForm, weight_unit: value})}
+                  >
+                    <SelectTrigger className="w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="kg">kg</SelectItem>
+                      <SelectItem value="lbs">lbs</SelectItem>
+                      <SelectItem value="g">g</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="height">Height</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="height"
+                    type="number"
+                    step="0.1"
+                    placeholder="175"
+                    value={vitalsForm.height}
+                    onChange={(e) => setVitalsForm({...vitalsForm, height: e.target.value})}
+                    className="flex-1"
+                  />
+                  <Select 
+                    value={vitalsForm.height_unit} 
+                    onValueChange={(value) => setVitalsForm({...vitalsForm, height_unit: value})}
+                  >
+                    <SelectTrigger className="w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cm">cm</SelectItem>
+                      <SelectItem value="m">m</SelectItem>
+                      <SelectItem value="ft">ft</SelectItem>
+                      <SelectItem value="in">in</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="muac">MUAC (Mean Upper Arm Circumference)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="muac"
+                    type="number"
+                    step="0.1"
+                    placeholder="25.5"
+                    value={vitalsForm.muac}
+                    onChange={(e) => setVitalsForm({...vitalsForm, muac: e.target.value})}
+                    className="flex-1"
+                    title="Mean Upper Arm Circumference"
+                  />
+                  <Select 
+                    value={vitalsForm.muac_unit} 
+                    onValueChange={(value) => setVitalsForm({...vitalsForm, muac_unit: value})}
+                  >
+                    <SelectTrigger className="w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cm">cm</SelectItem>
+                      <SelectItem value="mm">mm</SelectItem>
+                      <SelectItem value="in">in</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
             <div>

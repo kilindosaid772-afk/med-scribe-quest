@@ -20,6 +20,9 @@ export default function LabDashboard() {
   const [loading, setLoading] = useState(false);
   const [selectedTest, setSelectedTest] = useState<any>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedPatientTests, setSelectedPatientTests] = useState<any[]>([]);
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [batchResults, setBatchResults] = useState<Record<string, any>>({});
 
   useEffect(() => {
     fetchData();
@@ -108,6 +111,135 @@ export default function LabDashboard() {
     toast.success('Lab result submitted and sent back to doctor');
     setDialogOpen(false);
     setSelectedTest(null);
+  };
+
+  const handleBatchTestSubmit = async (patientId: string) => {
+    // Get all tests for this patient that are pending or in progress
+    const patientTests = labTests.filter(
+      test => test.patient_id === patientId && (test.status === 'Pending' || test.status === 'In Progress')
+    );
+    
+    if (patientTests.length === 0) {
+      toast.error('No pending tests for this patient');
+      return;
+    }
+
+    // Auto-start all pending tests
+    const pendingTests = patientTests.filter(t => t.status === 'Pending');
+    if (pendingTests.length > 0) {
+      await Promise.all(
+        pendingTests.map(test => 
+          supabase
+            .from('lab_tests')
+            .update({ status: 'In Progress' })
+            .eq('id', test.id)
+        )
+      );
+      toast.info(`Started ${pendingTests.length} pending test(s)`);
+    }
+
+    setSelectedPatientTests(patientTests);
+    // Initialize batch results with empty values
+    const initialResults: Record<string, any> = {};
+    patientTests.forEach(test => {
+      initialResults[test.id] = {
+        result_value: '',
+        reference_range: '',
+        unit: '',
+        abnormal_flag: false,
+        notes: ''
+      };
+    });
+    setBatchResults(initialResults);
+    setBatchDialogOpen(true);
+  };
+
+  const handleBatchResultChange = (testId: string, field: string, value: any) => {
+    setBatchResults(prev => ({
+      ...prev,
+      [testId]: {
+        ...prev[testId],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSubmitBatchResults = async () => {
+    try {
+      const resultsToInsert = [];
+      const testsToUpdate = [];
+
+      for (const test of selectedPatientTests) {
+        const result = batchResults[test.id];
+        if (result && result.result_value) {
+          resultsToInsert.push({
+            lab_test_id: test.id,
+            ...result
+          });
+          testsToUpdate.push(test.id);
+        }
+      }
+
+      if (resultsToInsert.length === 0) {
+        toast.error('Please fill in at least one test result');
+        return;
+      }
+
+      // Insert all results
+      const { error: resultError } = await supabase
+        .from('lab_results')
+        .insert(resultsToInsert);
+
+      if (resultError) throw resultError;
+
+      // Update all test statuses
+      const { error: updateError } = await supabase
+        .from('lab_tests')
+        .update({
+          status: 'Completed',
+          completed_date: new Date().toISOString()
+        })
+        .in('id', testsToUpdate);
+
+      if (updateError) throw updateError;
+
+      // Update patient workflow
+      if (selectedPatientTests.length > 0) {
+        const patientId = selectedPatientTests[0].patient_id;
+        await updatePatientWorkflow(patientId);
+      }
+
+      toast.success(`${resultsToInsert.length} test results submitted successfully`);
+      setBatchDialogOpen(false);
+      setSelectedPatientTests([]);
+      setBatchResults({});
+      fetchData();
+    } catch (error) {
+      console.error('Error submitting batch results:', error);
+      toast.error('Failed to submit batch results');
+    }
+  };
+
+  const updatePatientWorkflow = async (patientId: string) => {
+    const { data: visits } = await supabase
+      .from('patient_visits')
+      .select('*')
+      .eq('patient_id', patientId)
+      .eq('overall_status', 'Active')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (visits && visits.length > 0) {
+      await supabase
+        .from('patient_visits')
+        .update({
+          lab_status: 'Completed',
+          lab_completed_at: new Date().toISOString(),
+          current_stage: 'doctor',
+          doctor_status: 'Pending'
+        })
+        .eq('id', visits[0].id);
+    }
   };
 
   const handleUpdateStatus = async (testId: string, newStatus: string, patientId?: string) => {
@@ -485,22 +617,24 @@ export default function LabDashboard() {
                 <CardTitle>Lab Tests</CardTitle>
                 <CardDescription>Manage and process laboratory tests</CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={testLabWorkflow}
-                className="text-blue-600 border-blue-200 hover:bg-blue-50"
-              >
-                Test Lab Workflow
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={ensureAllPatientsHaveVisits}
-                className="text-green-600 border-green-200 hover:bg-green-50"
-              >
-                Fix All Patient Visits
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={testLabWorkflow}
+                  className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                >
+                  Test Lab Workflow
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={ensureAllPatientsHaveVisits}
+                  className="text-green-600 border-green-200 hover:bg-green-50"
+                >
+                  Fix All Patient Visits
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -515,6 +649,7 @@ export default function LabDashboard() {
                     <TableHead>Ordered Date</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
+                    <TableHead>Batch</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -574,6 +709,18 @@ export default function LabDashboard() {
                           )}
                         </div>
                       </TableCell>
+                      <TableCell>
+                        {(test.status === 'Pending' || test.status === 'In Progress') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleBatchTestSubmit(test.patient_id)}
+                            title="Submit all tests for this patient"
+                          >
+                            Batch Submit
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -624,6 +771,95 @@ export default function LabDashboard() {
               </div>
               <Button type="submit" className="w-full">Submit Result</Button>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Batch Test Submission Dialog */}
+        <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Batch Submit Lab Results</DialogTitle>
+              <DialogDescription>
+                Submit results for {selectedPatientTests.length} test(s) for {selectedPatientTests[0]?.patient?.full_name}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              {selectedPatientTests.map((test, index) => (
+                <Card key={test.id} className="p-4">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-lg">{index + 1}. {test.test_name}</h4>
+                      <Badge variant={test.priority === 'STAT' ? 'destructive' : 'default'}>
+                        {test.priority}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor={`result_${test.id}`}>Result Value *</Label>
+                        <Input
+                          id={`result_${test.id}`}
+                          value={batchResults[test.id]?.result_value || ''}
+                          onChange={(e) => handleBatchResultChange(test.id, 'result_value', e.target.value)}
+                          placeholder="Enter result"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`unit_${test.id}`}>Unit</Label>
+                        <Input
+                          id={`unit_${test.id}`}
+                          value={batchResults[test.id]?.unit || ''}
+                          onChange={(e) => handleBatchResultChange(test.id, 'unit', e.target.value)}
+                          placeholder="mg/dL, mmol/L, etc."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`range_${test.id}`}>Reference Range</Label>
+                        <Input
+                          id={`range_${test.id}`}
+                          value={batchResults[test.id]?.reference_range || ''}
+                          onChange={(e) => handleBatchResultChange(test.id, 'reference_range', e.target.value)}
+                          placeholder="e.g., 70-100"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`abnormal_${test.id}`}>Status</Label>
+                        <Select
+                          value={batchResults[test.id]?.abnormal_flag ? 'true' : 'false'}
+                          onValueChange={(value) => handleBatchResultChange(test.id, 'abnormal_flag', value === 'true')}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="false">Normal</SelectItem>
+                            <SelectItem value="true">Abnormal</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`notes_${test.id}`}>Notes</Label>
+                      <Textarea
+                        id={`notes_${test.id}`}
+                        value={batchResults[test.id]?.notes || ''}
+                        onChange={(e) => handleBatchResultChange(test.id, 'notes', e.target.value)}
+                        placeholder="Additional notes..."
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setBatchDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSubmitBatchResults}>
+                  Submit All Results
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

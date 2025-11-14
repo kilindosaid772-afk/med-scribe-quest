@@ -64,6 +64,13 @@ export default function ReceptionistDashboard() {
   const [showPatientSearch, setShowPatientSearch] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [roleUpdateIndicator, setRoleUpdateIndicator] = useState<string | null>(null);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [selectedAppointmentForPayment, setSelectedAppointmentForPayment] = useState<any>(null);
+  const [consultationFee, setConsultationFee] = useState(2000);
+  const [paymentForm, setPaymentForm] = useState({
+    amount_paid: '',
+    payment_method: 'Cash'
+  });
 
   const [registerForm, setRegisterForm] = useState({
     full_name: '',
@@ -106,6 +113,7 @@ export default function ReceptionistDashboard() {
     if (!user) return;
     
     fetchData();
+    fetchConsultationFee();
 
     // Set up real-time subscriptions
     const appointmentsChannel = supabase
@@ -540,7 +548,29 @@ export default function ReceptionistDashboard() {
   }, [appointmentForm.department_id, doctors]);
 
   // ---------------- FETCH DATA ----------------
-  const handleCheckIn = async (appointmentId: string) => {
+  const fetchConsultationFee = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'consultation_fee')
+        .single();
+
+      if (!error && data) {
+        setConsultationFee(Number(data.value));
+      }
+    } catch (error) {
+      console.log('Using default consultation fee');
+    }
+  };
+
+  const handleInitiateCheckIn = async (appointment: any) => {
+    setSelectedAppointmentForPayment(appointment);
+    setPaymentForm({
+      amount_paid: consultationFee.toString(),
+      payment_method: 'Cash'
+    });
+  
     try {
       // First, get appointment details
       const { data: appointment, error: appointmentFetchError } = await supabase

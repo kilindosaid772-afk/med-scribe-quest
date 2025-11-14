@@ -78,6 +78,8 @@ export default function PharmacyDashboard() {
   const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [prescriptionFilter, setPrescriptionFilter] = useState<'pending' | 'all'>('pending');
+  const [dispenseDialogOpen, setDispenseDialogOpen] = useState(false);
+  const [selectedPrescriptionForDispense, setSelectedPrescriptionForDispense] = useState<any>(null);
   
   // Type for the combined prescription data
   interface PrescriptionWithRelations extends Prescription {
