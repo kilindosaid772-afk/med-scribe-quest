@@ -982,17 +982,25 @@ export default function DoctorDashboard() {
           test_type: test?.test_type || '',
           status: 'Pending',
           priority: labTestForm.priority,
-          notes: labTestForm.notes,
+          notes: labTestForm.notes || null,
           ordered_by_doctor_id: user?.id,
           ordered_date: new Date().toISOString()
         };
       });
 
-      const { error } = await supabase
-        .from('lab_tests')
-        .insert(labTests);
+      console.log('Ordering lab tests:', labTests);
 
-      if (error) throw error;
+      const { data, error } = await supabase
+        .from('lab_tests')
+        .insert(labTests)
+        .select();
+
+      if (error) {
+        console.error('Lab test insert error:', error);
+        throw new Error(`Failed to create lab tests: ${error.message}`);
+      }
+
+      console.log('Lab tests created:', data);
 
       // Update patient visit to lab stage
       // Keep doctor_status as 'In Progress' so patient returns to doctor queue after lab
@@ -1006,16 +1014,26 @@ export default function DoctorDashboard() {
         })
         .eq('id', selectedVisit.id);
 
-      if (visitError) throw visitError;
+      if (visitError) {
+        console.error('Visit update error:', visitError);
+        throw new Error(`Failed to update patient visit: ${visitError.message}`);
+      }
 
       toast.success(`${labTests.length} lab test(s) ordered. Patient sent to lab.`);
       setShowLabTestDialog(false);
       
+      // Reset form
+      setLabTestForm({
+        selectedTests: [],
+        priority: 'Routine',
+        notes: ''
+      });
+      
       // Remove from pending visits
       setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error ordering lab tests:', error);
-      toast.error('Failed to order lab tests');
+      toast.error(error.message || 'Failed to order lab tests');
     }
   };
 

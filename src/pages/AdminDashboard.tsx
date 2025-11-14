@@ -769,6 +769,18 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const [patientView, setPatientView] = useState<'day' | 'week' | 'all'>('day');
   const [roleUpdateIndicator, setRoleUpdateIndicator] = useState<string | null>(null);
+  
+  // Settings state
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [systemSettings, setSystemSettings] = useState({
+    consultation_fee: '50000',
+    currency: 'TSh',
+    hospital_name: 'Medical Center',
+    enable_appointment_fees: 'true'
+  });
+  const [departmentFees, setDepartmentFees] = useState<Record<string, string>>({});
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -784,6 +796,7 @@ export default function AdminDashboard() {
     
     loadUser();
     fetchData();
+    fetchSettings();
 
     // Set up real-time subscriptions for admin dashboard
     const rolesChannel = supabase
@@ -922,6 +935,101 @@ export default function AdminDashboard() {
       toast.error('Failed to load activity logs');
     } finally {
       setLogsLoading(false);
+    }
+  };
+
+  const fetchSettings = async () => {
+    try {
+      // Fetch system settings
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('system_settings')
+        .select('*');
+
+      if (settingsError) throw settingsError;
+
+      if (settingsData) {
+        const settings: any = {};
+        settingsData.forEach((setting: any) => {
+          settings[setting.key] = setting.value;
+        });
+        setSystemSettings(prev => ({ ...prev, ...settings }));
+      }
+
+      // Fetch departments
+      const { data: deptData, error: deptError } = await supabase
+        .from('departments')
+        .select('*')
+        .order('name');
+
+      if (deptError) throw deptError;
+      setDepartments(deptData || []);
+
+      // Fetch department fees
+      const { data: feesData, error: feesError } = await supabase
+        .from('department_fees')
+        .select('*');
+
+      if (feesError && feesError.code !== 'PGRST116') { // Ignore "not found" errors
+        console.error('Error fetching department fees:', feesError);
+      }
+
+      if (feesData) {
+        const fees: Record<string, string> = {};
+        feesData.forEach((fee: any) => {
+          fees[fee.department_id] = fee.fee_amount.toString();
+        });
+        setDepartmentFees(fees);
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+      toast.error('Failed to load settings');
+    }
+  };
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      // Save system settings
+      for (const [key, value] of Object.entries(systemSettings)) {
+        const { error } = await supabase
+          .from('system_settings')
+          .upsert({
+            key,
+            value,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'key'
+          });
+
+        if (error) throw error;
+      }
+
+      // Save department fees
+      for (const [deptId, feeAmount] of Object.entries(departmentFees)) {
+        if (feeAmount && parseFloat(feeAmount) > 0) {
+          const { error } = await supabase
+            .from('department_fees')
+            .upsert({
+              department_id: deptId,
+              fee_amount: parseFloat(feeAmount),
+              currency: systemSettings.currency,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'department_id'
+            });
+
+          if (error) throw error;
+        }
+      }
+
+      toast.success('Settings saved successfully');
+      setShowSettingsDialog(false);
+      await logActivity('settings.update', { settings: systemSettings });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast.error('Failed to save settings');
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -1740,6 +1848,47 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
+        {/* System Settings Card */}
+        <Card className="shadow-lg border-blue-200">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-blue-600" />
+                  System Settings
+                </CardTitle>
+                <CardDescription>Configure consultation fees and system preferences</CardDescription>
+              </div>
+              <Button onClick={() => setShowSettingsDialog(true)} className="gap-2">
+                <Edit className="h-4 w-4" />
+                Manage Settings
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="p-4 border rounded-lg bg-blue-50/50">
+                <div className="text-sm text-muted-foreground mb-1">Default Consultation Fee</div>
+                <div className="text-2xl font-bold text-blue-600">
+                  {systemSettings.currency} {parseFloat(systemSettings.consultation_fee).toLocaleString()}
+                </div>
+              </div>
+              <div className="p-4 border rounded-lg bg-green-50/50">
+                <div className="text-sm text-muted-foreground mb-1">Hospital Name</div>
+                <div className="text-lg font-semibold text-green-700">
+                  {systemSettings.hospital_name}
+                </div>
+              </div>
+              <div className="p-4 border rounded-lg bg-purple-50/50">
+                <div className="text-sm text-muted-foreground mb-1">Department Fees</div>
+                <div className="text-lg font-semibold text-purple-700">
+                  {Object.keys(departmentFees).length} configured
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -1998,6 +2147,175 @@ export default function AdminDashboard() {
         </Dialog>
 
         {/* Service dialogs and CSV import moved to Medical Services page */}
+
+        {/* Settings Dialog */}
+        <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                System Settings
+              </DialogTitle>
+              <DialogDescription>
+                Configure consultation fees and system preferences
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4">
+              {/* General Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold border-b pb-2">General Settings</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="hospital_name">Hospital/Clinic Name</Label>
+                    <Input
+                      id="hospital_name"
+                      value={systemSettings.hospital_name}
+                      onChange={(e) => setSystemSettings({...systemSettings, hospital_name: e.target.value})}
+                      placeholder="Enter hospital name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="currency">Currency</Label>
+                    <Select 
+                      value={systemSettings.currency} 
+                      onValueChange={(value) => setSystemSettings({...systemSettings, currency: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="TSh">TSh (Tanzanian Shilling)</SelectItem>
+                        <SelectItem value="USD">USD (US Dollar)</SelectItem>
+                        <SelectItem value="EUR">EUR (Euro)</SelectItem>
+                        <SelectItem value="KES">KES (Kenyan Shilling)</SelectItem>
+                        <SelectItem value="UGX">UGX (Ugandan Shilling)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Default Consultation Fee */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold border-b pb-2">Default Consultation Fee</h3>
+                <div className="space-y-2">
+                  <Label htmlFor="consultation_fee">Default Fee Amount</Label>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-sm font-medium">{systemSettings.currency}</span>
+                    <Input
+                      id="consultation_fee"
+                      type="number"
+                      step="1000"
+                      value={systemSettings.consultation_fee}
+                      onChange={(e) => setSystemSettings({...systemSettings, consultation_fee: e.target.value})}
+                      placeholder="50000"
+                      className="flex-1"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This is the default consultation fee when no department-specific fee is set
+                  </p>
+                </div>
+              </div>
+
+              {/* Department-Specific Fees */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-lg font-semibold">Department-Specific Consultation Fees</h3>
+                  <Badge variant="secondary">{departments.length} departments</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Set custom consultation fees for specific departments. Leave blank to use the default fee.
+                </p>
+                
+                {departments.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/20">
+                    <Stethoscope className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No departments found</p>
+                    <p className="text-xs mt-1">Create departments first to set department-specific fees</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto border rounded-lg p-4">
+                    {departments.map((dept) => (
+                      <div key={dept.id} className="flex items-center gap-4 p-3 border rounded-lg bg-muted/20">
+                        <div className="flex-1">
+                          <div className="font-medium">{dept.name}</div>
+                          {dept.description && (
+                            <div className="text-xs text-muted-foreground">{dept.description}</div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 min-w-[200px]">
+                          <span className="text-sm font-medium">{systemSettings.currency}</span>
+                          <Input
+                            type="number"
+                            step="1000"
+                            value={departmentFees[dept.id] || ''}
+                            onChange={(e) => setDepartmentFees({
+                              ...departmentFees,
+                              [dept.id]: e.target.value
+                            })}
+                            placeholder={systemSettings.consultation_fee}
+                            className="w-32"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Enable/Disable Features */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold border-b pb-2">Feature Toggles</h3>
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <div className="font-medium">Enable Department-Specific Fees</div>
+                    <div className="text-xs text-muted-foreground">
+                      When enabled, appointments will use department-specific fees instead of the default
+                    </div>
+                  </div>
+                  <Checkbox
+                    checked={systemSettings.enable_appointment_fees === 'true'}
+                    onCheckedChange={(checked) => 
+                      setSystemSettings({
+                        ...systemSettings, 
+                        enable_appointment_fees: checked ? 'true' : 'false'
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowSettingsDialog(false)}
+                disabled={savingSettings}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={saveSettings}
+                disabled={savingSettings}
+                className="min-w-32"
+              >
+                {savingSettings ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    Save Settings
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
