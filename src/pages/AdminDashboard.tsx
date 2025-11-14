@@ -657,6 +657,173 @@ const PatientView: React.FC<PatientViewProps> = ({
   );
 };
 
+// Billing Analysis Component
+const BillingAnalysis = () => {
+  const [billingStats, setBillingStats] = useState({
+    totalRevenue: 0,
+    unpaidAmount: 0,
+    paidToday: 0,
+    invoiceCount: 0,
+    paidCount: 0,
+    unpaidCount: 0
+  });
+  const [recentInvoices, setRecentInvoices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchBillingData();
+  }, []);
+
+  const fetchBillingData = async () => {
+    try {
+      // Fetch all invoices
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          patient:patients(full_name)
+        `)
+        .order('invoice_date', { ascending: false })
+        .limit(10);
+
+      // Calculate statistics
+      const { data: allInvoices } = await supabase
+        .from('invoices')
+        .select('total_amount, paid_amount, status, invoice_date');
+
+      if (allInvoices) {
+        const totalRevenue = allInvoices
+          .filter(inv => inv.status === 'Paid')
+          .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+
+        const unpaidAmount = allInvoices
+          .filter(inv => inv.status !== 'Paid')
+          .reduce((sum, inv) => sum + (Number(inv.total_amount) - Number(inv.paid_amount || 0)), 0);
+
+        const today = new Date().toISOString().split('T')[0];
+        const paidToday = allInvoices
+          .filter(inv => inv.status === 'Paid' && inv.invoice_date?.startsWith(today))
+          .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+
+        setBillingStats({
+          totalRevenue,
+          unpaidAmount,
+          paidToday,
+          invoiceCount: allInvoices.length,
+          paidCount: allInvoices.filter(inv => inv.status === 'Paid').length,
+          unpaidCount: allInvoices.filter(inv => inv.status === 'Unpaid').length
+        });
+      }
+
+      setRecentInvoices(invoices || []);
+    } catch (error) {
+      console.error('Error fetching billing data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Grid */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-green-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-green-700">Total Revenue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              TSh {billingStats.totalRevenue.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {billingStats.paidCount} paid invoices
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-red-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-red-700">Unpaid Amount</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">
+              TSh {billingStats.unpaidAmount.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {billingStats.unpaidCount} unpaid invoices
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-blue-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-blue-700">Paid Today</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              TSh {billingStats.paidToday.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Today's collections
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Invoices */}
+      <div>
+        <h3 className="text-sm font-medium mb-3">Recent Invoices</h3>
+        <div className="border rounded-lg overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invoice #</TableHead>
+                <TableHead>Patient</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Paid</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {recentInvoices.map((invoice) => (
+                <TableRow key={invoice.id}>
+                  <TableCell className="font-mono text-sm">{invoice.invoice_number}</TableCell>
+                  <TableCell>{invoice.patient?.full_name || 'Unknown'}</TableCell>
+                  <TableCell>TSh {Number(invoice.total_amount).toLocaleString()}</TableCell>
+                  <TableCell>TSh {Number(invoice.paid_amount || 0).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        invoice.status === 'Paid' ? 'success' :
+                        invoice.status === 'Partially Paid' ? 'warning' :
+                        'destructive'
+                      }
+                    >
+                      {invoice.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function AdminDashboard() {
   interface User {
     id: string;
@@ -2069,6 +2236,28 @@ export default function AdminDashboard() {
         </Dialog>
 
         <ActivityLogsView />
+
+        {/* Billing Analysis */}
+        <Card className="shadow-lg border-green-200">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-green-600" />
+                  Billing Overview & Analysis
+                </CardTitle>
+                <CardDescription>Financial summary and billing statistics</CardDescription>
+              </div>
+              <Button onClick={() => window.location.href = '/billing'} variant="outline" size="sm">
+                <DollarSign className="h-4 w-4 mr-2" />
+                View Full Billing
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <BillingAnalysis />
+          </CardContent>
+        </Card>
 
         {/* Department Management */}
         <Card className="shadow-lg border-purple-200">

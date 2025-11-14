@@ -45,19 +45,6 @@ export default function BillingDashboard() {
   const [transactionId, setTransactionId] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('');
   const [mobilePaymentProcessing, setMobilePaymentProcessing] = useState<boolean>(false);
-  const [showFloatingButton, setShowFloatingButton] = useState(false);
-  const [scrollY, setScrollY] = useState(0);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrollY(window.scrollY);
-      // Show floating button when scrolled down more than 300px
-      setShowFloatingButton(window.scrollY > 300);
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
   const [rawInvoicesData, setRawInvoicesData] = useState<any[]>([]);
   const [rawPatientsData, setRawPatientsData] = useState<any[]>([]);
   const [rawInsuranceData, setRawInsuranceData] = useState<any[]>([]);
@@ -329,16 +316,25 @@ export default function BillingDashboard() {
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase.from('invoices').insert([invoiceData]);
+    const { data: createdInvoice, error } = await supabase
+      .from('invoices')
+      .insert([invoiceData])
+      .select()
+      .single();
 
     if (error) {
       console.error('Error creating invoice:', error);
       toast.error(`Failed to create invoice: ${error.message}`);
     } else {
-      toast.success(`Invoice created successfully for TSh${calculatedCost.toFixed(2)}`);
+      console.log('Invoice created successfully:', createdInvoice);
+      toast.success(`Invoice ${createdInvoice.invoice_number} created for TSh${calculatedCost.toFixed(2)}`);
       setDialogOpen(false);
       setSelectedPatientId('');
-      fetchData(); // Refresh data
+      
+      // Wait a moment then refresh to ensure data is committed
+      setTimeout(() => {
+        fetchData();
+      }, 500);
     }
   };
 
@@ -780,54 +776,6 @@ export default function BillingDashboard() {
             </div>
           </div>
         )}
-        {/* Floating Payment Button */}
-        <div className={`fixed bottom-4 right-4 md:bottom-6 md:right-6 z-40 transition-all duration-300 ease-in-out transform ${
-          (stats.unpaid > 0 || stats.partiallyPaid > 0)
-            ? 'translate-y-0 opacity-100 scale-100'
-            : 'translate-y-20 opacity-0 scale-95 pointer-events-none'
-        }`}>
-          <div className="relative">
-            {/* Pulse animation ring */}
-            <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-20"></div>
-
-            {/* Main button */}
-            <Button
-              size="lg"
-              className="relative bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-2xl hover:shadow-green-500/25 transition-all duration-200 transform hover:scale-105 border-0 h-12 px-4 rounded-full w-auto"
-              onClick={() => {
-                // Find first unpaid patient with invoices
-                const unpaidPatient = invoices.find(patient => patient.status !== 'Paid');
-                if (unpaidPatient) {
-                  const unpaidInvoice = unpaidPatient.invoices.find(inv => inv.status !== 'Paid');
-                  if (unpaidInvoice) {
-                    handleOpenPaymentDialog(unpaidInvoice);
-                  } else {
-                    toast.error('No unpaid invoices found');
-                  }
-                } else {
-                  toast.info('All patients are paid up! 🎉');
-                }
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <div className="bg-white/20 rounded-full p-1.5">
-                  <CreditCard className="h-4 w-4" />
-                </div>
-                <div className="text-left">
-                  <div className="font-semibold text-sm">Make Payment</div>
-                  <div className="text-xs opacity-90 hidden sm:block">Quick payment</div>
-                </div>
-              </div>
-            </Button>
-
-            {/* Floating badge showing unpaid count */}
-            {stats.unpaid > 0 && (
-              <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 md:h-6 md:w-6 flex items-center justify-center animate-bounce">
-                <span className="text-xs">{stats.unpaid}</span>
-              </div>
-            )}
-          </div>
-        </div>
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-destructive/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
