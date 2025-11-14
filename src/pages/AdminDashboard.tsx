@@ -52,6 +52,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { supabaseAdmin } from '@/integrations/supabase/admin';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/utils';
+import AdminReports from '@/components/AdminReports';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
 
@@ -1940,6 +1941,20 @@ export default function AdminDashboard() {
               onClosePatientView={handleClosePatientView}
               isLoadingRecords={isLoadingRecords}
             />
+          </CardContent>
+        </Card>
+
+        {/* Reports and Settings Section */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Reports & Settings
+            </CardTitle>
+            <CardDescription>Generate reports and manage system settings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AdminReports />
           </CardContent>
         </Card>
 
