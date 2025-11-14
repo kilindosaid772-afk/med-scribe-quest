@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS public.lab_tests (
   patient_id UUID NOT NULL REFERENCES public.patients(id) ON DELETE CASCADE,
   test_name TEXT NOT NULL,
   test_type TEXT,
-  status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'In Progress', 'Completed', 'Cancelled')),
-  priority TEXT DEFAULT 'Routine' CHECK (priority IN ('Routine', 'Urgent', 'STAT')),
+  status TEXT DEFAULT 'Pending',
+  priority TEXT DEFAULT 'Routine',
   ordered_date TIMESTAMPTZ DEFAULT NOW(),
   completed_date TIMESTAMPTZ,
   ordered_by_doctor_id UUID REFERENCES public.profiles(id),
@@ -100,6 +100,19 @@ CREATE POLICY "Lab techs can manage lab results"
       AND user_roles.role IN ('admin', 'lab_tech')
     )
   );
+
+-- Drop existing constraints if they exist
+ALTER TABLE public.lab_tests DROP CONSTRAINT IF EXISTS lab_tests_status_check;
+ALTER TABLE public.lab_tests DROP CONSTRAINT IF EXISTS lab_tests_priority_check;
+
+-- Add check constraints with correct values
+ALTER TABLE public.lab_tests 
+  ADD CONSTRAINT lab_tests_status_check 
+  CHECK (status IN ('Pending', 'In Progress', 'Completed', 'Cancelled'));
+
+ALTER TABLE public.lab_tests 
+  ADD CONSTRAINT lab_tests_priority_check 
+  CHECK (priority IN ('Routine', 'Urgent', 'STAT'));
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_lab_tests_patient_id ON public.lab_tests(patient_id);
