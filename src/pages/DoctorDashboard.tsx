@@ -89,7 +89,7 @@ export default function DoctorDashboard() {
   // Lab test order form state
   const [labTestForm, setLabTestForm] = useState({
     selectedTests: [] as string[],
-    priority: 'Routine',
+    priority: 'Normal',
     notes: ''
   });
   
@@ -845,7 +845,7 @@ export default function DoctorDashboard() {
     setSelectedVisit(visit);
     setLabTestForm({
       selectedTests: [],
-      priority: 'Routine',
+      priority: 'Normal',
       notes: ''
     });
     
@@ -941,12 +941,16 @@ export default function DoctorDashboard() {
     }
 
     try {
+      // Combine notes and treatment plan into doctor_notes field
+      const combinedNotes = consultationForm.treatment_plan 
+        ? `${consultationForm.notes}\n\nTreatment Plan:\n${consultationForm.treatment_plan}`
+        : consultationForm.notes;
+
       const { error } = await supabase
         .from('patient_visits')
         .update({
           doctor_diagnosis: consultationForm.diagnosis,
-          doctor_notes: consultationForm.notes,
-          doctor_treatment_plan: consultationForm.treatment_plan,
+          doctor_notes: combinedNotes,
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedVisit.id);
@@ -959,7 +963,7 @@ export default function DoctorDashboard() {
       // Update local state
       setPendingVisits(prev => prev.map(v => 
         v.id === selectedVisit.id 
-          ? { ...v, doctor_diagnosis: consultationForm.diagnosis, doctor_notes: consultationForm.notes }
+          ? { ...v, doctor_diagnosis: consultationForm.diagnosis, doctor_notes: combinedNotes }
           : v
       ));
     } catch (error) {
@@ -1028,7 +1032,7 @@ export default function DoctorDashboard() {
       // Reset form
       setLabTestForm({
         selectedTests: [],
-        priority: 'Routine',
+        priority: 'Normal',
         notes: ''
       });
       
@@ -1050,7 +1054,7 @@ export default function DoctorDashboard() {
     // Validate all selected medications have required fields
     for (const medId of selectedMedications) {
       const form = prescriptionForms[medId];
-      if (!form || !form.dosage || !form.frequency || !form.duration) {
+      if (!form || !form.dosage || !form.frequency || !form.duration || !form.quantity) {
         toast.error('Please fill in all required fields for all selected medications');
         return;
       }
@@ -1061,6 +1065,12 @@ export default function DoctorDashboard() {
       const prescriptionsToInsert = selectedMedications.map(medId => {
         const form = prescriptionForms[medId];
         const med = availableMedications.find(m => m.id === medId);
+        
+        const quantity = parseInt(form.quantity);
+        if (isNaN(quantity) || quantity <= 0) {
+          throw new Error(`Invalid quantity for ${med?.name || 'medication'}`);
+        }
+        
         return {
           patient_id: selectedVisit.patient_id,
           doctor_id: user?.id,
@@ -1069,7 +1079,7 @@ export default function DoctorDashboard() {
           dosage: form.dosage,
           frequency: form.frequency,
           duration: form.duration,
-          quantity: parseInt(form.quantity) || 1,
+          quantity: quantity,
           instructions: form.instructions || null,
           status: 'Pending',
           prescribed_date: new Date().toISOString()
@@ -2768,7 +2778,7 @@ export default function DoctorDashboard() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Routine">Routine</SelectItem>
+                  <SelectItem value="Normal">Normal</SelectItem>
                   <SelectItem value="Urgent">Urgent</SelectItem>
                   <SelectItem value="STAT">STAT (Immediate)</SelectItem>
                 </SelectContent>
