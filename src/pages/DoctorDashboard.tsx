@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X } from 'lucide-react';
+import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye } from 'lucide-react';
 import { format, isAfter, isToday, parseISO, isBefore, addMinutes, addDays } from 'date-fns';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -1766,14 +1766,14 @@ export default function DoctorDashboard() {
         </Dialog>
 
         {/* Lab Workflow Queue - Highlighted Section */}
-        {pendingVisits.some(v => v.lab_completed_at && !v.lab_results_reviewed) && (
+        {pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed && v.doctor_status !== 'Completed').length > 0 && (
           <Card className="shadow-lg border-green-300 bg-green-50/30">
             <CardHeader className="bg-green-100/50">
               <CardTitle className="flex items-center gap-2 text-green-800">
                 <FlaskConical className="h-5 w-5" />
                 Lab Results Queue
                 <Badge variant="default" className="bg-green-600">
-                  {pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed).length} patient{pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed).length !== 1 ? 's' : ''}
+                  {pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed && v.doctor_status !== 'Completed').length} patient{pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed && v.doctor_status !== 'Completed').length !== 1 ? 's' : ''}
                 </Badge>
               </CardTitle>
               <CardDescription className="text-green-700">
@@ -1781,229 +1781,112 @@ export default function DoctorDashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {pendingVisits
-                  .filter(visit => visit.lab_completed_at && !visit.lab_results_reviewed)
-                  .map((visit) => (
-                  <div key={visit.id} className="p-4 border rounded-lg bg-white border-green-200">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-lg text-green-800">{visit.patient?.full_name}</h4>
-                          <Badge variant="default" className="bg-green-100 text-green-800">
-                            Lab → Doctor
-                          </Badge>
-                          {visit.prescriptions && visit.prescriptions.length > 0 && (
-                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                              <Pill className="h-3 w-3 mr-1" />
-                              Has Rx ({visit.prescriptions.length})
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          DOB: {format(new Date(visit.patient?.date_of_birth), 'MMM dd, yyyy')} •
-                          Gender: {visit.patient?.gender} •
-                          Blood: {visit.patient?.blood_group || 'N/A'}
-                        </p>
-
-                        <div className="text-sm bg-green-50 p-2 rounded border border-green-200">
-                          <strong className="text-green-800">Lab Work Completed:</strong>{' '}
-                          {format(new Date(visit.lab_completed_at), 'MMM dd, yyyy HH:mm')}
-                        </div>
-
-                        {visit.patient?.medical_history && (
-                          <p className="text-sm"><strong>History:</strong> {visit.patient.medical_history}</p>
-                        )}
-                        {visit.patient?.allergies && (
-                          <p className="text-sm text-red-600"><strong>Allergies:</strong> {visit.patient.allergies}</p>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <Badge variant="outline" className="flex items-center gap-1 bg-blue-50">
-                          <Clock className="h-3 w-3" />
-                          {format(new Date(visit.arrival_time || visit.created_at), 'HH:mm')}
-                        </Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          Waiting
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {/* Lab Results for this patient */}
-                    {(visit.labTests && visit.labTests.length > 0) || (visit.allCompletedLabTests && visit.allCompletedLabTests.length > 0) ? (
-                      <div className="text-sm bg-green-50 p-3 rounded border border-green-200">
-                        <strong className="text-green-800 block mb-2">Available Lab Results:</strong>
-                        <div className="space-y-2 max-h-32 overflow-y-auto">
-                          {visit.labTests.concat(visit.allCompletedLabTests)
-                            .filter((test: any, index: number, self: any[]) => 
-                              index === self.findIndex((t: any) => t.id === test.id)
-                            )
-                            .map((test: any) => (
-                            <div key={test.id} className="bg-white p-2 rounded border shadow-sm">
-                              <div className="font-medium text-sm flex items-center justify-between">
-                                <span>{test.test_name}</span>
-                                <Badge variant={test.status === 'Completed' ? 'default' : 'outline'} className="text-xs">
-                                  {test.status}
-                                </Badge>
-                              </div>
-                              {test.lab_results && test.lab_results.length > 0 && (
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {test.lab_results.map((result: any) => (
-                                    <span key={result.id} className="mr-2">
-                                      {result.result_value} {result.unit}
-                                      {result.abnormal_flag && <span className="text-red-600 ml-1">⚠</span>}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {/* Prescriptions for this patient */}
-                    {visit.prescriptions && visit.prescriptions.length > 0 ? (
-                      <div className="text-sm bg-blue-50 p-3 rounded border border-blue-200">
-                        <strong className="text-blue-800 block mb-2 flex items-center gap-2">
-                          <Pill className="h-4 w-4" />
-                          Active Prescriptions:
-                        </strong>
-                        <div className="space-y-2 max-h-32 overflow-y-auto">
-                          {visit.prescriptions.map((prescription: any) => (
-                            <div key={prescription.id} className="bg-white p-3 rounded border shadow-sm">
-                              <div className="flex justify-between items-start mb-2">
-                                <div className="font-medium text-sm text-blue-800">
-                                  {prescription.medication_name}
-                                  {prescription.medications && (
-                                    <span className="text-xs text-muted-foreground ml-1">
-                                      ({prescription.medications.strength} {prescription.medications.dosage_form})
-                                    </span>
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Lab Tests</TableHead>
+                      <TableHead>Completed</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pendingVisits
+                      .filter(visit => visit.lab_completed_at && !visit.lab_results_reviewed && visit.doctor_status !== 'Completed')
+                      .map((visit) => {
+                        const labTestCount = (visit.labTests?.length || 0) + (visit.allCompletedLabTests?.length || 0);
+                        const hasAbnormal = [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])]
+                          .some((test: any) => test.lab_results?.some((r: any) => r.abnormal_flag));
+                        
+                        return (
+                          <TableRow key={visit.id} className="hover:bg-green-50">
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{visit.patient?.full_name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {visit.patient?.gender} • {visit.patient?.blood_group || 'N/A'}
+                                  {visit.patient?.allergies && (
+                                    <span className="text-red-600 ml-2">⚠ Allergies</span>
                                   )}
                                 </div>
-                                <Badge
-                                  variant={prescription.status === 'Active' ? 'default' : 'secondary'}
-                                  className="text-xs"
-                                >
-                                  {prescription.status || 'Pending'}
-                                </Badge>
                               </div>
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                <div><strong>Dosage:</strong> {prescription.dosage}</div>
-                                <div><strong>Frequency:</strong> {prescription.frequency}</div>
-                                <div><strong>Duration:</strong> {prescription.duration}</div>
-                                <div><strong>Quantity:</strong> {prescription.quantity}</div>
-                                {prescription.instructions && (
-                                  <div><strong>Instructions:</strong> {prescription.instructions}</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="bg-green-50">
+                                  {labTestCount} test{labTestCount !== 1 ? 's' : ''}
+                                </Badge>
+                                {hasAbnormal && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    Abnormal
+                                  </Badge>
                                 )}
                               </div>
-                              <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
-                                Prescribed: {format(new Date(prescription.prescribed_date), 'MMM dd, yyyy HH:mm')}
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm">
+                                {format(new Date(visit.lab_completed_at), 'MMM dd, HH:mm')}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {/* Action Buttons for Lab Results Queue */}
-                    <div className="flex flex-wrap gap-2 pt-3 border-t border-green-200">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => handleStartConsultation(visit)}
-                        className="flex items-center gap-2"
-                      >
-                        <Activity className="h-4 w-4" />
-                        Review & Diagnose
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleWritePrescription(visit)}
-                        className="flex items-center gap-2"
-                      >
-                        <Pill className="h-4 w-4" />
-                        Write Prescription
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOrderLabTests(visit)}
-                        className="flex items-center gap-2"
-                      >
-                        <FlaskConical className="h-4 w-4" />
-                        Order More Tests
-                      </Button>
-                      {visit.labTests && visit.labTests.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewLabResults(visit.labTests, visit)}
-                          className="flex items-center gap-2"
-                        >
-                          <FlaskConical className="h-4 w-4" />
-                          View Lab Results ({visit.labTests.length})
-                        </Button>
-                      )}
-                      {visit.prescriptions && visit.prescriptions.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewPrescriptions(visit.prescriptions)}
-                          className="flex items-center gap-2"
-                        >
-                          <Pill className="h-4 w-4" />
-                          View Prescriptions ({visit.prescriptions.length})
-                        </Button>
-                      )}
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={async () => {
-                          try {
-                            const { error } = await supabase
-                              .from('patient_visits')
-                              .update({
-                                doctor_status: 'Completed',
-                                doctor_completed_at: new Date().toISOString(),
-                                current_stage: 'pharmacy',
-                                pharmacy_status: 'Pending',
-                                updated_at: new Date().toISOString()
-                              })
-                              .eq('id', visit.id);
-
-                            if (error) throw error;
-
-                            toast.success('Consultation completed. Patient sent to pharmacy.');
-                            setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
-                          } catch (error: any) {
-                            console.error('Error completing consultation:', error);
-                            toast.error('Failed to complete consultation');
-                          }
-                        }}
-                        className="flex items-center gap-2 ml-auto bg-green-600 hover:bg-green-700"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                        Send to Pharmacy
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="default" className="bg-green-100 text-green-800">
+                                Pending Review
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleViewLabResults(
+                                    [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])],
+                                    visit
+                                  )}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  View Results
+                                </Button>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleStartConsultation(visit)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Activity className="h-3 w-3" />
+                                  Review
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    {pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed && v.doctor_status !== 'Completed').length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                          <FlaskConical className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                          <p>No lab results waiting for review</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
-        )}
+          )}
 
         {/* Regular Pending Consultations (includes new patients and reviewed lab patients) */}
-        {pendingVisits.filter(v => !v.lab_completed_at || v.lab_results_reviewed).length > 0 && (
+        {pendingVisits.filter(v => (!v.lab_completed_at || v.lab_results_reviewed) && v.doctor_status !== 'Completed').length > 0 && (
           <Card className="shadow-lg border-blue-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-blue-600" />
                 Patients Waiting for Consultation
                 <Badge variant="secondary" className="ml-auto">
-                  {pendingVisits.filter(v => !v.lab_completed_at || v.lab_results_reviewed).length} patient{pendingVisits.filter(v => !v.lab_completed_at || v.lab_results_reviewed).length !== 1 ? 's' : ''}
+                  {pendingVisits.filter(v => (!v.lab_completed_at || v.lab_results_reviewed) && v.doctor_status !== 'Completed').length} patient{pendingVisits.filter(v => (!v.lab_completed_at || v.lab_results_reviewed) && v.doctor_status !== 'Completed').length !== 1 ? 's' : ''}
                 </Badge>
               </CardTitle>
               <CardDescription>Patients ready for doctor consultation (includes reviewed lab results)</CardDescription>
@@ -2011,7 +1894,7 @@ export default function DoctorDashboard() {
             <CardContent>
               <div className="space-y-4">
                 {pendingVisits
-                  .filter(visit => !visit.lab_completed_at || visit.lab_results_reviewed)
+                  .filter(visit => (!visit.lab_completed_at || visit.lab_results_reviewed) && visit.doctor_status !== 'Completed')
                   .map((visit) => (
                   <div key={visit.id} className="p-4 border rounded-lg bg-blue-50/50 space-y-3">
                     <div className="flex items-start justify-between mb-4">
