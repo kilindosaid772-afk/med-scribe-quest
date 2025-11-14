@@ -597,7 +597,17 @@ export default function LabDashboard() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Lab Tests</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <FlaskConical className="h-5 w-5" />
+                  Lab Tests Queue
+                  <Badge variant="default" className="bg-blue-600">
+                    {Object.entries(groupedTests).filter(([_, tests]) => 
+                      tests.some(t => t.status === 'Pending' || t.status === 'In Progress')
+                    ).length} patient{Object.entries(groupedTests).filter(([_, tests]) => 
+                      tests.some(t => t.status === 'Pending' || t.status === 'In Progress')
+                    ).length !== 1 ? 's' : ''}
+                  </Badge>
+                </CardTitle>
                 <CardDescription>Manage and process laboratory tests</CardDescription>
               </div>
               <div className="flex gap-2">
@@ -621,88 +631,125 @@ export default function LabDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Patient</TableHead>
-                    <TableHead>Tests</TableHead>
-                    <TableHead>Pending</TableHead>
-                    <TableHead>In Progress</TableHead>
-                    <TableHead>Completed</TableHead>
-                    <TableHead>Ordered Date</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>Total Tests</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Ordered</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {Object.entries(groupedTests).map(([patientId, tests]) => {
-                    const pendingCount = tests.filter(t => t.status === 'Pending').length;
-                    const inProgressCount = tests.filter(t => t.status === 'In Progress').length;
-                    const completedCount = tests.filter(t => t.status === 'Completed').length;
-                    const hasActiveTests = pendingCount > 0 || inProgressCount > 0;
-                    const latestTest = tests.sort((a, b) => 
-                      new Date(b.ordered_date).getTime() - new Date(a.ordered_date).getTime()
-                    )[0];
+                  {Object.entries(groupedTests)
+                    .filter(([_, tests]) => tests.some(t => t.status === 'Pending' || t.status === 'In Progress'))
+                    .map(([patientId, tests]) => {
+                      const pendingCount = tests.filter(t => t.status === 'Pending').length;
+                      const inProgressCount = tests.filter(t => t.status === 'In Progress').length;
+                      const completedCount = tests.filter(t => t.status === 'Completed').length;
+                      const hasSTAT = tests.some(t => t.priority === 'STAT');
+                      const hasUrgent = tests.some(t => t.priority === 'Urgent');
+                      const latestTest = tests.sort((a, b) => 
+                        new Date(b.ordered_date).getTime() - new Date(a.ordered_date).getTime()
+                      )[0];
 
-                    return (
-                      <TableRow key={patientId} className={!hasActiveTests ? 'opacity-60' : ''}>
-                        <TableCell className="font-medium">
-                          <div>
-                            <div>{latestTest.patient?.full_name || 'Unknown'}</div>
-                            <div className="text-xs text-gray-500">{latestTest.patient?.phone}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {tests.map(test => (
-                              <div key={test.id} className="text-sm flex items-center gap-2">
-                                <span>{test.test_name}</span>
-                                <Badge
-                                  variant={
-                                    test.priority === 'STAT' ? 'destructive' :
-                                    test.priority === 'Urgent' ? 'default' :
-                                    'secondary'
-                                  }
-                                  className="text-xs"
-                                >
-                                  {test.priority}
+                      return (
+                        <TableRow key={patientId} className="hover:bg-blue-50/50">
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{latestTest.patient?.full_name || 'Unknown'}</div>
+                              <div className="text-xs text-muted-foreground">{latestTest.patient?.phone}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="bg-blue-50">
+                                {tests.length} test{tests.length !== 1 ? 's' : ''}
+                              </Badge>
+                              {pendingCount > 0 && (
+                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 text-xs">
+                                  {pendingCount} pending
                                 </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-yellow-50">
-                            {pendingCount}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-blue-50">
-                            {inProgressCount}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-green-50">
-                            {completedCount}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(latestTest.ordered_date), 'MMM dd, yyyy')}
-                        </TableCell>
-                        <TableCell>
-                          {hasActiveTests && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleBatchTestSubmit(patientId)}
-                              className="w-full"
-                            >
-                              Submit Results ({pendingCount + inProgressCount})
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                              )}
+                              {inProgressCount > 0 && (
+                                <Badge variant="outline" className="bg-blue-100 text-blue-700 text-xs">
+                                  {inProgressCount} in progress
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {hasSTAT ? (
+                              <Badge variant="destructive" className="text-xs">
+                                STAT
+                              </Badge>
+                            ) : hasUrgent ? (
+                              <Badge variant="warning" className="text-xs">
+                                Urgent
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">
+                                Normal
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {inProgressCount > 0 ? (
+                              <Badge variant="info" className="bg-blue-100 text-blue-800">
+                                In Progress
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-yellow-50 text-yellow-800">
+                                Pending
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {format(new Date(latestTest.ordered_date), 'MMM dd, HH:mm')}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedPatientTests(tests);
+                                  setBatchDialogOpen(true);
+                                }}
+                                className="flex items-center gap-1"
+                              >
+                                <FlaskConical className="h-3 w-3" />
+                                View Tests
+                              </Button>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleBatchTestSubmit(patientId)}
+                                className="flex items-center gap-1"
+                              >
+                                <CheckCircle className="h-3 w-3" />
+                                Submit Results
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  {Object.entries(groupedTests).filter(([_, tests]) => 
+                    tests.some(t => t.status === 'Pending' || t.status === 'In Progress')
+                  ).length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        <FlaskConical className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                        <p>No pending lab tests</p>
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>

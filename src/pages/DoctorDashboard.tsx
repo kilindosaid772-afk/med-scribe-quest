@@ -951,21 +951,21 @@ export default function DoctorDashboard() {
         .update({
           doctor_diagnosis: consultationForm.diagnosis,
           doctor_notes: combinedNotes,
+          doctor_status: 'Completed',
+          doctor_completed_at: new Date().toISOString(),
+          current_stage: 'pharmacy',
+          pharmacy_status: 'Pending',
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedVisit.id);
 
       if (error) throw error;
 
-      toast.success('Consultation notes saved');
+      toast.success('Consultation completed. Patient sent to pharmacy.');
       setShowConsultationDialog(false);
       
-      // Update local state
-      setPendingVisits(prev => prev.map(v => 
-        v.id === selectedVisit.id 
-          ? { ...v, doctor_diagnosis: consultationForm.diagnosis, doctor_notes: combinedNotes }
-          : v
-      ));
+      // Remove from pending visits
+      setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
     } catch (error) {
       console.error('Error saving consultation:', error);
       toast.error('Failed to save consultation notes');
