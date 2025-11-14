@@ -2,17 +2,19 @@
 -- Updated with proper UUID format for database IDs
 -- Run these INSERT statements in your Supabase SQL editor or database
 
--- 1. First, insert sample patients
+-- 1. First, insert sample patients (using ON CONFLICT to avoid duplicates)
 INSERT INTO patients (id, full_name, phone, insurance_company_id, insurance_policy_number, status, date_of_birth, created_at, updated_at) VALUES
 ('550e8400-e29b-41d4-a716-446655440001', 'John Doe', '+255712345678', NULL, NULL, 'Active', '1985-03-15', NOW(), NOW()),
 ('550e8400-e29b-41d4-a716-446655440002', 'Jane Smith', '+255718765432', NULL, NULL, 'Active', '1990-07-22', NOW(), NOW()),
 ('550e8400-e29b-41d4-a716-446655440003', 'Michael Johnson', '+255714567890', NULL, NULL, 'Active', '1978-11-08', NOW(), NOW()),
-('550e8400-e29b-41d4-a716-446655440004', 'Sarah Wilson', '+255719876543', NULL, NULL, 'Active', '1992-01-30', NOW(), NOW());
+('550e8400-e29b-41d4-a716-446655440004', 'Sarah Wilson', '+255719876543', NULL, NULL, 'Active', '1992-01-30', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- 2. Insert sample insurance companies
 INSERT INTO insurance_companies (id, name, status, created_at, updated_at) VALUES
 ('660e8400-e29b-41d4-a716-446655440001', 'AAR Insurance', 'Active', NOW(), NOW()),
-('660e8400-e29b-41d4-a716-446655440002', 'Jubilee Insurance', 'Active', NOW(), NOW());
+('660e8400-e29b-41d4-a716-446655440002', 'Jubilee Insurance', 'Active', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- 3. Insert sample invoices with different statuses and amounts
 INSERT INTO invoices (id, invoice_number, patient_id, total_amount, tax, paid_amount, status, due_date, invoice_date, notes, created_at, updated_at) VALUES
@@ -20,7 +22,8 @@ INSERT INTO invoices (id, invoice_number, patient_id, total_amount, tax, paid_am
 ('770e8400-e29b-41d4-a716-446655440002', 'INV-002', '550e8400-e29b-41d4-a716-446655440002', 250000.00, 25000.00, 100000.00, 'Partially Paid', '2024-11-20', '2024-10-20', 'Surgery and medication', NOW(), NOW()),
 ('770e8400-e29b-41d4-a716-446655440003', 'INV-003', '550e8400-e29b-41d4-a716-446655440003', 80000.00, 8000.00, 88000.00, 'Paid', '2024-11-10', '2024-10-10', 'Routine checkup', NOW(), NOW()),
 ('770e8400-e29b-41d4-a716-446655440004', 'INV-004', '550e8400-e29b-41d4-a716-446655440004', 120000.00, 12000.00, 60000.00, 'Partially Paid', '2024-11-25', '2024-10-25', 'Emergency treatment', NOW(), NOW()),
-('770e8400-e29b-41d4-a716-446655440005', 'INV-005', '550e8400-e29b-41d4-a716-446655440001', 95000.00, 9500.00, 0.00, 'Unpaid', '2024-12-01', '2024-11-01', 'Follow-up consultation', NOW(), NOW());
+('770e8400-e29b-41d4-a716-446655440005', 'INV-005', '550e8400-e29b-41d4-a716-446655440001', 95000.00, 9500.00, 0.00, 'Unpaid', '2024-12-01', '2024-11-01', 'Follow-up consultation', NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- 4. Insert sample payments for testing
 INSERT INTO payments (id, invoice_id, amount, payment_method, reference_number, status, notes, created_at) VALUES
@@ -66,11 +69,11 @@ INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, to
 -- Insert sample lab tests for workflow testing
 INSERT INTO lab_tests (id, patient_id, test_name, test_type, priority, status, ordered_date, description, notes, ordered_by_doctor_id) VALUES
 -- Lab test for Patient 1 (in lab stage)
-('cc0e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', 'Complete Blood Count', 'Blood Test', 'Normal', 'In Progress', '2024-10-15T08:00:00Z', 'CBC ordered by doctor for routine check', 'Check for anemia and infection', 'doctor-123'),
+('cc0e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', 'Complete Blood Count', 'Blood Test', 'Routine', 'In Progress', '2024-10-15T08:00:00Z', 'CBC ordered by doctor for routine check', 'Check for anemia and infection', 'doctor-123'),
 -- Lab test for Patient 1 (completed - should trigger doctor workflow)
-('cc0e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440001', 'Blood Glucose', 'Blood Test', 'Normal', 'Completed', '2024-10-15T08:30:00Z', 'Fasting blood glucose test', 'Diabetes screening', 'doctor-123'),
+('cc0e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440001', 'Blood Glucose', 'Blood Test', 'Routine', 'Completed', '2024-10-15T08:30:00Z', 'Fasting blood glucose test', 'Diabetes screening', 'doctor-123'),
 -- Lab test for Patient 3 (in doctor stage - already completed)
-('cc0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', 'Lipid Profile', 'Blood Test', 'Normal', 'Completed', '2024-10-10T09:00:00Z', 'Cholesterol and lipid panel', 'Cardiac risk assessment', 'doctor-456');
+('cc0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', 'Lipid Profile', 'Blood Test', 'Routine', 'Completed', '2024-10-10T09:00:00Z', 'Cholesterol and lipid panel', 'Cardiac risk assessment', 'doctor-456');
 
 -- Insert sample lab results for completed tests
 INSERT INTO lab_results (id, lab_test_id, result_value, reference_range, unit, abnormal_flag, notes) VALUES
