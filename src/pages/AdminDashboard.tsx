@@ -823,14 +823,14 @@ const BillingAnalysis = () => {
 
         <Card className="border-blue-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-blue-700">Paid Today</CardTitle>
+            <CardTitle className="text-sm font-medium text-blue-700">Paid ({getFilterLabel()})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
               TSh {billingStats.paidToday.toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Today's collections
+              Collections for {getFilterLabel().toLowerCase()}
             </p>
           </CardContent>
         </Card>
