@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
+import { DispenseDialog } from '@/components/DispenseDialog';
 
 interface Medication {
   id: string;
@@ -215,7 +216,56 @@ export default function PharmacyDashboard() {
     };
   }, [user]);
 
-  const handleDispensePrescription = async (prescriptionId: string, patientId: string) => {
+  const handleOpenDispenseDialog = (prescription: any) => {
+    setSelectedPrescriptionForDispense(prescription);
+    setDispenseDialogOpen(true);
+  };
+
+  const handleDispenseWithDetails = async (dispenseData: any) => {
+    if (!selectedPrescriptionForDispense || !user?.id) {
+      toast.error('Missing prescription or user information');
+      return;
+    }
+
+    const prescriptionId = selectedPrescriptionForDispense.id;
+    const patientId = selectedPrescriptionForDispense.patient_id;
+
+    setLoadingStates(prev => ({ ...prev, [prescriptionId]: true }));
+
+    try {
+      // If medication is not in stock, mark prescription as pending with notes
+      if (!dispenseData.in_stock) {
+        const { error } = await supabase
+          .from('prescriptions')
+          .update({
+            status: 'Pending',
+            pharmacist_notes: `OUT OF STOCK: ${dispenseData.out_of_stock_reason}. Alternative: ${dispenseData.alternative_medication || 'None suggested'}`,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', prescriptionId);
+
+        if (error) throw error;
+
+        toast.warning('Medication marked as out of stock. Prescription remains pending.');
+        setDispenseDialogOpen(false);
+        setSelectedPrescriptionForDispense(null);
+        loadPharmacyData(false);
+        return;
+      }
+
+      // Continue with normal dispensing
+      await handleDispensePrescription(prescriptionId, patientId, dispenseData);
+      setDispenseDialogOpen(false);
+      setSelectedPrescriptionForDispense(null);
+    } catch (error) {
+      console.error('Dispense error:', error);
+      toast.error('Failed to process dispensing');
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [prescriptionId]: false }));
+    }
+  };
+
+  const handleDispensePrescription = async (prescriptionId: string, patientId: string, dispenseData?: any) => {
     if (!user?.id) {
       toast.error('User not authenticated');
       return;
@@ -279,15 +329,24 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Update prescription status
+      // Update prescription status with dispense details
+      const updateData: any = {
+        status: 'Dispensed',
+        dispensed_date: new Date().toISOString(),
+        dispensed_by: user.id,
+        updated_at: new Date().toISOString()
+      };
+
+      if (dispenseData) {
+        updateData.actual_dosage = dispenseData.actual_dosage;
+        updateData.dosage_mg = dispenseData.dosage_mg;
+        updateData.quantity_dispensed = dispenseData.quantity_dispensed;
+        updateData.pharmacist_notes = dispenseData.pharmacist_notes;
+      }
+
       const { error: updateError } = await supabase
         .from('prescriptions')
-        .update({
-          status: 'Dispensed',
-          dispensed_date: new Date().toISOString(),
-          dispensed_by: user.id,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', prescriptionId);
 
       if (updateError) {
@@ -1023,9 +1082,7 @@ export default function PharmacyDashboard() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() =>
-                                    handleDispensePrescription(prescription.id, prescription.patient_id)
-                                  }
+                                  onClick={() => handleOpenDispenseDialog(prescription)}
                                   disabled={loadingStates[prescription.id]}
                                 >
                                   {loadingStates[prescription.id] ? (
@@ -1341,6 +1398,18 @@ export default function PharmacyDashboard() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Dispense Dialog */}
+        {selectedPrescriptionForDispense && (
+          <DispenseDialog
+            open={dispenseDialogOpen}
+            onOpenChange={setDispenseDialogOpen}
+            prescription={selectedPrescriptionForDispense}
+            medication={medications.find(m => m.id === selectedPrescriptionForDispense.medication_id)}
+            onDispense={handleDispenseWithDetails}
+            loading={loadingStates[selectedPrescriptionForDispense.id]}
+          />
+        )}
       </div>
     </DashboardLayout>
   );
