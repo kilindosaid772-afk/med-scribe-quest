@@ -67,13 +67,14 @@ INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, to
 ('bb0e8400-e29b-41d4-a716-446655440011', '770e8400-e29b-41d4-a716-446655440005', 'Specialist Referral', 1, 30000.00, 30000.00, NOW());
 
 -- Insert sample lab tests for workflow testing
-INSERT INTO lab_tests (id, patient_id, test_name, test_type, priority, status, ordered_date, description, notes, ordered_by_doctor_id) VALUES
+INSERT INTO lab_tests (id, patient_id, test_name, test_type, description, status, priority, ordered_date, notes, ordered_by_doctor_id) VALUES
 -- Lab test for Patient 1 (in lab stage)
-('cc0e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', 'Complete Blood Count', 'Blood Test', 'Routine', 'In Progress', '2024-10-15T08:00:00Z', 'CBC ordered by doctor for routine check', 'Check for anemia and infection', 'doctor-123'),
+('cc0e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', 'Complete Blood Count', 'Blood Test', 'CBC ordered by doctor for routine check', 'In Progress', 'Routine', '2024-10-15T08:00:00Z', 'Check for anemia and infection', NULL),
 -- Lab test for Patient 1 (completed - should trigger doctor workflow)
-('cc0e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440001', 'Blood Glucose', 'Blood Test', 'Routine', 'Completed', '2024-10-15T08:30:00Z', 'Fasting blood glucose test', 'Diabetes screening', 'doctor-123'),
+('cc0e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440001', 'Blood Glucose', 'Blood Test', 'Fasting blood glucose test', 'Completed', 'Routine', '2024-10-15T08:30:00Z', 'Diabetes screening', NULL),
 -- Lab test for Patient 3 (in doctor stage - already completed)
-('cc0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', 'Lipid Profile', 'Blood Test', 'Routine', 'Completed', '2024-10-10T09:00:00Z', 'Cholesterol and lipid panel', 'Cardiac risk assessment', 'doctor-456');
+('cc0e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', 'Lipid Profile', 'Blood Test', 'Cholesterol and lipid panel', 'Completed', 'Routine', '2024-10-10T09:00:00Z', 'Cardiac risk assessment', NULL)
+ON CONFLICT (id) DO NOTHING;
 
 -- Insert sample lab results for completed tests
 INSERT INTO lab_results (id, lab_test_id, result_value, reference_range, unit, abnormal_flag, notes) VALUES
