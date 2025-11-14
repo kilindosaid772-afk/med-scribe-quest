@@ -305,6 +305,11 @@ export default function BillingDashboard() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
 
+    if (!selectedPatientId) {
+      toast.error('Please select a patient');
+      return;
+    }
+
     const calculatedCost = patientCosts[selectedPatientId] || 50000; // Fallback to default if no services
 
     const invoiceNumber = await generateInvoiceNumber();
@@ -313,18 +318,27 @@ export default function BillingDashboard() {
       invoice_number: invoiceNumber,
       patient_id: selectedPatientId,
       total_amount: calculatedCost,
-      due_date: formData.get('dueDate') as string,
+      paid_amount: 0,
+      discount: 0,
+      tax: 0,
+      status: 'Unpaid',
+      due_date: formData.get('dueDate') as string || null,
+      invoice_date: new Date().toISOString(),
       notes: formData.get('notes') as string || `Invoice based on medical services - Total: TSh${calculatedCost.toFixed(2)}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
     const { error } = await supabase.from('invoices').insert([invoiceData]);
 
     if (error) {
-      toast.error('Failed to create invoice');
+      console.error('Error creating invoice:', error);
+      toast.error(`Failed to create invoice: ${error.message}`);
     } else {
       toast.success(`Invoice created successfully for TSh${calculatedCost.toFixed(2)}`);
       setDialogOpen(false);
       setSelectedPatientId('');
+      fetchData(); // Refresh data
     }
   };
 
@@ -558,29 +572,100 @@ export default function BillingDashboard() {
 
     // If fully paid, complete the visit
     if (newStatus === 'Paid') {
-      const { data: visits } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', selectedInvoice?.patient_id)
-        .eq('current_stage', 'billing')
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: false })
-        .limit(1);
+      console.log('Payment fully completed, updating patient visit...', {
+        patient_id: selectedInvoice?.patient_id,
+        invoice_id: selectedInvoice?.id
+      });
 
-      if (visits && visits.length > 0) {
-        await supabase
+      if (!selectedInvoice?.patient_id) {
+        console.error('No patient_id found on invoice');
+        toast.warning('Payment recorded but could not update patient visit - no patient ID');
+      } else {
+        // First, try to find visit in billing stage
+        let { data: visits, error: visitError } = await supabase
           .from('patient_visits')
-          .update({
-            billing_status: 'Paid',
-            billing_completed_at: new Date().toISOString(),
-            current_stage: 'completed',
-            overall_status: 'Completed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', visits[0].id);
+          .select('*')
+          .eq('patient_id', selectedInvoice.patient_id)
+          .eq('current_stage', 'billing')
+          .eq('overall_status', 'Active')
+          .order('created_at', { ascending: false })
+          .limit(1);
 
-        console.log('Patient visit completed and removed from billing queue');
-        toast.success('Payment completed! Patient visit finished.');
+        if (visitError) {
+          console.error('Error fetching patient visit:', visitError);
+        }
+
+        console.log('Found visits in billing stage:', visits?.length || 0);
+
+        // If no visit in billing, try to find ANY active visit for this patient
+        if (!visits || visits.length === 0) {
+          console.log('No visit in billing stage, checking for any active visit...');
+          const { data: anyVisits } = await supabase
+            .from('patient_visits')
+            .select('*')
+            .eq('patient_id', selectedInvoice.patient_id)
+            .eq('overall_status', 'Active')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          
+          console.log('Found any active visits:', anyVisits?.length || 0, anyVisits?.[0]?.current_stage);
+          
+          // Use the active visit even if not in billing stage
+          if (anyVisits && anyVisits.length > 0) {
+            visits = anyVisits;
+            console.log('Using active visit from stage:', anyVisits[0].current_stage);
+          }
+        }
+
+        if (visits && visits.length > 0) {
+          const { error: updateError } = await supabase
+            .from('patient_visits')
+            .update({
+              billing_status: 'Paid',
+              billing_completed_at: new Date().toISOString(),
+              current_stage: 'completed',
+              overall_status: 'Completed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', visits[0].id);
+
+          if (updateError) {
+            console.error('Error updating patient visit:', updateError);
+            toast.error(`Failed to update patient visit: ${updateError.message}`);
+          } else {
+            console.log('Patient visit completed and removed from billing queue');
+            toast.success('Payment completed! Patient visit finished.');
+          }
+        } else {
+          console.warn('No active patient visit found - creating completed visit record');
+          
+          // Create a completed visit record for this payment
+          const { error: createError } = await supabase
+            .from('patient_visits')
+            .insert([{
+              patient_id: selectedInvoice.patient_id,
+              visit_date: new Date().toISOString(),
+              reception_status: 'Completed',
+              nurse_status: 'Completed',
+              doctor_status: 'Completed',
+              lab_status: 'Not Required',
+              pharmacy_status: 'Completed',
+              billing_status: 'Paid',
+              billing_completed_at: new Date().toISOString(),
+              current_stage: 'completed',
+              overall_status: 'Completed',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
+          
+          if (createError) {
+            console.error('Error creating visit record:', createError);
+            toast.warning('Payment recorded successfully (no visit record created)');
+          } else {
+            console.log('Created completed visit record for payment');
+            toast.success('Payment completed successfully!');
+          }
+        }
       }
     }
 
@@ -906,14 +991,22 @@ export default function BillingDashboard() {
                         invoice_number: invoiceNumber,
                         patient_id: patientId,
                         total_amount: totalAmount,
+                        paid_amount: 0,
+                        discount: 0,
+                        tax: 0,
+                        status: 'Unpaid',
                         due_date: dueDate,
-                        notes: `Quick invoice - Based on medical services (TSh${totalAmount.toFixed(2)})`
+                        invoice_date: new Date().toISOString(),
+                        notes: `Quick invoice - Based on medical services (TSh${totalAmount.toFixed(2)})`,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
                       };
 
                       const { error } = await supabase.from('invoices').insert([invoiceData]);
 
                       if (error) {
-                        toast.error('Failed to create quick invoice');
+                        console.error('Error creating quick invoice:', error);
+                        toast.error(`Failed to create quick invoice: ${error.message}`);
                       } else {
                         toast.success(`Quick invoice created successfully for TSh${totalAmount.toFixed(2)}`);
                         fetchData();
@@ -1082,14 +1175,22 @@ export default function BillingDashboard() {
                       invoice_number: invoiceNumber,
                       patient_id: patientId,
                       total_amount: totalAmount,
+                      paid_amount: 0,
+                      discount: 0,
+                      tax: 0,
+                      status: 'Unpaid',
                       due_date: dueDate,
-                      notes: `Quick invoice - Based on medical services (TSh${totalAmount.toFixed(2)})`
+                      invoice_date: new Date().toISOString(),
+                      notes: `Quick invoice - Based on medical services (TSh${totalAmount.toFixed(2)})`,
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString()
                     };
 
                     const { error } = await supabase.from('invoices').insert([invoiceData]);
 
                     if (error) {
-                      toast.error('Failed to create quick invoice');
+                      console.error('Error creating quick invoice:', error);
+                      toast.error(`Failed to create quick invoice: ${error.message}`);
                     } else {
                       toast.success(`Quick invoice created successfully for TSh${totalAmount.toFixed(2)}`);
                       fetchData();

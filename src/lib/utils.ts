@@ -8,37 +8,33 @@ export function cn(...inputs: ClassValue[]) {
 
 export async function generateInvoiceNumber(): Promise<string> {
   try {
-    // Query the database to find the highest existing invoice number
-    const { data: invoices, error } = await supabase
+    // Use timestamp + random to ensure uniqueness
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000);
+    const uniqueId = `${timestamp}${random}`.slice(-6);
+    
+    // Query to check if this number exists
+    const invoiceNumber = `INV-${uniqueId}`;
+    
+    const { data: existing } = await supabase
       .from('invoices')
       .select('invoice_number')
-      .order('invoice_number', { ascending: false })
-      .limit(1);
-
-    if (error) {
-      console.error('Error fetching invoice numbers:', error);
-      throw new Error('Failed to generate invoice number');
+      .eq('invoice_number', invoiceNumber)
+      .single();
+    
+    // If exists, try again with different random
+    if (existing) {
+      const newRandom = Math.floor(Math.random() * 10000);
+      return `INV-${timestamp}${newRandom}`.slice(-10);
     }
-
-    let nextNumber = 1;
-
-    if (invoices && invoices.length > 0) {
-      const lastInvoiceNumber = invoices[0].invoice_number;
-
-      // Extract the number part from INV-XXX format
-      const match = lastInvoiceNumber.match(/^INV-(\d{3})$/);
-      if (match) {
-        nextNumber = parseInt(match[1], 10) + 1;
-      }
-    }
-
-    // Format as 3-digit number with leading zeros
-    return `INV-${nextNumber.toString().padStart(3, '0')}`;
+    
+    return invoiceNumber;
   } catch (error) {
     console.error('Error generating invoice number:', error);
-    // Fallback: generate based on timestamp if database query fails
-    const timestamp = Date.now().toString().slice(-3);
-    return `INV-${timestamp.padStart(3, '0')}`;
+    // Fallback: use timestamp + random
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 10000);
+    return `INV-${timestamp}${random}`.slice(-10);
   }
 }
 
