@@ -570,7 +570,46 @@ export default function ReceptionistDashboard() {
       amount_paid: consultationFee.toString(),
       payment_method: 'Cash'
     });
-  
+    setShowPaymentDialog(true);
+  };
+
+  const handlePaymentSubmit = async () => {
+    if (!selectedAppointmentForPayment) return;
+
+    const amountPaid = Number(paymentForm.amount_paid);
+    if (isNaN(amountPaid) || amountPaid < consultationFee) {
+      toast.error(`Payment must be at least TSh ${consultationFee}`);
+      return;
+    }
+
+    try {
+      // Create payment record
+      const { error: paymentError } = await supabase
+        .from('payments')
+        .insert({
+          patient_id: selectedAppointmentForPayment.patient_id,
+          amount: amountPaid,
+          payment_method: paymentForm.payment_method,
+          payment_type: 'Consultation Fee',
+          status: 'Completed',
+          payment_date: new Date().toISOString()
+        });
+
+      if (paymentError) throw paymentError;
+
+      // Now proceed with check-in
+      await handleCheckIn(selectedAppointmentForPayment.id);
+      
+      setShowPaymentDialog(false);
+      setSelectedAppointmentForPayment(null);
+      toast.success(`Payment of TSh ${amountPaid} received. Patient checked in.`);
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast.error('Failed to process payment');
+    }
+  };
+
+  const handleCheckIn = async (appointmentId: string) => {
     try {
       // First, get appointment details
       const { data: appointment, error: appointmentFetchError } = await supabase
@@ -1104,7 +1143,7 @@ export default function ReceptionistDashboard() {
 
           {/* Today's Appointments & Recent Patients */}
           <div className="grid gap-8 lg:grid-cols-2">
-            <AppointmentsCard appointments={appointments} onCheckIn={handleCheckIn} onCancel={handleCancelAppointment} />
+            <AppointmentsCard appointments={appointments} onCheckIn={handleInitiateCheckIn} onCancel={handleCancelAppointment} />
             <PatientsCard patients={patients} />
           </div>
 
@@ -1552,6 +1591,80 @@ export default function ReceptionistDashboard() {
                 ))}
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Dialog */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Collect Consultation Fee</DialogTitle>
+            <DialogDescription>
+              Patient: {selectedAppointmentForPayment?.patient?.full_name || 'Unknown'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Consultation Fee:</span>
+                <span className="text-2xl font-bold text-blue-600">TSh {consultationFee.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="payment_method">Payment Method</Label>
+              <select
+                id="payment_method"
+                className="w-full p-2 border rounded-md"
+                value={paymentForm.payment_method}
+                onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+              >
+                <option value="Cash">Cash</option>
+                <option value="Mobile Money">Mobile Money</option>
+                <option value="Card">Card</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="amount_paid">Amount Paid</Label>
+              <Input
+                id="amount_paid"
+                type="number"
+                value={paymentForm.amount_paid}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount_paid: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+
+            {Number(paymentForm.amount_paid) > consultationFee && (
+              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-green-800">Change to Return:</span>
+                  <span className="text-xl font-bold text-green-600">
+                    TSh {(Number(paymentForm.amount_paid) - consultationFee).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {Number(paymentForm.amount_paid) < consultationFee && paymentForm.amount_paid !== '' && (
+              <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                <span className="text-sm text-red-600">Insufficient payment amount</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handlePaymentSubmit}
+                disabled={Number(paymentForm.amount_paid) < consultationFee}
+              >
+                Confirm Payment & Check In
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

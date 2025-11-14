@@ -5,7 +5,7 @@ import { Calendar, XCircle, Clock, User } from 'lucide-react';
 
 interface AppointmentsCardProps {
   appointments: any[];
-  onCheckIn: (appointmentId: string) => void;
+  onCheckIn: (appointment: any) => void;
   onCancel: (appointmentId: string) => void;
 }
 
@@ -101,7 +101,7 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
                     <>
                       <Button
                         size="sm"
-                        onClick={() => onCheckIn(appointment.id)}
+                        onClick={() => onCheckIn(appointment)}
                         className="bg-green-600 hover:bg-green-700"
                       >
                         Check In
