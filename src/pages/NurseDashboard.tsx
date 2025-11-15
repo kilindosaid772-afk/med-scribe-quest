@@ -443,20 +443,7 @@ export default function NurseDashboard() {
                 <Thermometer className="h-6 w-6" />
                 <span>Record Vitals</span>
               </Button>
-              <Button
-                variant="outline"
-                className="h-20 flex-col gap-2"
-                onClick={() => {
-                  if (patients.length > 0) {
-                    handleAddNotes(patients[0]);
-                  } else {
-                    toast.error('No patients available');
-                  }
-                }}
-              >
-                <Activity className="h-6 w-6" />
-                <span>Patient Notes</span>
-              </Button>
+
               <Button
                 variant="outline"
                 className="h-20 flex-col gap-2"

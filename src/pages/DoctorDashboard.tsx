@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye } from 'lucide-react';
+import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye, Stethoscope, TestTube } from 'lucide-react';
 import { format, isAfter, isToday, parseISO, isBefore, addMinutes, addDays } from 'date-fns';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -2069,14 +2069,36 @@ export default function DoctorDashboard() {
                             View Results
                           </Button>
                         )}
+                        {!visit.doctor_notes ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleStartConsultation(visit)}
+                            className="flex items-center gap-1"
+                          >
+                            <Stethoscope className="h-3 w-3" />
+                            Start Consultation
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                            className="flex items-center gap-1 opacity-50"
+                          >
+                            <CheckCircle className="h-3 w-3" />
+                            Consultation Started
+                          </Button>
+                        )}
                         <Button
-                          variant="default"
+                          variant="outline"
                           size="sm"
-                          onClick={() => handleWritePrescription(visit)}
+                          onClick={() => handleOrderLabTests(visit)}
                           className="flex items-center gap-1"
+                          disabled={!visit.doctor_notes}
                         >
-                          <Pill className="h-3 w-3" />
-                          Write Prescription
+                          <TestTube className="h-3 w-3" />
+                          Order Lab Test
                         </Button>
                       </div>
                     </TableCell>
