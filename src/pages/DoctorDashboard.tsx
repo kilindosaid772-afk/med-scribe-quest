@@ -933,7 +933,7 @@ export default function DoctorDashboard() {
     setShowPrescriptionDialog(true);
   };
 
-  // Submit consultation
+  // Submit consultation - Save diagnosis and notes only, don't complete yet
   const submitConsultation = async () => {
     if (!selectedVisit || !consultationForm.diagnosis) {
       toast.error('Please enter a diagnosis');
@@ -946,26 +946,31 @@ export default function DoctorDashboard() {
         ? `${consultationForm.notes}\n\nTreatment Plan:\n${consultationForm.treatment_plan}`
         : consultationForm.notes;
 
+      // Save consultation notes but keep status as "In Consultation"
+      // Doctor must order lab tests or write prescription to complete
       const { error } = await supabase
         .from('patient_visits')
         .update({
           doctor_diagnosis: consultationForm.diagnosis,
           doctor_notes: combinedNotes,
-          doctor_status: 'Completed',
-          doctor_completed_at: new Date().toISOString(),
-          current_stage: 'pharmacy',
-          pharmacy_status: 'Pending',
+          doctor_status: 'In Consultation',
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedVisit.id);
 
       if (error) throw error;
 
-      toast.success('Consultation completed. Patient sent to pharmacy.');
+      toast.success('Consultation notes saved. Please order lab tests or write prescription.');
       setShowConsultationDialog(false);
       
-      // Remove from pending visits
-      setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
+      // Don't remove from pending visits - patient stays in doctor queue
+      // Refresh the visit data to show updated notes
+      const updatedVisits = pendingVisits.map(v => 
+        v.id === selectedVisit.id 
+          ? { ...v, doctor_diagnosis: consultationForm.diagnosis, doctor_notes: combinedNotes }
+          : v
+      );
+      setPendingVisits(updatedVisits);
     } catch (error) {
       console.error('Error saving consultation:', error);
       toast.error('Failed to save consultation notes');
@@ -1109,7 +1114,25 @@ export default function DoctorDashboard() {
 
       if (error) throw error;
 
-      toast.success(`${selectedMedications.length} prescription(s) written successfully`);
+      // After writing prescription, complete consultation and send to pharmacy
+      const { error: visitError } = await supabase
+        .from('patient_visits')
+        .update({
+          doctor_status: 'Completed',
+          doctor_completed_at: new Date().toISOString(),
+          current_stage: 'pharmacy',
+          pharmacy_status: 'Pending',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedVisit.id);
+
+      if (visitError) {
+        console.error('Error updating visit after prescription:', visitError);
+        toast.error('Prescription saved but failed to send patient to pharmacy');
+        return;
+      }
+
+      toast.success(`${selectedMedications.length} prescription(s) written. Patient sent to pharmacy.`);
       setShowPrescriptionDialog(false);
       
       // Reset form for next prescription
@@ -1124,6 +1147,9 @@ export default function DoctorDashboard() {
         quantity: '',
         instructions: ''
       });
+
+      // Remove from pending visits
+      setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
     } catch (error) {
       console.error('Error writing prescription:', error);
       toast.error('Failed to write prescription');
@@ -1783,14 +1809,32 @@ export default function DoctorDashboard() {
         </Dialog>
 
         {/* Lab Workflow Queue - Highlighted Section */}
-        {pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed && v.doctor_status !== 'Completed').length > 0 && (
+        {pendingVisits.filter(v => 
+          v.lab_completed_at && 
+          !v.lab_results_reviewed && 
+          v.doctor_status !== 'Completed' && 
+          v.current_stage === 'doctor' &&
+          v.overall_status === 'Active'
+        ).length > 0 && (
           <Card className="shadow-lg border-green-300 bg-green-50/30">
             <CardHeader className="bg-green-100/50">
               <CardTitle className="flex items-center gap-2 text-green-800">
                 <FlaskConical className="h-5 w-5" />
                 Lab Results Queue
                 <Badge variant="default" className="bg-green-600">
-                  {pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed && v.doctor_status !== 'Completed').length} patient{pendingVisits.filter(v => v.lab_completed_at && !v.lab_results_reviewed && v.doctor_status !== 'Completed').length !== 1 ? 's' : ''}
+                  {pendingVisits.filter(v => 
+                    v.lab_completed_at && 
+                    !v.lab_results_reviewed && 
+                    v.doctor_status !== 'Completed' && 
+                    v.current_stage === 'doctor' &&
+                    v.overall_status === 'Active'
+                  ).length} patient{pendingVisits.filter(v => 
+                    v.lab_completed_at && 
+                    !v.lab_results_reviewed && 
+                    v.doctor_status !== 'Completed' && 
+                    v.current_stage === 'doctor' &&
+                    v.overall_status === 'Active'
+                  ).length !== 1 ? 's' : ''}
                 </Badge>
               </CardTitle>
               <CardDescription className="text-green-700">
@@ -1811,7 +1855,13 @@ export default function DoctorDashboard() {
                   </TableHeader>
                   <TableBody>
                     {pendingVisits
-                      .filter(visit => visit.lab_completed_at && !visit.lab_results_reviewed && visit.doctor_status !== 'Completed')
+                      .filter(visit => 
+                        visit.lab_completed_at && 
+                        !visit.lab_results_reviewed && 
+                        visit.doctor_status !== 'Completed' && 
+                        visit.current_stage === 'doctor' &&
+                        visit.overall_status === 'Active'
+                      )
                       .map((visit) => {
                         const labTestCount = (visit.labTests?.length || 0) + (visit.allCompletedLabTests?.length || 0);
                         const hasAbnormal = [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])]
