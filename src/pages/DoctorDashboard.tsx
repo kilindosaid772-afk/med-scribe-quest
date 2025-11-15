@@ -1630,12 +1630,6 @@ export default function DoctorDashboard() {
                           </div>
                         </div>
                       )}
-                      
-                      {test.notes && (
-                        <div className="mt-3 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 text-sm">
-                          <strong>Notes:</strong> {test.notes}
-                        </div>
-                      )}
                     </div>
                   ))
                 ) : (
@@ -2058,22 +2052,20 @@ export default function DoctorDashboard() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedVisit(visit);
-                            if (hasLabResults) {
+                        {hasLabResults && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedVisit(visit);
                               handleViewLabResults([...(visit.labTests || []), ...(visit.allCompletedLabTests || [])], visit);
-                            } else {
-                              handleStartConsultation(visit);
-                            }
-                          }}
-                          className="flex items-center gap-1"
-                        >
-                          <Eye className="h-3 w-3" />
-                          View Details
-                        </Button>
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            <Eye className="h-3 w-3" />
+                            View Results
+                          </Button>
+                        )}
                         <Button
                           variant="default"
                           size="sm"
