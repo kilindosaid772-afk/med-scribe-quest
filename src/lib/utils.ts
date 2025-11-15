@@ -7,35 +7,44 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export async function generateInvoiceNumber(): Promise<string> {
-  try {
-    // Use timestamp + random to ensure uniqueness
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000);
-    const uniqueId = `${timestamp}${random}`.slice(-6);
-    
-    // Query to check if this number exists
-    const invoiceNumber = `INV-${uniqueId}`;
-    
-    const { data: existing } = await supabase
-      .from('invoices')
-      .select('invoice_number')
-      .eq('invoice_number', invoiceNumber)
-      .single();
-    
-    // If exists, try again with different random
-    if (existing) {
-      const newRandom = Math.floor(Math.random() * 10000);
-      return `INV-${timestamp}${newRandom}`.slice(-10);
+  const maxAttempts = 5;
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      // Generate unique invoice number with timestamp and random
+      const timestamp = Date.now();
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const invoiceNumber = `INV-${timestamp}-${random}`;
+      
+      // Check if this number already exists
+      const { data: existing, error: checkError } = await supabase
+        .from('invoices')
+        .select('invoice_number')
+        .eq('invoice_number', invoiceNumber)
+        .maybeSingle();
+      
+      if (checkError && checkError.code !== 'PGRST116') {
+        // PGRST116 is "no rows returned" which is fine
+        console.error('Error checking invoice number:', checkError);
+        continue;
+      }
+      
+      // If doesn't exist, use this number
+      if (!existing) {
+        return invoiceNumber;
+      }
+      
+      // If exists, wait a tiny bit and try again
+      await new Promise(resolve => setTimeout(resolve, 10));
+    } catch (error) {
+      console.error('Error in invoice number generation attempt', attempt, error);
     }
-    
-    return invoiceNumber;
-  } catch (error) {
-    console.error('Error generating invoice number:', error);
-    // Fallback: use timestamp + random
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 10000);
-    return `INV-${timestamp}${random}`.slice(-10);
   }
+  
+  // Final fallback with microseconds
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 100000);
+  return `INV-${timestamp}-${random}`;
 }
 
 export async function logActivity(action: string, details?: Record<string, any>) {

@@ -233,27 +233,7 @@ export default function PharmacyDashboard() {
     setLoadingStates(prev => ({ ...prev, [prescriptionId]: true }));
 
     try {
-      // If medication is not in stock, mark prescription as pending with notes
-      if (!dispenseData.in_stock) {
-        const { error } = await supabase
-          .from('prescriptions')
-          .update({
-            status: 'Pending',
-            notes: `OUT OF STOCK: ${dispenseData.out_of_stock_reason}. Alternative: ${dispenseData.alternative_medication || 'None suggested'}`,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', prescriptionId);
-
-        if (error) throw error;
-
-        toast.warning('Medication marked as out of stock. Prescription remains pending.');
-        setDispenseDialogOpen(false);
-        setSelectedPrescriptionForDispense(null);
-        loadPharmacyData(false);
-        return;
-      }
-
-      // Continue with normal dispensing
+      // Continue with dispensing using the edited dosage and quantity
       await handleDispensePrescription(prescriptionId, patientId, dispenseData);
       setDispenseDialogOpen(false);
       setSelectedPrescriptionForDispense(null);
@@ -359,6 +339,8 @@ export default function PharmacyDashboard() {
       }
 
       // Update patient visit status if applicable
+      console.log('Looking for patient visit with patient_id:', patientId);
+      
       const { data: visits, error: visitsError } = await supabase
         .from('patient_visits')
         .select('*')
@@ -368,45 +350,72 @@ export default function PharmacyDashboard() {
         .order('created_at', { ascending: false })
         .limit(1);
 
-      if (!visitsError && visits && visits.length > 0) {
-        console.log('Updating patient visit to billing stage:', visits[0].id);
-        const { error: visitUpdateError } = await supabase
-          .from('patient_visits')
-          .update({
-            pharmacy_status: 'Completed',
-            pharmacy_completed_at: new Date().toISOString(),
-            current_stage: 'billing',
-            billing_status: 'Pending',
-            overall_status: 'Active',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', visits[0].id);
-        
-        if (visitUpdateError) {
-          console.error('Error updating patient visit:', visitUpdateError);
-          toast.error(`Failed to update patient visit: ${visitUpdateError.message}`);
-          return;
-        }
-        
-        console.log('Patient visit successfully moved to billing stage');
-        await logActivity('pharmacy.visit.moved_to_billing', {
-          visit_id: visits[0].id,
-          patient_id: patientId,
-          user_id: user.id
-        });
-      } else {
-        console.warn('No active patient visit found for pharmacy stage', {
-          patient_id: patientId,
-          visits_found: visits?.length || 0,
-          visits_error: visitsError
-        });
-        
-        // Still create invoice even if visit not found
-        toast.warning('Patient visit not found, but invoice will be created');
+      console.log('Patient visits query result:', { visits, visitsError, patientId });
+
+      if (visitsError) {
+        console.error('Error fetching patient visits:', visitsError);
+        toast.error(`Failed to fetch patient visit: ${visitsError.message}`);
+        return;
       }
 
-      // Update medication stock
-      const newStock = medicationData.quantity_in_stock - prescription.quantity;
+      if (!visits || visits.length === 0) {
+        // Check if there's ANY active visit for this patient
+        const { data: anyVisits, error: anyVisitsError } = await supabase
+          .from('patient_visits')
+          .select('id, current_stage, pharmacy_status, overall_status')
+          .eq('patient_id', patientId)
+          .eq('overall_status', 'Active')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        
+        console.error('No pharmacy visit found. Active visits for patient:', anyVisits);
+        
+        if (anyVisits && anyVisits.length > 0) {
+          toast.error(`Patient is at ${anyVisits[0].current_stage} stage, not pharmacy. Cannot dispense.`);
+        } else {
+          toast.error('No active visit found for this patient. Please ensure patient has an active visit.');
+        }
+        
+        await logActivity('pharmacy.dispense.error', {
+          error: 'No active pharmacy visit found',
+          patient_id: patientId,
+          prescription_id: prescriptionId,
+          any_active_visits: anyVisits
+        });
+        
+        return;
+      }
+
+      // Update the visit to billing stage
+      console.log('Updating patient visit to billing stage:', visits[0].id);
+      const { error: visitUpdateError } = await supabase
+        .from('patient_visits')
+        .update({
+          pharmacy_status: 'Completed',
+          pharmacy_completed_at: new Date().toISOString(),
+          current_stage: 'billing',
+          billing_status: 'Pending',
+          overall_status: 'Active',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', visits[0].id);
+      
+      if (visitUpdateError) {
+        console.error('Error updating patient visit:', visitUpdateError);
+        toast.error(`Failed to update patient visit: ${visitUpdateError.message}`);
+        return;
+      }
+      
+      console.log('✅ Patient visit successfully moved to billing stage');
+      await logActivity('pharmacy.visit.moved_to_billing', {
+        visit_id: visits[0].id,
+        patient_id: patientId,
+        user_id: user.id
+      });
+
+      // Update medication stock using the actual dispensed quantity
+      const dispensedQuantity = dispenseData?.quantity || prescription.quantity;
+      const newStock = medicationData.quantity_in_stock - dispensedQuantity;
       
       if (newStock < 0) {
         toast.error('Insufficient stock to dispense this prescription');
@@ -433,10 +442,10 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Create invoice for billing
-      const invoiceNumber = generateInvoiceNumber();
+      // Create invoice for billing using actual dispensed quantity
+      const invoiceNumber = await generateInvoiceNumber();
       const unitPrice = medicationData.unit_price || 0;
-      const invoiceAmount = unitPrice * prescription.quantity;
+      const invoiceAmount = unitPrice * dispensedQuantity;
       
       const { data: newInvoice, error: invoiceError } = await supabase
         .from('invoices')

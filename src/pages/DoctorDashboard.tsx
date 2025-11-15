@@ -1076,8 +1076,11 @@ export default function DoctorDashboard() {
     // Validate all selected medications have required fields
     for (const medId of selectedMedications) {
       const form = prescriptionForms[medId];
+      const med = availableMedications.find(m => m.id === medId);
+      const medName = med?.name || 'medication';
+      
       if (!form || !form.dosage || !form.frequency || !form.duration || !form.quantity) {
-        toast.error('Please fill in all required fields for all selected medications');
+        toast.error(`Please fill in all required fields for ${medName}`);
         return;
       }
     }
@@ -1913,11 +1916,11 @@ export default function DoctorDashboard() {
                                 <Button
                                   variant="default"
                                   size="sm"
-                                  onClick={() => handleStartConsultation(visit)}
+                                  onClick={() => handleWritePrescription(visit)}
                                   className="flex items-center gap-1"
                                 >
-                                  <Activity className="h-3 w-3" />
-                                  Review
+                                  <Pill className="h-3 w-3" />
+                                  Write Prescription
                                 </Button>
                               </div>
                             </TableCell>
@@ -2687,7 +2690,8 @@ export default function DoctorDashboard() {
           <div className="space-y-4 max-h-[70vh] overflow-y-auto">
             {/* Medication Selection with Checkboxes */}
             <div className="space-y-2">
-              <Label>Select Medications *</Label>
+              <Label>Select Medications * (Check only what patient needs)</Label>
+              <p className="text-xs text-muted-foreground">Select medications to prescribe, then fill in details for each one below</p>
               <div className="border rounded-lg p-4 space-y-2 max-h-60 overflow-y-auto">
                 {availableMedications.map((med) => (
                   <div key={med.id} className="flex items-start space-x-2">
