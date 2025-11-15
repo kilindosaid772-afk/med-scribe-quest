@@ -961,10 +961,13 @@ export default function AdminDashboard() {
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [selectedActionType, setSelectedActionType] = useState<string>('all');
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
   const [userForm, setUserForm] = useState({
     full_name: '',
     email: '',
-    phone: ''
+    phone: '',
+    password: '',
+    role: 'receptionist'
   });
   const [stats, setStats] = useState({ 
     totalPatients: 0, 
@@ -1722,12 +1725,116 @@ export default function AdminDashboard() {
     setEditingService(null);
   };
 
-  const handleEditUser = (user: User) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      // Validate and clean inputs
+      const email = userForm.email.trim().toLowerCase();
+      const password = userForm.password.trim();
+      const fullName = userForm.full_name.trim();
+      
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        toast.error('Please enter a valid email address (e.g., user@example.com)');
+        return;
+      }
+      
+      if (password.length < 6) {
+        toast.error('Password must be at least 6 characters long');
+        return;
+      }
+      
+      if (!fullName) {
+        toast.error('Please enter the user\'s full name');
+        return;
+      }
+      
+      console.log('Creating user with email:', email);
+      
+      // Use regular signup instead of admin API
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: email,
+        password: password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone: userForm.phone
+          },
+          emailRedirectTo: window.location.origin
+        }
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Failed to create user');
+
+      // Wait a moment for the profile trigger to create the profile
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Update profile with additional info
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: userForm.full_name,
+          phone: userForm.phone,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', authData.user.id);
+
+      if (profileError) {
+        console.warn('Profile update warning:', profileError);
+        // Don't throw - profile might have been created by trigger
+      }
+
+      // Assign role
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert([{
+          user_id: authData.user.id,
+          role: userForm.role,
+          is_primary: true,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (roleError) throw roleError;
+
+      toast.success(`User created successfully with ${userForm.role} role. They will receive a confirmation email.`);
+      setShowCreateUserDialog(false);
+      setUserForm({
+        full_name: '',
+        email: '',
+        phone: '',
+        password: '',
+        role: 'receptionist'
+      });
+      
+      // Refresh data
+      setTimeout(() => fetchData(), 1500);
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      
+      // Provide more helpful error messages
+      if (error.message?.includes('User already registered')) {
+        toast.error('A user with this email already exists');
+      } else if (error.message?.includes('Password')) {
+        toast.error('Password must be at least 6 characters');
+      } else if (error.message?.includes('Email')) {
+        toast.error('Please provide a valid email address');
+      } else {
+        toast.error(`Failed to create user: ${error.message}`);
+      }
+    }
+  };
+
+  const handleEditUser = (user: User & { activeRole?: string }) => {
     setEditingUser(user);
     setUserForm({
       full_name: user.full_name || '',
       email: user.email || '',
-      phone: user.phone || ''
+      phone: user.phone || '',
+      password: '',
+      role: user.activeRole || 'receptionist'
     });
   };
 
@@ -2206,11 +2313,19 @@ export default function AdminDashboard() {
 
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              User Management
-            </CardTitle>
-            <CardDescription>Manage users and roles</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Management
+                </CardTitle>
+                <CardDescription>Manage users and roles</CardDescription>
+              </div>
+              <Button onClick={() => setShowCreateUserDialog(true)}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Create User
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {users.length === 0 ? (
@@ -2269,6 +2384,88 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
+        {/* Create User Dialog */}
+        <Dialog open={showCreateUserDialog} onOpenChange={setShowCreateUserDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Create New User</DialogTitle>
+              <DialogDescription>Add a new user to the system with a specific role</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleCreateUser} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="create_full_name">Full Name *</Label>
+                <Input 
+                  id="create_full_name" 
+                  value={userForm.full_name} 
+                  onChange={(e) => setUserForm({ ...userForm, full_name: e.target.value })} 
+                  required
+                  placeholder="John Doe"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create_email">Email *</Label>
+                <Input 
+                  id="create_email" 
+                  type="email" 
+                  value={userForm.email} 
+                  onChange={(e) => setUserForm({ ...userForm, email: e.target.value.trim() })} 
+                  required
+                  placeholder="user@example.com"
+                  pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create_phone">Phone</Label>
+                <Input 
+                  id="create_phone" 
+                  value={userForm.phone} 
+                  onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} 
+                  placeholder="+255 700 000 000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create_password">Password *</Label>
+                <Input 
+                  id="create_password" 
+                  type="password" 
+                  value={userForm.password} 
+                  onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} 
+                  required
+                  placeholder="Minimum 6 characters"
+                  minLength={6}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create_role">Role *</Label>
+                <Select value={userForm.role} onValueChange={(value) => setUserForm({ ...userForm, role: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="receptionist">Receptionist</SelectItem>
+                    <SelectItem value="nurse">Nurse</SelectItem>
+                    <SelectItem value="doctor">Doctor</SelectItem>
+                    <SelectItem value="lab_technician">Lab Technician</SelectItem>
+                    <SelectItem value="pharmacist">Pharmacist</SelectItem>
+                    <SelectItem value="billing">Billing Staff</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setShowCreateUserDialog(false)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Create User
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit User Dialog */}
         <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
           <DialogContent>
             <DialogHeader>
