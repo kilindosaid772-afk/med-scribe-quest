@@ -28,8 +28,8 @@ Activity logging is **partially implemented**. Some actions are tracked, but man
 
 ### Doctor Activities
 - ❌ Consultation started
-- ❌ Consultation completed
-- ❌ Prescription written
+- ✅ Consultation completed
+- ✅ Prescription written
 - ❌ Lab test ordered
 - ❌ Lab results reviewed
 - ❌ Diagnosis recorded
@@ -49,7 +49,7 @@ Activity logging is **partially implemented**. Some actions are tracked, but man
 
 ### Billing Activities
 - ❌ Invoice created
-- ❌ Payment received
+- ✅ Payment received
 - ❌ Payment method used
 - ❌ Receipt generated
 - ❌ Insurance claim submitted
@@ -185,24 +185,132 @@ Always include relevant IDs and key information:
 ## Implementation Priority
 
 ### High Priority (Implement First)
-1. ✅ User login/logout
+1. ❌ User login/logout - **NEEDS IMPLEMENTATION**
 2. ✅ Payment received
 3. ✅ Prescription created
-4. ✅ Lab results entered
-5. ✅ Vitals recorded
+4. ❌ Lab test ordered - **NEEDS IMPLEMENTATION**
+5. ❌ Lab results entered - **NEEDS IMPLEMENTATION**
+6. ❌ Vitals recorded - **NEEDS IMPLEMENTATION**
 
 ### Medium Priority
-6. Consultation completed
-7. Invoice created
-8. User created/deleted
-9. Lab test ordered
-10. Medication dispensed (already done)
+7. ✅ Consultation completed
+8. ❌ Invoice created
+9. ❌ User created/deleted - **NEEDS IMPLEMENTATION**
+10. ✅ Medication dispensed
 
 ### Low Priority
-11. Settings updated (already done)
+11. ✅ Settings updated
 12. Notes added
 13. Patient moved between stages
 14. Stock updated
+
+## 🎯 Priority Logs to Implement
+
+### 1. Lab Test Orders and Results
+```typescript
+// When doctor orders a lab test
+await logActivity('doctor.lab_test.ordered', {
+  patient_id: patientId,
+  visit_id: visitId,
+  test_name: testName,
+  doctor_id: user.id
+});
+
+// When lab receives test order
+await logActivity('lab.test.received', {
+  test_id: testId,
+  patient_id: patientId,
+  test_name: testName
+});
+
+// When lab enters results
+await logActivity('lab.results.entered', {
+  test_id: testId,
+  patient_id: patientId,
+  test_name: testName,
+  technician_id: user.id
+});
+
+// When doctor reviews results
+await logActivity('doctor.lab_results.reviewed', {
+  test_id: testId,
+  patient_id: patientId,
+  doctor_id: user.id
+});
+```
+
+### 2. User Login/Logout
+```typescript
+// In your auth context or login handler
+await logActivity('user.login', {
+  user_id: user.id,
+  email: user.email,
+  role: user.role
+});
+
+// On logout
+await logActivity('user.logout', {
+  user_id: user.id,
+  session_duration: calculateDuration()
+});
+```
+
+### 3. User Create/Update/Delete
+```typescript
+// When admin creates a user
+await logActivity('admin.user.created', {
+  new_user_id: newUser.id,
+  email: newUser.email,
+  role: newUser.role,
+  created_by: currentUser.id
+});
+
+// When admin updates a user
+await logActivity('admin.user.updated', {
+  user_id: userId,
+  updated_fields: ['role', 'email'],
+  updated_by: currentUser.id
+});
+
+// When admin deletes a user
+await logActivity('admin.user.deleted', {
+  deleted_user_id: userId,
+  email: userEmail,
+  deleted_by: currentUser.id
+});
+```
+
+### 4. Nurse Vitals Recording
+```typescript
+// When nurse records vitals
+await logActivity('nurse.vitals.recorded', {
+  patient_id: patientId,
+  visit_id: visitId,
+  vitals: {
+    blood_pressure: vitals.blood_pressure,
+    temperature: vitals.temperature,
+    pulse: vitals.pulse,
+    weight: vitals.weight
+  },
+  nurse_id: user.id
+});
+
+// When nurse completes assessment
+await logActivity('nurse.assessment.completed', {
+  patient_id: patientId,
+  visit_id: visitId,
+  nurse_id: user.id
+});
+
+// When nurse moves patient to doctor
+await logActivity('nurse.patient.moved_to_doctor', {
+  patient_id: patientId,
+  visit_id: visitId,
+  from_stage: 'nurse',
+  to_stage: 'doctor',
+  nurse_id: user.id
+});
+```
 
 ## Quick Implementation
 

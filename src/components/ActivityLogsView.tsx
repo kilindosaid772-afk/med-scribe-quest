@@ -197,7 +197,9 @@ export default function ActivityLogsView() {
     if (action.includes('prescription')) return '💊';
     if (action.includes('lab')) return '🔬';
     if (action.includes('payment')) return '💰';
-    if (action.includes('login') || action.includes('auth')) return '🔐';
+    if (action.includes('vitals')) return '❤️';
+    if (action.includes('login') || action.includes('logout') || action.includes('auth')) return '🔐';
+    if (action.includes('user.created') || action.includes('user.updated') || action.includes('user.deleted')) return '👥';
     return '📝';
   };
 
@@ -385,7 +387,10 @@ export default function ActivityLogsView() {
                     <SelectItem value="prescription">Prescriptions</SelectItem>
                     <SelectItem value="lab">Lab Tests</SelectItem>
                     <SelectItem value="payment">Payments</SelectItem>
-                    <SelectItem value="auth">Authentication</SelectItem>
+                    <SelectItem value="vitals">Vitals</SelectItem>
+                    <SelectItem value="login">Login/Logout</SelectItem>
+                    <SelectItem value="logout">Logout</SelectItem>
+                    <SelectItem value="user">User Management</SelectItem>
                     <SelectItem value="create">Create</SelectItem>
                     <SelectItem value="update">Update</SelectItem>
                     <SelectItem value="delete">Delete</SelectItem>
@@ -549,44 +554,39 @@ export default function ActivityLogsView() {
               </p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[50px]"></TableHead>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="text-2xl">{getActionIcon(log.action)}</TableCell>
-                      <TableCell className="text-sm">
-                        <div>{format(new Date(log.created_at), 'MMM dd, yyyy')}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {format(new Date(log.created_at), 'HH:mm:ss')}
+            <div className="space-y-3">
+              {filteredLogs.map((log) => (
+                <div key={log.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-start gap-4">
+                    {/* Icon */}
+                    <div className="text-3xl flex-shrink-0 mt-1">
+                      {getActionIcon(log.action)}
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
+                        <div className="flex-1">
+                          <Badge variant={getActionBadgeVariant(log.action)} className="mb-2">
+                            {log.action}
+                          </Badge>
+                          <div className="text-sm text-muted-foreground">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-foreground">
+                                {log.user?.full_name || 'Unknown User'}
+                              </span>
+                              <span className="text-xs">•</span>
+                              <span>{format(new Date(log.created_at), 'MMM dd, yyyy')}</span>
+                              <span className="text-xs">•</span>
+                              <span>{format(new Date(log.created_at), 'HH:mm:ss')}</span>
+                            </div>
+                          </div>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getActionBadgeVariant(log.action)}>
-                          {log.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">
-                          {log.user?.full_name || 'Unknown User'}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {log.user?.email || log.user_email || 'No email'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
+                        
+                        {/* View Details Button */}
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" className="flex-shrink-0">
                               <FileText className="h-3 w-3 mr-1" />
                               View Details
                             </Button>
@@ -624,14 +624,32 @@ export default function ActivityLogsView() {
                               
                               <div>
                                 <Label className="text-xs text-muted-foreground">Details (JSON)</Label>
-                                <div className="mt-2 p-4 bg-slate-900 rounded-lg border border-slate-700">
+                                <div className="mt-2 p-4 bg-slate-950 rounded-lg border border-slate-700 shadow-inner max-w-full overflow-hidden">
                                   {log.details ? (
-                                    <pre className="text-xs text-green-400 overflow-auto max-h-96 whitespace-pre-wrap font-mono">
-                                      {JSON.stringify(log.details, null, 2)}
+                                    <pre className="text-xs max-h-96 font-mono leading-relaxed whitespace-pre-wrap overflow-x-auto" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                                      <code 
+                                        dangerouslySetInnerHTML={{
+                                          __html: JSON.stringify(log.details, null, 2)
+                                            .replace(/"([^"]+)":/g, '<span style="color: #60A5FA">"$1"</span>:') // Keys in blue
+                                            .replace(/: "([^"]*)"/g, ': <span style="color: #34D399">"$1"</span>') // String values in green
+                                            .replace(/: (\d+)/g, ': <span style="color: #F59E0B">$1</span>') // Numbers in orange
+                                            .replace(/: (true|false)/g, ': <span style="color: #A78BFA">$1</span>') // Booleans in purple
+                                            .replace(/: (null)/g, ': <span style="color: #EF4444">$1</span>') // Null in red
+                                            .replace(/([{}[\],])/g, '<span style="color: #9CA3AF">$1</span>') // Brackets in gray
+                                        }}
+                                        style={{ color: '#E5E7EB' }}
+                                      />
                                     </pre>
                                   ) : (
-                                    <pre className="text-xs text-gray-400 font-mono">
-                                      {JSON.stringify({ message: "No details available" }, null, 2)}
+                                    <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap overflow-x-auto" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                                      <code 
+                                        dangerouslySetInnerHTML={{
+                                          __html: JSON.stringify({ message: "No details available" }, null, 2)
+                                            .replace(/"([^"]+)":/g, '<span style="color: #60A5FA">"$1"</span>:')
+                                            .replace(/: "([^"]*)"/g, ': <span style="color: #34D399">"$1"</span>')
+                                        }}
+                                        style={{ color: '#E5E7EB' }}
+                                      />
                                     </pre>
                                   )}
                                 </div>
@@ -639,11 +657,11 @@ export default function ActivityLogsView() {
                             </div>
                           </DialogContent>
                         </Dialog>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>

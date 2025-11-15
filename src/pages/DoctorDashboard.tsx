@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye, Stethoscope, TestTube } from 'lucide-react';
 import { format, isAfter, isToday, parseISO, isBefore, addMinutes, addDays } from 'date-fns';
 import { Calendar as CalendarIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, logActivity } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -1117,6 +1117,19 @@ export default function DoctorDashboard() {
 
       if (error) throw error;
 
+      // Log prescription creation
+      await logActivity('doctor.prescription.created', {
+        doctor_id: user?.id,
+        patient_id: selectedVisit.patient_id,
+        visit_id: selectedVisit.id,
+        prescription_count: selectedMedications.length,
+        medications: prescriptionsToInsert.map(p => ({
+          medication: p.medication_name,
+          quantity: p.quantity,
+          dosage: p.dosage
+        }))
+      });
+
       // After writing prescription, complete consultation and send to pharmacy
       const { error: visitError } = await supabase
         .from('patient_visits')
@@ -1134,6 +1147,13 @@ export default function DoctorDashboard() {
         toast.error('Prescription saved but failed to send patient to pharmacy');
         return;
       }
+
+      await logActivity('doctor.consultation.completed', {
+        doctor_id: user?.id,
+        patient_id: selectedVisit.patient_id,
+        visit_id: selectedVisit.id,
+        next_stage: 'pharmacy'
+      });
 
       toast.success(`${selectedMedications.length} prescription(s) written. Patient sent to pharmacy.`);
       setShowPrescriptionDialog(false);

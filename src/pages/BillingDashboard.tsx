@@ -14,7 +14,7 @@ import { mobilePaymentService, MobilePaymentRequest } from '@/lib/mobilePaymentS
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { generateInvoiceNumber } from '@/lib/utils';
+import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 import {
   Loader2,
   CheckCircle,
@@ -581,6 +581,15 @@ export default function BillingDashboard() {
       toast.error('Failed to record payment');
       return;
     }
+
+    // Log payment received
+    await logActivity('billing.payment.received', {
+      invoice_id: selectedInvoice.id,
+      patient_id: selectedInvoice.patient_id,
+      amount: amount,
+      payment_method: paymentMethod,
+      reference_number: formData.get('referenceNumber') as string || null
+    });
 
     const newPaidAmount = Number(selectedInvoice.paid_amount) + amount;
     const totalAmount = Number(selectedInvoice.total_amount);
