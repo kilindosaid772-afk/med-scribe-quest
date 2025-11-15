@@ -502,7 +502,9 @@ export default function LabDashboard() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  setSelectedPatientTests(tests);
+                                  // Only show pending and in-progress tests
+                                  const activeTests = tests.filter(t => t.status === 'Pending' || t.status === 'In Progress');
+                                  setSelectedPatientTests(activeTests);
                                   // Don't initialize batch results - this opens read-only view
                                   setBatchResults({});
                                   setBatchDialogOpen(true);
