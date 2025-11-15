@@ -49,6 +49,7 @@ export default function BillingDashboard() {
   const [rawPatientsData, setRawPatientsData] = useState<any[]>([]);
   const [rawInsuranceData, setRawInsuranceData] = useState<any[]>([]);
   const [rawClaimsData, setRawClaimsData] = useState<any[]>([]);
+  const [rawPaymentsData, setRawPaymentsData] = useState<any[]>([]);
   const [patientServices, setPatientServices] = useState<any[]>([]);
   const [patientCosts, setPatientCosts] = useState<Record<string, number>>({});
   const [billingVisits, setBillingVisits] = useState<any[]>([]);
@@ -149,24 +150,18 @@ export default function BillingDashboard() {
     const unpaid = processedPatients.filter((p: any) => p.status === 'Unpaid').length;
     const partiallyPaid = processedPatients.filter((p: any) => p.status === 'Partially Paid').length;
 
-    // Calculate today's revenue only
+    // Calculate today's revenue from rawPaymentsData
     const today = new Date().toISOString().split('T')[0];
     let totalRevenue = 0;
     
-    // Get all invoices from all patients
-    const allInvoices = processedPatients.flatMap((p: any) => p.invoices || []);
-    
-    // Filter invoices that were paid today and sum their paid amounts
-    allInvoices.forEach((invoice: any) => {
-      // Check if invoice has payments today
-      const invoiceDate = invoice.invoice_date?.split('T')[0];
-      const updatedDate = invoice.updated_at?.split('T')[0];
-      
-      // If invoice was updated today (payment made today), include its paid amount
-      if (updatedDate === today && invoice.paid_amount > 0) {
-        totalRevenue += Number(invoice.paid_amount);
-      }
-    });
+    if (rawPaymentsData && rawPaymentsData.length > 0) {
+      rawPaymentsData.forEach((payment: any) => {
+        const paymentDate = payment.created_at?.split('T')[0];
+        if (paymentDate === today && payment.status === 'completed') {
+          totalRevenue += Number(payment.amount || 0);
+        }
+      });
+    }
 
     const pendingClaims: number = rawClaimsData?.filter(c => c.status === 'Pending').length || 0;
 
@@ -177,11 +172,12 @@ export default function BillingDashboard() {
       partiallyPaid,
       totalRevenue,
       pendingClaims,
-      totalInvoices: allInvoices.length
+      totalPayments: rawPaymentsData?.length || 0,
+      todayPayments: rawPaymentsData?.filter((p: any) => p.created_at?.split('T')[0] === today).length || 0
     });
 
     return { unpaid, partiallyPaid, totalRevenue, pendingClaims };
-  }, [processedPatients, rawClaimsData]);
+  }, [processedPatients, rawClaimsData, rawPaymentsData]);
 
   // Update state when memoized values change
   useEffect(() => {
@@ -212,7 +208,8 @@ export default function BillingDashboard() {
       console.log('Billing visits from pharmacy:', billingVisitsData?.length || 0);
 
       // Fetch invoices with patient details
-      // Include all invoices (Unpaid, Partially Paid, and Paid) for accurate revenue calculation
+      // Only show today's invoices
+      const today = new Date().toISOString().split('T')[0];
       const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
@@ -220,8 +217,9 @@ export default function BillingDashboard() {
           patient:patients(full_name, phone, insurance_company_id, insurance_policy_number),
           invoice_items(*)
         `)
-        .order('invoice_date', { ascending: false })
-        .limit(200);
+        .gte('invoice_date', today)
+        .lte('invoice_date', today + 'T23:59:59')
+        .order('invoice_date', { ascending: false });
 
       // Fetch patients for invoice creation
       const { data: patientsData } = await supabase
@@ -255,11 +253,18 @@ export default function BillingDashboard() {
         `)
         .eq('status', 'Completed');
 
+      // Fetch all payments for revenue calculation
+      const { data: paymentsData } = await supabase
+        .from('payments')
+        .select('*')
+        .order('created_at', { ascending: false });
+
       // Update raw data state to trigger memoized computations
       setRawInvoicesData(invoicesData || []);
       setRawPatientsData(patientsData || []);
       setRawInsuranceData(insuranceData || []);
       setRawClaimsData(claimsData || []);
+      setRawPaymentsData(paymentsData || []);
       setPatientServices(servicesData || []);
 
       // Calculate patient costs
