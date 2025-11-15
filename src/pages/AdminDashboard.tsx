@@ -2385,7 +2385,19 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Create User Dialog */}
-        <Dialog open={showCreateUserDialog} onOpenChange={setShowCreateUserDialog}>
+        <Dialog open={showCreateUserDialog} onOpenChange={(open) => {
+          setShowCreateUserDialog(open);
+          if (!open) {
+            // Clear form when closing
+            setUserForm({
+              full_name: '',
+              email: '',
+              phone: '',
+              password: '',
+              role: 'receptionist'
+            });
+          }
+        }}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Create New User</DialogTitle>
@@ -2412,6 +2424,7 @@ export default function AdminDashboard() {
                   required
                   placeholder="user@example.com"
                   pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
+                  autoComplete="off"
                 />
               </div>
               <div className="space-y-2">
@@ -2421,13 +2434,15 @@ export default function AdminDashboard() {
                   value={userForm.phone} 
                   onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} 
                   placeholder="+255 700 000 000"
+                  autoComplete="off"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="create_password">Password *</Label>
                 <Input 
                   id="create_password" 
-                  type="password" 
+                  type="password"
+                  autoComplete="new-password" 
                   value={userForm.password} 
                   onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} 
                   required
