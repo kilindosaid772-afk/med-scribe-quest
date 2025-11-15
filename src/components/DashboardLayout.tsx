@@ -4,8 +4,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Stethoscope, LogOut, User, Menu, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Logo from '@/components/Logo';
+import { supabase } from '@/integrations/supabase/client';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -17,6 +18,26 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userFullName, setUserFullName] = useState<string>('');
+
+  // Fetch user's full name from profiles table
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (user?.id) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+        
+        if (data && !error) {
+          setUserFullName(data.full_name || '');
+        }
+      }
+    };
+    
+    fetchUserProfile();
+  }, [user?.id]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -74,31 +95,12 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
             </nav>
 
             <div className="flex items-center gap-3">
-              <Avatar className="h-8 w-8 border-2 border-primary/20">
-                {user?.user_metadata?.avatar_url ? (
-                  <img 
-                    src={user.user_metadata.avatar_url} 
-                    alt="Profile" 
-                    className="h-full w-full object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                      const fallback = target.nextElementSibling as HTMLElement;
-                      if (fallback) fallback.style.display = 'flex';
-                    }}
-                  />
-                ) : null}
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                  {user?.user_metadata?.username?.substring(0, 2).toUpperCase() || 
-                   user?.user_metadata?.full_name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 
-                   user?.email?.substring(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="hidden sm:block text-right">
-                <p className="text-sm font-medium">
-                  {user?.user_metadata?.username || 
-                   user?.user_metadata?.full_name || 
-                   user?.email?.split('@')[0]}
+              <div className="text-right">
+                <p className="text-sm font-medium text-gray-900">
+                  {userFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0]}
+                </p>
+                <p className="text-xs text-gray-500 capitalize">
+                  {primaryRole?.replace('_', ' ')}
                 </p>
               </div>
             </div>
@@ -138,34 +140,13 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
               </nav>
 
               <div className="flex items-center justify-between pt-2 border-t">
-                <div className="flex items-center gap-2">
-                  <Avatar className="h-6 w-6 border border-primary/20">
-                    {user?.user_metadata?.avatar_url ? (
-                      <img 
-                        src={user.user_metadata.avatar_url} 
-                        alt="Profile" 
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          const fallback = target.nextElementSibling as HTMLElement;
-                          if (fallback) fallback.style.display = 'flex';
-                        }}
-                      />
-                    ) : null}
-                    <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-medium">
-                      {user?.user_metadata?.username?.substring(0, 2).toUpperCase() || 
-                       user?.user_metadata?.full_name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 
-                       user?.email?.substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="text-sm">
-                    <p className="font-medium">
-                      {user?.user_metadata?.username || 
-                       user?.user_metadata?.full_name || 
-                       user?.email?.split('@')[0]}
-                    </p>
-                  </div>
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-medium text-gray-900">
+                    {userFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0]}
+                  </p>
+                  <p className="text-xs text-gray-500 capitalize">
+                    {primaryRole?.replace('_', ' ')}
+                  </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleSignOut}>
                   <LogOut className="h-4 w-4 mr-2" />
