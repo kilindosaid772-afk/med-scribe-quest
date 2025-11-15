@@ -108,14 +108,17 @@ export default function NurseDashboard() {
     setSearchResults([]);
   };
 
-  const searchPatients = async () => {
-    if (!searchQuery.trim()) return;
+  const searchPatients = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
 
     try {
       const { data, error } = await supabase
         .from('patients')
         .select('*')
-        .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
+        .or(`full_name.ilike.%${query}%,phone.ilike.%${query}%`)
         .limit(10);
 
       if (error) throw error;
@@ -125,6 +128,17 @@ export default function NurseDashboard() {
       toast.error('Failed to search patients');
     }
   };
+
+  // Real-time search effect
+  useEffect(() => {
+    if (!showPatientSearch) return;
+    
+    const timeoutId = setTimeout(() => {
+      searchPatients(searchQuery);
+    }, 300); // Debounce for 300ms
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, showPatientSearch]);
 
   const submitVitals = async () => {
     if (!selectedPatient) return;
@@ -743,16 +757,16 @@ export default function NurseDashboard() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex gap-2">
+            <div>
               <Input
                 placeholder="Search by name or phone..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && searchPatients()}
+                autoFocus
               />
-              <Button onClick={searchPatients}>
-                <Search className="h-4 w-4" />
-              </Button>
+              <p className="text-xs text-muted-foreground mt-1">
+                Start typing to search in real-time
+              </p>
             </div>
             <div className="max-h-64 overflow-y-auto">
               {searchResults.length === 0 ? (
