@@ -99,9 +99,6 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
                 <p className="text-sm font-medium text-gray-900">
                   {userFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0]}
                 </p>
-                <p className="text-xs text-gray-500 capitalize">
-                  {primaryRole?.replace('_', ' ')}
-                </p>
               </div>
             </div>
             <Button variant="outline" size="sm" onClick={handleSignOut}>
@@ -143,9 +140,6 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
                 <div className="flex flex-col gap-1">
                   <p className="text-sm font-medium text-gray-900">
                     {userFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0]}
-                  </p>
-                  <p className="text-xs text-gray-500 capitalize">
-                    {primaryRole?.replace('_', ' ')}
                   </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleSignOut}>

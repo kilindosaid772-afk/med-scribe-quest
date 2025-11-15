@@ -623,18 +623,16 @@ export default function ActivityLogsView() {
                               </div>
                               
                               <div>
-                                <Label className="text-xs text-muted-foreground">Details</Label>
-                                <div className="mt-2 p-4 bg-muted rounded-lg">
+                                <Label className="text-xs text-muted-foreground">Details (JSON)</Label>
+                                <div className="mt-2 p-4 bg-slate-900 rounded-lg border border-slate-700">
                                   {log.details ? (
-                                    typeof log.details === 'string' ? (
-                                      <p className="text-sm">{log.details}</p>
-                                    ) : (
-                                      <pre className="text-xs overflow-auto max-h-96 whitespace-pre-wrap">
-                                        {JSON.stringify(log.details, null, 2)}
-                                      </pre>
-                                    )
+                                    <pre className="text-xs text-green-400 overflow-auto max-h-96 whitespace-pre-wrap font-mono">
+                                      {JSON.stringify(log.details, null, 2)}
+                                    </pre>
                                   ) : (
-                                    <p className="text-sm text-muted-foreground">No details available</p>
+                                    <pre className="text-xs text-gray-400 font-mono">
+                                      {JSON.stringify({ message: "No details available" }, null, 2)}
+                                    </pre>
                                   )}
                                 </div>
                               </div>
