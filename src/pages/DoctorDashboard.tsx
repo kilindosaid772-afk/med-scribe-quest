@@ -2730,7 +2730,7 @@ export default function DoctorDashboard() {
                               dosage: '',
                               frequency: '',
                               duration: '',
-                              quantity: '1',
+                              quantity: '',
                               instructions: ''
                             }
                           });
@@ -2809,7 +2809,7 @@ export default function DoctorDashboard() {
                         <Input
                           id={`quantity-${medId}`}
                           placeholder="e.g., 14"
-                          value={form.quantity || '1'}
+                          value={form.quantity || ''}
                           onChange={(e) => setPrescriptionForms({
                             ...prescriptionForms,
                             [medId]: { ...form, quantity: e.target.value }

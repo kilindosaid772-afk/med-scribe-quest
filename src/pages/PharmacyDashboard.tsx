@@ -81,6 +81,7 @@ export default function PharmacyDashboard() {
   const [prescriptionFilter, setPrescriptionFilter] = useState<'pending' | 'all'>('pending');
   const [dispenseDialogOpen, setDispenseDialogOpen] = useState(false);
   const [selectedPrescriptionForDispense, setSelectedPrescriptionForDispense] = useState<any>(null);
+  const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set());
   
   // Type for the combined prescription data
   interface PrescriptionWithRelations extends Prescription {
@@ -338,80 +339,67 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Update patient visit status if applicable
-      console.log('Looking for patient visit with patient_id:', patientId);
+      // Check if this is the last pending prescription for this patient
+      const { data: allPatientPrescriptions, error: prescError } = await supabase
+        .from('prescriptions')
+        .select('id, status')
+        .eq('patient_id', patientId);
       
-      const { data: visits, error: visitsError } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', patientId)
-        .eq('current_stage', 'pharmacy')
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      console.log('Patient visits query result:', { visits, visitsError, patientId });
-
-      if (visitsError) {
-        console.error('Error fetching patient visits:', visitsError);
-        toast.error(`Failed to fetch patient visit: ${visitsError.message}`);
-        return;
+      if (prescError) {
+        console.error('Error fetching patient prescriptions:', prescError);
       }
-
-      if (!visits || visits.length === 0) {
-        // Check if there's ANY active visit for this patient
-        const { data: anyVisits, error: anyVisitsError } = await supabase
+      
+      const pendingCount = allPatientPrescriptions?.filter(p => p.status === 'Pending' && p.id !== prescriptionId).length || 0;
+      const isLastPrescription = pendingCount === 0;
+      
+      console.log(`Dispensing prescription. Remaining pending prescriptions: ${pendingCount}`);
+      
+      // Only update patient visit to billing if this is the last prescription
+      if (isLastPrescription) {
+        console.log('This is the last prescription - moving patient to billing');
+        
+        const { data: visits, error: visitsError } = await supabase
           .from('patient_visits')
-          .select('id, current_stage, pharmacy_status, overall_status')
+          .select('*')
           .eq('patient_id', patientId)
           .eq('overall_status', 'Active')
           .order('created_at', { ascending: false })
           .limit(1);
-        
-        console.error('No pharmacy visit found. Active visits for patient:', anyVisits);
-        
-        if (anyVisits && anyVisits.length > 0) {
-          toast.error(`Patient is at ${anyVisits[0].current_stage} stage, not pharmacy. Cannot dispense.`);
-        } else {
-          toast.error('No active visit found for this patient. Please ensure patient has an active visit.');
-        }
-        
-        await logActivity('pharmacy.dispense.error', {
-          error: 'No active pharmacy visit found',
-          patient_id: patientId,
-          prescription_id: prescriptionId,
-          any_active_visits: anyVisits
-        });
-        
-        return;
-      }
 
-      // Update the visit to billing stage
-      console.log('Updating patient visit to billing stage:', visits[0].id);
-      const { error: visitUpdateError } = await supabase
-        .from('patient_visits')
-        .update({
-          pharmacy_status: 'Completed',
-          pharmacy_completed_at: new Date().toISOString(),
-          current_stage: 'billing',
-          billing_status: 'Pending',
-          overall_status: 'Active',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', visits[0].id);
-      
-      if (visitUpdateError) {
-        console.error('Error updating patient visit:', visitUpdateError);
-        toast.error(`Failed to update patient visit: ${visitUpdateError.message}`);
-        return;
+        if (!visitsError && visits && visits.length > 0) {
+          const visit = visits[0];
+          console.log('Updating patient visit to billing stage:', visit.id);
+          
+          const { error: visitUpdateError } = await supabase
+            .from('patient_visits')
+            .update({
+              pharmacy_status: 'Completed',
+              pharmacy_completed_at: new Date().toISOString(),
+              current_stage: 'billing',
+              billing_status: 'Pending',
+              overall_status: 'Active',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', visit.id);
+          
+          if (visitUpdateError) {
+            console.error('Error updating patient visit:', visitUpdateError);
+            toast.error(`Failed to update patient visit: ${visitUpdateError.message}`);
+            return;
+          }
+          
+          console.log('✅ Patient visit successfully moved to billing stage');
+          await logActivity('pharmacy.visit.moved_to_billing', {
+            visit_id: visit.id,
+            patient_id: patientId,
+            user_id: user.id
+          });
+        } else {
+          console.warn('No active visit found for patient, but continuing with dispensing');
+        }
+      } else {
+        console.log(`Not moving to billing yet - ${pendingCount} prescriptions still pending`);
       }
-      
-      console.log('✅ Patient visit successfully moved to billing stage');
-      await logActivity('pharmacy.visit.moved_to_billing', {
-        visit_id: visits[0].id,
-        patient_id: patientId,
-        user_id: user.id
-      });
 
       // Update medication stock using the actual dispensed quantity
       const dispensedQuantity = dispenseData?.quantity || prescription.quantity;
@@ -1060,112 +1048,187 @@ export default function PharmacyDashboard() {
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Patient</TableHead>
-                          <TableHead>Medication</TableHead>
-                          <TableHead>Prescribed By</TableHead>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(prescriptionFilter === 'pending' 
-                          ? prescriptions.filter(p => p.status === 'Pending') 
-                          : prescriptions
-                        ).slice(0, 10).map((prescription) => (
-                          <TableRow 
-                            key={prescription.id}
-                            className={loadingStates[prescription.id] ? 'opacity-50' : ''}
-                          >
-                            <TableCell className="font-medium">
-                              <div className="flex items-center">
-                                {loadingStates[prescription.id] && (
-                                  <Loader2 className="h-3 w-3 animate-spin mr-2 text-muted-foreground" />
-                                )}
-                                <span>
-                                  {prescription.patient?.full_name || '-'}
-                                </span>
-                              </div>
-                              {prescription.patient?.date_of_birth && (
-                                <div className="text-xs text-muted-foreground">
-                                  DOB: {format(new Date(prescription.patient.date_of_birth), 'MM/dd/yyyy')}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-medium">
-                                {prescription.medications?.name || prescription.medication_name}
-                              </div>
-                              {prescription.medications?.strength && (
-                                <div className="text-xs text-muted-foreground">
-                                  {prescription.medications.strength}
-                                  {prescription.medications.dosage_form && ` • ${prescription.medications.dosage_form}`}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {prescription.doctor_profile ? (
-                                <>
-                                  <div>{prescription.doctor_profile.full_name}</div>
-                                  {prescription.doctor_profile.department && (
-                                    <div className="text-xs text-muted-foreground">
-                                      {prescription.doctor_profile.department}
+                  <div className="space-y-3">
+                    {(() => {
+                      // Group prescriptions by patient
+                      const filteredPrescriptions = prescriptionFilter === 'pending' 
+                        ? prescriptions.filter(p => p.status === 'Pending') 
+                        : prescriptions;
+                      
+                      const groupedByPatient = filteredPrescriptions.reduce((acc: any, prescription) => {
+                        const patientId = prescription.patient_id;
+                        if (!acc[patientId]) {
+                          acc[patientId] = {
+                            patient: prescription.patient,
+                            prescriptions: []
+                          };
+                        }
+                        acc[patientId].prescriptions.push(prescription);
+                        return acc;
+                      }, {});
+
+                      return Object.entries(groupedByPatient).slice(0, 10).map(([patientId, data]: [string, any]) => {
+                        const isExpanded = expandedPatients.has(patientId);
+                        const patientPrescriptions = data.prescriptions;
+                        const firstPrescription = patientPrescriptions[0];
+                        
+                        return (
+                          <Card key={patientId} className="overflow-hidden">
+                            <div 
+                              className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                              onClick={() => {
+                                const newExpanded = new Set(expandedPatients);
+                                if (isExpanded) {
+                                  newExpanded.delete(patientId);
+                                } else {
+                                  newExpanded.add(patientId);
+                                }
+                                setExpandedPatients(newExpanded);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3">
+                                    <div className="font-semibold text-lg">{data.patient?.full_name || 'Unknown Patient'}</div>
+                                    <Badge variant="secondary">
+                                      {patientPrescriptions.length} prescription{patientPrescriptions.length !== 1 ? 's' : ''}
+                                    </Badge>
+                                    {patientPrescriptions.some((p: any) => p.status === 'Pending') && (
+                                      <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                        Pending
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {data.patient?.date_of_birth && (
+                                    <div className="text-sm text-muted-foreground mt-1">
+                                      DOB: {format(new Date(data.patient.date_of_birth), 'MM/dd/yyyy')} • {data.patient?.phone || 'No phone'}
                                     </div>
                                   )}
-                                </>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div>{format(new Date(prescription.prescribed_date), 'MMM d, yyyy')}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {format(new Date(prescription.prescribed_date), 'h:mm a')}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  prescription.status === 'Dispensed'
-                                    ? 'default'
-                                    : prescription.status === 'Cancelled'
-                                    ? 'destructive'
-                                    : 'secondary'
-                                }
-                                className="capitalize"
-                              >
-                                {prescription.status.toLowerCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {prescription.status === 'Pending' ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenDispenseDialog(prescription)}
-                                  disabled={loadingStates[prescription.id]}
-                                >
-                                  {loadingStates[prescription.id] ? (
-                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                  ) : (
-                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {patientPrescriptions.some((p: any) => p.status === 'Pending') && (
+                                    <Button 
+                                      variant="default" 
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Dispense all pending prescriptions
+                                        const pendingPrescriptions = patientPrescriptions.filter((p: any) => p.status === 'Pending');
+                                        if (pendingPrescriptions.length > 0) {
+                                          handleOpenDispenseDialog(pendingPrescriptions[0]);
+                                        }
+                                      }}
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      Dispense All ({patientPrescriptions.filter((p: any) => p.status === 'Pending').length})
+                                    </Button>
                                   )}
-                                  Dispense
-                                </Button>
-                              ) : (
-                                <span className="text-muted-foreground text-sm">
-                                  Dispensed
-                                </span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                                  <Button variant="ghost" size="sm">
+                                    {isExpanded ? 'Hide' : 'View'} Prescriptions
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {isExpanded && (
+                              <div className="border-t">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Medication</TableHead>
+                                      <TableHead>Dosage</TableHead>
+                                      <TableHead>Quantity</TableHead>
+                                      <TableHead>Prescribed By</TableHead>
+                                      <TableHead>Date</TableHead>
+                                      <TableHead>Status</TableHead>
+                                      <TableHead className="text-right">Actions</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {patientPrescriptions.map((prescription: any) => (
+                                      <TableRow 
+                                        key={prescription.id}
+                                        className={loadingStates[prescription.id] ? 'opacity-50' : ''}
+                                      >
+                                        <TableCell>
+                                          <div className="font-medium">
+                                            {prescription.medications?.name || prescription.medication_name}
+                                          </div>
+                                          {prescription.medications?.strength && (
+                                            <div className="text-xs text-muted-foreground">
+                                              {prescription.medications.strength} • {prescription.medications.dosage_form}
+                                            </div>
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          <div className="text-sm">{prescription.dosage}</div>
+                                          <div className="text-xs text-muted-foreground">{prescription.frequency}</div>
+                                        </TableCell>
+                                        <TableCell>
+                                          <div className="font-medium">{prescription.quantity}</div>
+                                          <div className="text-xs text-muted-foreground">{prescription.duration}</div>
+                                        </TableCell>
+                                        <TableCell>
+                                          {prescription.doctor_profile ? (
+                                            <div className="text-sm">{prescription.doctor_profile.full_name}</div>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">-</span>
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          <div className="text-sm">{format(new Date(prescription.prescribed_date), 'MMM d')}</div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {format(new Date(prescription.prescribed_date), 'h:mm a')}
+                                          </div>
+                                        </TableCell>
+                                        <TableCell>
+                                          <Badge
+                                            variant={
+                                              prescription.status === 'Dispensed'
+                                                ? 'default'
+                                                : prescription.status === 'Cancelled'
+                                                ? 'destructive'
+                                                : 'secondary'
+                                            }
+                                            className="capitalize"
+                                          >
+                                            {prescription.status.toLowerCase()}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                          {prescription.status === 'Pending' ? (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenDispenseDialog(prescription);
+                                              }}
+                                              disabled={loadingStates[prescription.id]}
+                                            >
+                                              {loadingStates[prescription.id] ? (
+                                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                              ) : (
+                                                <CheckCircle className="h-4 w-4 mr-2" />
+                                              )}
+                                              Dispense
+                                            </Button>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">
+                                              Dispensed
+                                            </span>
+                                          )}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            )}
+                          </Card>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </CardContent>
