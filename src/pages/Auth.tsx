@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Activity, Loader2 } from 'lucide-react';
+import Logo from '@/components/Logo';
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
@@ -65,11 +66,8 @@ export default function Auth() {
       <Card className="w-full max-w-md shadow-xl border-primary/10">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="rounded-full bg-primary/10 p-3">
-              <Activity className="h-8 w-8 text-primary" />
-            </div>
+            <Logo size="lg" showText={true} className="justify-center" />
           </div>
-          <CardTitle className="text-3xl font-bold">Hospital Management</CardTitle>
           <CardDescription className="text-base">
             Professional healthcare management system
           </CardDescription>
