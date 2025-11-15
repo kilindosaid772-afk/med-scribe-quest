@@ -32,6 +32,7 @@
 - ✅ Lab test ordering and results
 - ✅ Pharmacy dispensing
 - ✅ Billing and payment processing
+- ✅ **ZenoPay payment gateway integration**
 - ✅ Activity logging and reporting
 - ✅ Real-time updates across all modules
 - ✅ Multi-role user management
@@ -70,11 +71,12 @@ Choose your platform:
 
 ### Must Do Before Going Live
 - [ ] Set production Supabase URL and keys in `.env.production`
+- [ ] **Configure ZenoPay credentials** (API Key, Merchant ID)
 - [ ] Create initial admin user in database
 - [ ] Verify all RLS policies are enabled
 - [ ] Test all user roles and permissions
 - [ ] Test complete patient workflow
-- [ ] Verify payment processing
+- [ ] **Test ZenoPay payment processing**
 - [ ] Test on mobile devices
 - [ ] Set up SSL certificate (HTTPS)
 - [ ] Configure domain name

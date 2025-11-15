@@ -18,6 +18,7 @@ import ReceptionistDashboard from "./pages/ReceptionistDashboard";
 import DischargeDashboard from "./pages/DischargeDashboard";
 import MedicalServicesDashboard from "./pages/MedicalServicesDashboard";
 import ActivityLogs from "./pages/ActivityLogs";
+import PaymentSuccess from "./pages/PaymentSuccess";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -119,6 +120,10 @@ const App = () => (
                   <ActivityLogs />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="/billing/payment-success"
+              element={<PaymentSuccess />}
             />
           </Routes>
         </AuthProvider>
