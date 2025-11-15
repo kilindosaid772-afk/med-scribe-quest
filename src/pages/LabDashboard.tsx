@@ -681,17 +681,6 @@ export default function LabDashboard() {
                         </Badge>
                       </div>
                     </div>
-                    {test.notes && (
-                      <div className="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
-                        <div className="flex items-start gap-2">
-                          <span className="text-lg">💡</span>
-                          <div>
-                            <strong className="text-yellow-800 text-sm">Doctor's Instructions:</strong>
-                            <p className="text-yellow-700 text-sm mt-1">{test.notes}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor={`result_${test.id}`}>Result Value *</Label>
