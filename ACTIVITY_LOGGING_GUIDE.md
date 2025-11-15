@@ -1,6 +1,6 @@
 # Activity Logging Implementation Guide
 
-## Current Status
+## Current Status.
 
 Activity logging is **partially implemented**. Some actions are tracked, but many important activities are missing.
 
