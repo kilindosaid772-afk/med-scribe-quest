@@ -149,15 +149,36 @@ export default function BillingDashboard() {
     const unpaid = processedPatients.filter((p: any) => p.status === 'Unpaid').length;
     const partiallyPaid = processedPatients.filter((p: any) => p.status === 'Partially Paid').length;
 
+    // Calculate today's revenue only
+    const today = new Date().toISOString().split('T')[0];
     let totalRevenue = 0;
-    processedPatients
-      .filter((p: any) => p.totalPaid > 0)
-      .forEach((p: any) => {
-        const paidAmount = typeof p.totalPaid === 'number' ? p.totalPaid : Number(p.totalPaid) || 0;
-        totalRevenue += paidAmount;
-      });
+    
+    // Get all invoices from all patients
+    const allInvoices = processedPatients.flatMap((p: any) => p.invoices || []);
+    
+    // Filter invoices that were paid today and sum their paid amounts
+    allInvoices.forEach((invoice: any) => {
+      // Check if invoice has payments today
+      const invoiceDate = invoice.invoice_date?.split('T')[0];
+      const updatedDate = invoice.updated_at?.split('T')[0];
+      
+      // If invoice was updated today (payment made today), include its paid amount
+      if (updatedDate === today && invoice.paid_amount > 0) {
+        totalRevenue += Number(invoice.paid_amount);
+      }
+    });
 
     const pendingClaims: number = rawClaimsData?.filter(c => c.status === 'Pending').length || 0;
+
+    console.log('Billing Stats (Today):', {
+      today,
+      processedPatients: processedPatients.length,
+      unpaid,
+      partiallyPaid,
+      totalRevenue,
+      pendingClaims,
+      totalInvoices: allInvoices.length
+    });
 
     return { unpaid, partiallyPaid, totalRevenue, pendingClaims };
   }, [processedPatients, rawClaimsData]);
@@ -191,7 +212,7 @@ export default function BillingDashboard() {
       console.log('Billing visits from pharmacy:', billingVisitsData?.length || 0);
 
       // Fetch invoices with patient details
-      // Filter to show only unpaid and partially paid invoices by default
+      // Include all invoices (Unpaid, Partially Paid, and Paid) for accurate revenue calculation
       const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
@@ -199,9 +220,8 @@ export default function BillingDashboard() {
           patient:patients(full_name, phone, insurance_company_id, insurance_policy_number),
           invoice_items(*)
         `)
-        .in('status', ['Unpaid', 'Partially Paid'])
         .order('invoice_date', { ascending: false })
-        .limit(100);
+        .limit(200);
 
       // Fetch patients for invoice creation
       const { data: patientsData } = await supabase
