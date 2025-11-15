@@ -421,52 +421,21 @@ export default function NurseDashboard() {
           </CardContent>
         </Card>
 
-        {/* Quick Actions */}
+        {/* Patient Search */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Common nursing tasks and shortcuts</CardDescription>
+            <CardTitle>Patient Search</CardTitle>
+            <CardDescription>Search for patients in the system</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
-              <Button
-                variant="outline"
-                className="h-20 flex-col gap-2"
-                onClick={() => {
-                  if (pendingVisits.length > 0) {
-                    handleRecordVitals(pendingVisits[0].patient);
-                  } else {
-                    toast.error('No patients waiting');
-                  }
-                }}
-              >
-                <Thermometer className="h-6 w-6" />
-                <span>Record Vitals</span>
-              </Button>
-
-              <Button
-                variant="outline"
-                className="h-20 flex-col gap-2"
-                onClick={() => {
-                  if (patients.length > 0) {
-                    handleScheduleFollowUp(patients[0]);
-                  } else {
-                    toast.error('No patients available');
-                  }
-                }}
-              >
-                <Calendar className="h-6 w-6" />
-                <span>Schedule Follow-up</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="h-20 flex-col gap-2"
-                onClick={handlePatientSearch}
-              >
-                <Users className="h-6 w-6" />
-                <span>Patient Search</span>
-              </Button>
-            </div>
+            <Button
+              variant="default"
+              className="w-full"
+              onClick={handlePatientSearch}
+            >
+              <Users className="h-5 w-5 mr-2" />
+              Search Patients
+            </Button>
           </CardContent>
         </Card>
       </div>
