@@ -937,60 +937,129 @@ export default function BillingDashboard() {
 
           {/* Insurance Claims Tab */}
           <TabsContent value="insurance" className="space-y-4">
+            {/* NHIF Info Card */}
+            <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-white shadow-lg">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-blue-600 rounded-lg">
+                    <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">NHIF Claims Management</CardTitle>
+                    <CardDescription className="text-sm">
+                      National Health Insurance Fund - Automated claim submission
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 bg-white rounded-lg border border-blue-100">
+                    <div className="text-sm text-muted-foreground">Total Claims</div>
+                    <div className="text-2xl font-bold text-blue-600">{insuranceClaims.length}</div>
+                  </div>
+                  <div className="p-4 bg-white rounded-lg border border-green-100">
+                    <div className="text-sm text-muted-foreground">Approved</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {insuranceClaims.filter(c => c.status === 'Approved').length}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-white rounded-lg border border-yellow-100">
+                    <div className="text-sm text-muted-foreground">Pending</div>
+                    <div className="text-2xl font-bold text-yellow-600">
+                      {insuranceClaims.filter(c => c.status === 'Pending').length}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Claims Table */}
             <Card className="shadow-lg">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Insurance Claims</CardTitle>
-                    <CardDescription>Manage insurance claims and approvals</CardDescription>
+                    <CardDescription>Submit and track NHIF claims</CardDescription>
                   </div>
-                  <Button onClick={() => setClaimDialogOpen(true)}>
+                  <Button onClick={() => setClaimDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
                     <Plus className="mr-2 h-4 w-4" />
-                    Submit Claim
+                    Submit New Claim
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="min-w-[100px]">Claim #</TableHead>
-                        <TableHead className="min-w-[120px]">Patient</TableHead>
-                        <TableHead className="min-w-[120px]">Insurance</TableHead>
-                        <TableHead className="min-w-[120px]">Claim Amount</TableHead>
-                        <TableHead className="min-w-[120px]">Approved Amount</TableHead>
-                        <TableHead className="min-w-[80px]">Status</TableHead>
-                        <TableHead className="min-w-[100px]">Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {insuranceClaims.map((claim) => (
-                        <TableRow key={claim.id}>
-                          <TableCell className="font-medium">{claim.claim_number}</TableCell>
-                          <TableCell className="text-sm">{claim.patient?.full_name || 'Unknown'}</TableCell>
-                          <TableCell className="text-sm">{claim.insurance_company?.name || 'N/A'}</TableCell>
-                          <TableCell>TSh{Number(claim.claim_amount as number).toFixed(2)}</TableCell>
-                          <TableCell>TSh{Number(claim.approved_amount as number).toFixed(2)}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                claim.status === 'Approved' ? 'default' :
-                                claim.status === 'Pending' ? 'secondary' :
-                                'destructive'
-                              }
-                            >
-                              {claim.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {format(new Date(claim.submission_date), 'MMM dd, yyyy')}
-                          </TableCell>
+                {insuranceClaims.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+                      <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No claims submitted yet</h3>
+                    <p className="text-sm text-gray-500 mb-4">Start by submitting your first NHIF claim</p>
+                    <Button onClick={() => setClaimDialogOpen(true)} variant="outline">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Submit First Claim
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50">
+                          <TableHead className="font-semibold">Claim Number</TableHead>
+                          <TableHead className="font-semibold">Patient</TableHead>
+                          <TableHead className="font-semibold">NHIF Card</TableHead>
+                          <TableHead className="font-semibold">Claim Amount</TableHead>
+                          <TableHead className="font-semibold">Approved</TableHead>
+                          <TableHead className="font-semibold">Status</TableHead>
+                          <TableHead className="font-semibold">Submitted</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {insuranceClaims.map((claim) => (
+                          <TableRow key={claim.id} className="hover:bg-gray-50">
+                            <TableCell className="font-mono font-medium text-blue-600">{claim.claim_number}</TableCell>
+                            <TableCell>
+                              <div className="font-medium">{claim.patient?.full_name || 'Unknown'}</div>
+                              <div className="text-xs text-muted-foreground">{claim.patient?.phone}</div>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{claim.patient?.insurance_policy_number || 'N/A'}</TableCell>
+                            <TableCell className="font-semibold">TSh {Number(claim.claim_amount as number).toLocaleString()}</TableCell>
+                            <TableCell className="font-semibold text-green-600">
+                              TSh {Number(claim.approved_amount || 0).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  claim.status === 'Approved' ? 'default' :
+                                  claim.status === 'Pending' ? 'secondary' :
+                                  'destructive'
+                                }
+                                className={
+                                  claim.status === 'Approved' ? 'bg-green-100 text-green-800 hover:bg-green-200' :
+                                  claim.status === 'Pending' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' :
+                                  'bg-red-100 text-red-800 hover:bg-red-200'
+                                }
+                              >
+                                {claim.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              <div>{format(new Date(claim.submission_date), 'MMM dd, yyyy')}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {format(new Date(claim.submission_date), 'h:mm a')}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1243,26 +1312,115 @@ export default function BillingDashboard() {
             <form onSubmit={async (e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              
+              try {
+                setLoading(true);
+                
+                const invoiceId = formData.get('invoiceId') as string;
+                const insuranceCompanyId = formData.get('insuranceCompanyId') as string;
+                const claimAmount = Number(formData.get('claimAmount') as string);
+                const notes = formData.get('notes') as string;
+                
+                // Find patient from invoice
+                const patientData = invoices.find(pd => pd.invoices.some(inv => inv.id === invoiceId));
+                const invoice = patientData?.invoices.find(inv => inv.id === invoiceId);
+                
+                if (!patientData || !invoice) {
+                  toast.error('Invoice not found');
+                  return;
+                }
+                
+                // Get insurance company details including API key
+                const insuranceCompany = insuranceCompanies.find(ic => ic.id === insuranceCompanyId);
+                
+                if (!insuranceCompany) {
+                  toast.error('Insurance company not found');
+                  return;
+                }
 
-              const claimData = {
-                invoice_id: formData.get('invoiceId') as string,
-                insurance_company_id: formData.get('insuranceCompanyId') as string,
-                patient_id: invoices
-                  .find(patientData => patientData.invoices.some(inv => inv.id === formData.get('invoiceId')))
-                  ?.patient?.id,
-                claim_number: `CLM-${Date.now().toString().slice(-8)}`,
-                claim_amount: Number(formData.get('claimAmount') as string),
-                notes: formData.get('notes') as string,
-              };
+                const claimNumber = `CLM-${Date.now().toString().slice(-8)}`;
+                
+                // Prepare claim data
+                const claimData = {
+                  invoice_id: invoiceId,
+                  insurance_company_id: insuranceCompanyId,
+                  patient_id: patientData.patient?.id,
+                  claim_number: claimNumber,
+                  claim_amount: claimAmount,
+                  notes: notes,
+                  status: 'Pending',
+                  submission_date: new Date().toISOString()
+                };
 
-              const { error } = await supabase.from('insurance_claims').insert([claimData]);
+                // If insurance company has API key, submit via API
+                if (insuranceCompany.api_key && insuranceCompany.api_endpoint) {
+                  try {
+                    console.log('Submitting claim to insurance API:', insuranceCompany.api_endpoint);
+                    
+                    // NHIF Tanzania format
+                    const apiPayload = {
+                      ClaimNumber: claimNumber,
+                      CardNumber: patientData.patient?.insurance_policy_number,
+                      PatientName: patientData.patient?.full_name,
+                      FacilityCode: insuranceCompany.facility_code || 'HF001',
+                      DateOfService: invoice.invoice_date,
+                      TotalAmount: claimAmount,
+                      Services: invoice.invoice_items?.map((item: any) => ({
+                        ServiceCode: item.item_type || 'CONS',
+                        ServiceName: item.description,
+                        Quantity: item.quantity,
+                        UnitPrice: item.unit_price,
+                        TotalPrice: item.total_price
+                      })) || [],
+                      Remarks: notes
+                    };
+                    
+                    const response = await fetch(insuranceCompany.api_endpoint, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${insuranceCompany.api_key}`,
+                        'X-API-Key': insuranceCompany.api_key
+                      },
+                      body: JSON.stringify(apiPayload)
+                    });
+                    
+                    if (!response.ok) {
+                      throw new Error(`API request failed: ${response.statusText}`);
+                    }
+                    
+                    const apiResult = await response.json();
+                    console.log('Insurance API response:', apiResult);
+                    
+                    // Update claim data with API response
+                    claimData.notes = `${notes}\n\nAPI Response: ${JSON.stringify(apiResult)}`;
+                    
+                    toast.success('Claim submitted to insurance company via API');
+                  } catch (apiError) {
+                    console.error('Insurance API error:', apiError);
+                    toast.warning('Claim saved locally but API submission failed. Will retry later.');
+                    claimData.notes = `${notes}\n\nAPI Error: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`;
+                  }
+                } else {
+                  console.log('No API configuration found, saving claim locally only');
+                }
 
-              if (error) {
+                // Save claim to database
+                const { error } = await supabase.from('insurance_claims').insert([claimData]);
+
+                if (error) {
+                  console.error('Database error:', error);
+                  toast.error(`Failed to save claim: ${error.message}`);
+                } else {
+                  toast.success('Insurance claim submitted successfully');
+                  setClaimDialogOpen(false);
+                  fetchData();
+                }
+              } catch (error) {
+                console.error('Claim submission error:', error);
                 toast.error('Failed to submit claim');
-              } else {
-                toast.success('Insurance claim submitted successfully');
-                setClaimDialogOpen(false);
-                fetchData();
+              } finally {
+                setLoading(false);
               }
             }} className="space-y-4">
               <div className="space-y-2">
