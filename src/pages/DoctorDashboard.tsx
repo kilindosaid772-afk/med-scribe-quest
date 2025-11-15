@@ -979,8 +979,13 @@ export default function DoctorDashboard() {
       return;
     }
 
+    if (!user?.id) {
+      toast.error('User not authenticated');
+      return;
+    }
+
     try {
-      // Create lab test orders
+      // Create lab test orders one by one to better handle errors
       const labTests = labTestForm.selectedTests.map(testId => {
         const test = availableLabTests.find(t => t.id === testId);
         return {
@@ -990,13 +995,14 @@ export default function DoctorDashboard() {
           status: 'Pending',
           priority: labTestForm.priority,
           notes: labTestForm.notes || null,
-          ordered_by_doctor_id: user?.id,
+          ordered_by_doctor_id: user.id,
           ordered_date: new Date().toISOString()
         };
       });
 
       console.log('Ordering lab tests:', labTests);
 
+      // Insert lab tests
       const { data, error } = await supabase
         .from('lab_tests')
         .insert(labTests)
@@ -1004,13 +1010,23 @@ export default function DoctorDashboard() {
 
       if (error) {
         console.error('Lab test insert error:', error);
-        throw new Error(`Failed to create lab tests: ${error.message}`);
+        // Provide more specific error messages
+        if (error.code === '42501') {
+          throw new Error('Permission denied. Please ensure you have doctor role assigned.');
+        } else if (error.code === '23503') {
+          throw new Error('Invalid patient or doctor ID. Please try again.');
+        } else {
+          throw new Error(`Database error: ${error.message}`);
+        }
       }
 
-      console.log('Lab tests created:', data);
+      if (!data || data.length === 0) {
+        throw new Error('No lab tests were created. Please try again.');
+      }
+
+      console.log('Lab tests created successfully:', data);
 
       // Update patient visit to lab stage
-      // Keep doctor_status as 'In Consultation' so patient returns to doctor queue after lab
       const { error: visitError } = await supabase
         .from('patient_visits')
         .update({
@@ -1026,7 +1042,7 @@ export default function DoctorDashboard() {
         throw new Error(`Failed to update patient visit: ${visitError.message}`);
       }
 
-      toast.success(`${labTests.length} lab test(s) ordered. Patient sent to lab.`);
+      toast.success(`${labTests.length} lab test(s) ordered successfully. Patient sent to lab.`);
       setShowLabTestDialog(false);
       
       // Reset form
@@ -1040,7 +1056,8 @@ export default function DoctorDashboard() {
       setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
     } catch (error: any) {
       console.error('Error ordering lab tests:', error);
-      toast.error(error.message || 'Failed to order lab tests');
+      const errorMessage = error.message || 'Failed to order lab tests';
+      toast.error(errorMessage);
     }
   };
 

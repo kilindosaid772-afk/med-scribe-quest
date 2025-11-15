@@ -59,8 +59,7 @@ export default function ReceptionistDashboard() {
   
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [showBookAppointmentDialog, setShowBookAppointmentDialog] = useState(false);
-  const [showAddDepartmentDialog, setShowAddDepartmentDialog] = useState(false);
-  const [newDepartment, setNewDepartment] = useState({ name: '', description: '' });
+
   const [showPatientSearch, setShowPatientSearch] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [roleUpdateIndicator, setRoleUpdateIndicator] = useState<string | null>(null);
@@ -1022,53 +1021,7 @@ export default function ReceptionistDashboard() {
     }
   };
 
-  const handleAddDepartment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // console.log('Adding department with data:', newDepartment);
-    if (!newDepartment.name.trim()) {
-      toast.error('Department name is required');
-      return;
-    }
-    
-    // Additional validation
-    if (newDepartment.name.trim().length < 2) {
-      toast.error('Department name must be at least 2 characters long');
-      return;
-    }
 
-    try {
-      const { data, error } = await supabase
-        .from('departments')
-        .insert([
-          { 
-            name: newDepartment.name.trim(),
-            description: newDepartment.description.trim() || null
-          }
-        ])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // console.log('Department added successfully:', data);
-      setDepartments(prev => [...prev, data]);
-      setNewDepartment({ name: '', description: '' });
-      setShowAddDepartmentDialog(false);
-      toast.success('Department added successfully');
-    } catch (error: any) {
-      console.error('Error adding department:', error);
-      // Handle specific error cases
-      if (error.code === '23505') {
-        // Unique constraint violation (duplicate name)
-        toast.error('A department with this name already exists');
-      } else if (error.code === '42501') {
-        // RLS policy violation
-        toast.error('You do not have permission to add departments');
-      } else {
-        toast.error('Failed to add department');
-      }
-    }
-  };
 
   // ---------------- LOADING SCREEN ----------------
   if (loading) {
@@ -1195,18 +1148,13 @@ export default function ReceptionistDashboard() {
                   <Clipboard className="h-6 w-6" />
                   <span>View Schedule</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => window.open('/discharge', '_blank')}>
-                  <HeartHandshake className="h-6 w-6" />
-                  <span>Process Discharge</span>
-                  <span className="text-xs text-muted-foreground">For completed patients</span>
-                </Button>
               </div>
             </CardContent>
           </Card>
 
           {/* Departments */}
           <Card className="shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader>
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <Building className="h-5 w-5" />
@@ -1214,15 +1162,6 @@ export default function ReceptionistDashboard() {
                 </CardTitle>
                 <CardDescription>Available departments and current doctor workload</CardDescription>
               </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="flex items-center gap-1"
-                onClick={() => setShowAddDepartmentDialog(true)}
-              >
-                <Plus className="h-4 w-4" />
-                <span>Add Department</span>
-              </Button>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -1580,44 +1519,7 @@ export default function ReceptionistDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Department Dialog */}
-      <Dialog open={showAddDepartmentDialog} onOpenChange={setShowAddDepartmentDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add New Department</DialogTitle>
-            <DialogDescription>Add a new department to the hospital</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleAddDepartment} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="dept_name">Department Name *</Label>
-              <Input 
-                id="dept_name" 
-                required 
-                value={newDepartment.name} 
-                onChange={(e) => setNewDepartment({ ...newDepartment, name: e.target.value })} 
-                placeholder="e.g., Cardiology, Pediatrics"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dept_description">Description</Label>
-              <Input 
-                id="dept_description" 
-                value={newDepartment.description} 
-                onChange={(e) => setNewDepartment({ ...newDepartment, description: e.target.value })} 
-                placeholder="Brief description of the department"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => setShowAddDepartmentDialog(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                Add Department
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+
 
       {/* View Schedule Dialog */}
       <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>

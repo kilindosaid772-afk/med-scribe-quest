@@ -343,206 +343,7 @@ export default function LabDashboard() {
     fetchData();
 };
 
-  const ensureAllPatientsHaveVisits = async () => {
-    try {
-      console.log('Ensuring all patients with completed lab tests have proper visits...');
 
-      // Get all completed lab tests
-      const { data: completedTests } = await supabase
-        .from('lab_tests')
-        .select(`
-          *,
-          patient:patients(id, full_name)
-        `)
-        .eq('status', 'Completed');
-
-      if (!completedTests || completedTests.length === 0) {
-        toast.info('No completed lab tests found');
-        return;
-      }
-
-      console.log('Found completed lab tests:', completedTests.length);
-
-      // For each completed test, ensure the patient has a visit in doctor stage
-      for (const test of completedTests) {
-        const patientId = test.patient_id;
-
-        // Check if patient already has active prescriptions
-        const { data: existingPrescriptions } = await supabase
-          .from('prescriptions')
-          .select('*')
-          .eq('patient_id', patientId)
-          .in('status', ['Pending', 'Active'])
-          .limit(1);
-
-        if (existingPrescriptions && existingPrescriptions.length > 0) {
-          console.log('Patient', test.patient?.full_name, 'already has active prescriptions, skipping workflow update');
-          continue;
-        }
-
-        // Check if patient already has an active visit in doctor stage
-        const { data: existingVisits } = await supabase
-          .from('patient_visits')
-          .select('*')
-          .eq('patient_id', patientId)
-          .eq('current_stage', 'doctor')
-          .eq('overall_status', 'Active')
-          .eq('doctor_status', 'Pending')
-          .limit(1);
-
-        if (existingVisits && existingVisits.length > 0) {
-          console.log('Patient', test.patient?.full_name, 'already has doctor visit');
-          continue;
-        }
-
-        // Check if patient has any active visits at all
-        const { data: anyActiveVisits } = await supabase
-          .from('patient_visits')
-          .select('*')
-          .eq('patient_id', patientId)
-          .eq('overall_status', 'Active')
-          .limit(1);
-
-        if (anyActiveVisits && anyActiveVisits.length > 0) {
-          // Update existing visit to doctor stage
-          const { error } = await supabase
-            .from('patient_visits')
-            .update({
-              current_stage: 'doctor',
-              doctor_status: 'Pending',
-              lab_status: 'Completed',
-              lab_completed_at: new Date().toISOString()
-            })
-            .eq('id', anyActiveVisits[0].id);
-
-          if (error) {
-            console.error('Error updating visit for patient', test.patient?.full_name, error);
-          } else {
-            console.log('Updated visit for patient', test.patient?.full_name);
-          }
-        } else {
-          // Create new visit for patient
-          const { error } = await supabase
-            .from('patient_visits')
-            .insert([{
-              patient_id: patientId,
-              visit_date: new Date().toISOString().split('T')[0],
-              current_stage: 'doctor',
-              overall_status: 'Active',
-              reception_status: 'Checked In',
-              nurse_status: 'Completed',
-              lab_status: 'Completed',
-              doctor_status: 'Pending',
-              lab_completed_at: new Date().toISOString()
-            }]);
-
-          if (error) {
-            console.error('Error creating visit for patient', test.patient?.full_name, error);
-          } else {
-            console.log('Created visit for patient', test.patient?.full_name);
-          }
-        }
-      }
-
-      toast.success('Ensured all patients have proper visits - check doctor dashboard');
-    } catch (error) {
-      console.error('Error ensuring patient visits:', error);
-      toast.error('Failed to ensure patient visits');
-    }
-  };
-  const testLabWorkflow = async () => {
-    try {
-      // Find a test patient and create/update a visit for testing
-      const testPatientId = '550e8400-e29b-41d4-a716-446655440001'; // John Doe
-
-      console.log('Testing lab workflow for patient:', testPatientId);
-
-      // Check if patient already has active prescriptions
-      const { data: existingPrescriptions } = await supabase
-        .from('prescriptions')
-        .select('*')
-        .eq('patient_id', testPatientId)
-        .in('status', ['Pending', 'Active'])
-        .limit(1);
-
-      if (existingPrescriptions && existingPrescriptions.length > 0) {
-        console.log('Patient already has active prescriptions:', existingPrescriptions.length);
-        toast.info('Patient already has active prescriptions - no need to push to doctor again');
-        return;
-      }
-
-      // First check if there's already a patient visit in doctor stage
-      const { data: existingVisits } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', testPatientId)
-        .eq('overall_status', 'Active')
-        .limit(1);
-
-      if (existingVisits && existingVisits.length > 0) {
-        const visit = existingVisits[0];
-
-        // Check if visit is already in doctor stage and pending
-        if (visit.current_stage === 'doctor' && visit.doctor_status === 'Pending') {
-          console.log('Patient already has active doctor consultation');
-          toast.info('Patient already waiting for doctor consultation');
-          return;
-        }
-
-        // Check if visit has already been completed by doctor (has prescriptions)
-        if (visit.current_stage === 'pharmacy' || visit.doctor_status === 'Completed') {
-          console.log('Patient visit already completed by doctor');
-          toast.info('Patient visit already completed by doctor - has prescriptions assigned');
-          return;
-        }
-
-        console.log('Found existing visit:', existingVisits[0]);
-
-        // Update it to doctor stage only if appropriate
-        const { error } = await supabase
-          .from('patient_visits')
-          .update({
-            current_stage: 'doctor',
-            doctor_status: 'Pending',
-            lab_status: 'Completed',
-            lab_completed_at: new Date().toISOString()
-          })
-          .eq('id', existingVisits[0].id);
-
-        if (error) {
-          console.error('Error updating test visit:', error);
-          toast.error('Failed to create test workflow');
-        } else {
-          toast.success('Test workflow updated - patient moved to doctor consultation');
-        }
-      } else {
-        // Create a new test visit
-        const { error } = await supabase
-          .from('patient_visits')
-          .insert([{
-            patient_id: testPatientId,
-            visit_date: new Date().toISOString().split('T')[0],
-            current_stage: 'doctor',
-            overall_status: 'Active',
-            reception_status: 'Checked In',
-            nurse_status: 'Completed',
-            lab_status: 'Completed',
-            doctor_status: 'Pending',
-            lab_completed_at: new Date().toISOString()
-          }]);
-
-        if (error) {
-          console.error('Error creating test visit:', error);
-          toast.error('Failed to create test workflow');
-        } else {
-          toast.success('Test workflow created - patient moved to doctor consultation');
-        }
-      }
-    } catch (error) {
-      console.error('Error in test workflow:', error);
-      toast.error('Test workflow failed');
-    }
-  };
 
   if (loading) {
     return (
@@ -610,24 +411,7 @@ export default function LabDashboard() {
                 </CardTitle>
                 <CardDescription>Manage and process laboratory tests</CardDescription>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={testLabWorkflow}
-                  className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                >
-                  Test Lab Workflow
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={ensureAllPatientsHaveVisits}
-                  className="text-green-600 border-green-200 hover:bg-green-50"
-                >
-                  Fix All Patient Visits
-                </Button>
-              </div>
+
             </div>
           </CardHeader>
           <CardContent>
@@ -719,18 +503,8 @@ export default function LabDashboard() {
                                 size="sm"
                                 onClick={() => {
                                   setSelectedPatientTests(tests);
-                                  // Initialize batch results with empty values
-                                  const initialResults: Record<string, any> = {};
-                                  tests.forEach(test => {
-                                    initialResults[test.id] = {
-                                      result_value: '',
-                                      reference_range: '',
-                                      unit: '',
-                                      abnormal_flag: false,
-                                      notes: ''
-                                    };
-                                  });
-                                  setBatchResults(initialResults);
+                                  // Don't initialize batch results - this opens read-only view
+                                  setBatchResults({});
                                   setBatchDialogOpen(true);
                                 }}
                                 className="flex items-center gap-1"
@@ -768,23 +542,114 @@ export default function LabDashboard() {
           </CardContent>
         </Card>
 
-        {/* Batch Test Submission Dialog */}
-        <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+
+
+        {/* View Tests Dialog - Read Only (What needs to be tested) */}
+        <Dialog open={batchDialogOpen && selectedPatientTests.length > 0 && Object.keys(batchResults).length === 0} onOpenChange={(open) => {
+          if (!open) {
+            setBatchDialogOpen(false);
+            setSelectedPatientTests([]);
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FlaskConical className="h-5 w-5" />
                 Lab Tests for {selectedPatientTests[0]?.patient?.full_name}
               </DialogTitle>
               <DialogDescription>
-                {selectedPatientTests.filter(t => t.status === 'Pending' || t.status === 'In Progress').length > 0 
-                  ? `Submit results for ${selectedPatientTests.length} test(s)`
-                  : `Viewing ${selectedPatientTests.length} test(s)`
-                }
+                Tests to be performed: {selectedPatientTests.length} test(s)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {selectedPatientTests.map((test, index) => (
+                <Card key={test.id} className="border-2 border-blue-100">
+                  <div className="p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-semibold text-sm">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-lg">{test.test_name}</h4>
+                          <p className="text-sm text-muted-foreground">{test.test_type}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={
+                            test.priority === 'STAT' ? 'destructive' : 
+                            test.priority === 'Urgent' ? 'default' : 
+                            'secondary'
+                          }
+                        >
+                          {test.priority}
+                        </Badge>
+                        <Badge 
+                          variant={
+                            test.status === 'Completed' ? 'default' :
+                            test.status === 'In Progress' ? 'secondary' :
+                            'outline'
+                          }
+                        >
+                          {test.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm bg-blue-50 p-2 rounded border border-blue-200">
+                        <Clock className="h-4 w-4 text-blue-600" />
+                        <span><strong>Ordered:</strong> {format(new Date(test.ordered_date), 'MMM dd, yyyy HH:mm')}</span>
+                      </div>
+                      {test.notes && (
+                        <div className="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+                          <div className="flex items-start gap-2">
+                            <span className="text-lg">💡</span>
+                            <div>
+                              <strong className="text-yellow-800 text-sm">Doctor's Instructions:</strong>
+                              <p className="text-yellow-700 text-sm mt-1">{test.notes}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              <div className="flex justify-end pt-4 border-t">
+                <Button variant="outline" onClick={() => {
+                  setBatchDialogOpen(false);
+                  setSelectedPatientTests([]);
+                }}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Submit Results Dialog - With Form */}
+        <Dialog open={batchDialogOpen && selectedPatientTests.length > 0 && Object.keys(batchResults).length > 0} onOpenChange={(open) => {
+          if (!open) {
+            setBatchDialogOpen(false);
+            setSelectedPatientTests([]);
+            setBatchResults({});
+          }
+        }}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5" />
+                Submit Results for {selectedPatientTests[0]?.patient?.full_name}
+              </DialogTitle>
+              <DialogDescription>
+                Enter results for {selectedPatientTests.filter(t => t.status === 'Pending' || t.status === 'In Progress').length} test(s)
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              {selectedPatientTests.map((test, index) => (
+              {selectedPatientTests
+                .filter(test => test.status === 'Pending' || test.status === 'In Progress')
+                .map((test, index) => (
                 <Card key={test.id} className="border-2">
                   <div className="p-4 space-y-4">
                     <div className="flex items-center justify-between">
@@ -801,7 +666,7 @@ export default function LabDashboard() {
                         <Badge 
                           variant={
                             test.priority === 'STAT' ? 'destructive' : 
-                            test.priority === 'Urgent' ? 'warning' : 
+                            test.priority === 'Urgent' ? 'default' : 
                             'secondary'
                           }
                         >
@@ -809,15 +674,24 @@ export default function LabDashboard() {
                         </Badge>
                         <Badge 
                           variant={
-                            test.status === 'Completed' ? 'success' :
-                            test.status === 'In Progress' ? 'info' :
-                            'outline'
+                            test.status === 'In Progress' ? 'secondary' : 'outline'
                           }
                         >
                           {test.status}
                         </Badge>
                       </div>
                     </div>
+                    {test.notes && (
+                      <div className="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg">💡</span>
+                          <div>
+                            <strong className="text-yellow-800 text-sm">Doctor's Instructions:</strong>
+                            <p className="text-yellow-700 text-sm mt-1">{test.notes}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor={`result_${test.id}`}>Result Value *</Label>
@@ -864,7 +738,7 @@ export default function LabDashboard() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`notes_${test.id}`}>Notes</Label>
+                      <Label htmlFor={`notes_${test.id}`}>Lab Notes</Label>
                       <Textarea
                         id={`notes_${test.id}`}
                         value={batchResults[test.id]?.notes || ''}
@@ -877,10 +751,15 @@ export default function LabDashboard() {
                 </Card>
               ))}
               <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => setBatchDialogOpen(false)}>
+                <Button variant="outline" onClick={() => {
+                  setBatchDialogOpen(false);
+                  setSelectedPatientTests([]);
+                  setBatchResults({});
+                }}>
                   Cancel
                 </Button>
                 <Button onClick={handleSubmitBatchResults}>
+                  <CheckCircle className="h-4 w-4 mr-2" />
                   Submit All Results
                 </Button>
               </div>

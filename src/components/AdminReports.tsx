@@ -290,6 +290,17 @@ export default function AdminReports() {
 
       {/* Print Header - Only visible on print */}
       <div className="hidden print:block text-center mb-6">
+        <div className="flex items-center justify-center mb-4">
+          <img 
+            src="/logo.png" 
+            alt="Hospital Logo" 
+            className="h-16 w-16 object-contain"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+            }}
+          />
+        </div>
         <h1 className="text-2xl font-bold">{settings.hospitalName}</h1>
         <h2 className="text-xl">{settings.reportHeader}</h2>
         <p className="text-sm text-gray-600">
