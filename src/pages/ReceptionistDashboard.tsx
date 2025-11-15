@@ -62,6 +62,9 @@ export default function ReceptionistDashboard() {
 
   const [showPatientSearch, setShowPatientSearch] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [showReturningPatientDialog, setShowReturningPatientDialog] = useState(false);
+  const [returningPatientSearch, setReturningPatientSearch] = useState('');
+  const [returningPatientResults, setReturningPatientResults] = useState<any[]>([]);
   const [roleUpdateIndicator, setRoleUpdateIndicator] = useState<string | null>(null);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [selectedAppointmentForPayment, setSelectedAppointmentForPayment] = useState<any>(null);
@@ -785,6 +788,97 @@ export default function ReceptionistDashboard() {
     setShowScheduleDialog(true);
   };
 
+  // Real-time search for returning patients
+  useEffect(() => {
+    if (!showReturningPatientDialog || !returningPatientSearch.trim()) {
+      setReturningPatientResults([]);
+      return;
+    }
+    
+    const timeoutId = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('patients')
+          .select('*')
+          .or(`full_name.ilike.%${returningPatientSearch}%,phone.ilike.%${returningPatientSearch}%`)
+          .limit(10);
+
+        if (error) throw error;
+        setReturningPatientResults(data || []);
+      } catch (error) {
+        console.error('Search error:', error);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [returningPatientSearch, showReturningPatientDialog]);
+
+  const createVisitForReturningPatient = async (patient: any) => {
+    try {
+      setLoading(true);
+      console.log('Creating visit for returning patient:', patient);
+
+      // Check if patient already has an active visit
+      const { data: existingVisits, error: checkError } = await supabase
+        .from('patient_visits')
+        .select('*')
+        .eq('patient_id', patient.id)
+        .eq('overall_status', 'Active')
+        .limit(1);
+
+      if (checkError) {
+        console.error('Error checking existing visits:', checkError);
+        throw checkError;
+      }
+
+      if (existingVisits && existingVisits.length > 0) {
+        console.log('Patient already has active visit:', existingVisits[0]);
+        toast.error('This patient already has an active visit. Please complete the current visit first.');
+        setLoading(false);
+        return;
+      }
+
+      // Create new visit with all required fields (matching the registration flow)
+      const visitData = {
+        patient_id: patient.id,
+        visit_date: new Date().toISOString().split('T')[0],
+        reception_status: 'Checked In',
+        reception_completed_at: new Date().toISOString(),
+        current_stage: 'nurse',
+        nurse_status: 'Pending',
+        overall_status: 'Active'
+      };
+
+      console.log('Creating visit with data:', visitData);
+
+      const { data: newVisit, error: visitError } = await supabase
+        .from('patient_visits')
+        .insert([visitData])
+        .select()
+        .single();
+
+      if (visitError) {
+        console.error('Error creating visit:', visitError);
+        throw visitError;
+      }
+
+      console.log('Visit created successfully:', newVisit);
+      toast.success(`New visit created for ${patient.full_name}. Patient sent to Nurse.`);
+      setShowReturningPatientDialog(false);
+      setReturningPatientSearch('');
+      setReturningPatientResults([]);
+      
+      // Refresh data
+      fetchData();
+    } catch (error: any) {
+      console.error('Error creating visit for returning patient:', error);
+      const errorMessage = error?.message || 'Unknown error';
+      toast.error(`Failed to create visit: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const searchPatients = async () => {
     if (!searchQuery.trim()) {
       toast.error('Please enter a search term');
@@ -1134,6 +1228,11 @@ export default function ReceptionistDashboard() {
                   <UserPlus className="h-6 w-6" />
                   <span>Register New Patient</span>
                   <span className="text-xs text-muted-foreground">→ Goes to Nurse</span>
+                </Button>
+                <Button variant="default" className="h-20 flex-col gap-2 bg-blue-600 hover:bg-blue-700" onClick={() => setShowReturningPatientDialog(true)}>
+                  <Users className="h-6 w-6" />
+                  <span>Returning Patient</span>
+                  <span className="text-xs">→ Create New Visit</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleBookAppointment}>
                   <Calendar className="h-6 w-6" />
@@ -1624,6 +1723,77 @@ export default function ReceptionistDashboard() {
               >
                 Confirm Payment & Check In
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Returning Patient Dialog */}
+      <Dialog open={showReturningPatientDialog} onOpenChange={setShowReturningPatientDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Returning Patient - Create New Visit</DialogTitle>
+            <DialogDescription>
+              Search for an existing patient and create a new visit
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Search Patient</Label>
+              <Input
+                placeholder="Search by name or phone..."
+                value={returningPatientSearch}
+                onChange={(e) => setReturningPatientSearch(e.target.value)}
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Start typing to search in real-time
+              </p>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto border rounded-lg">
+              {returningPatientResults.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  {returningPatientSearch ? 'No patients found' : 'Start typing to search for patients'}
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {returningPatientResults.map((patient) => (
+                    <div key={patient.id} className="p-4 hover:bg-muted/50 transition-colors">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="font-semibold text-lg">{patient.full_name}</div>
+                          <div className="text-sm text-muted-foreground mt-1 space-y-1">
+                            <div>📞 {patient.phone}</div>
+                            <div>🎂 DOB: {format(new Date(patient.date_of_birth), 'MMM dd, yyyy')} ({new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()} years)</div>
+                            <div>⚧ {patient.gender}</div>
+                            {patient.blood_group && <div>🩸 {patient.blood_group}</div>}
+                            {patient.allergies && (
+                              <div className="text-red-600 font-medium">⚠️ Allergies: {patient.allergies}</div>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => createVisitForReturningPatient(patient)}
+                          disabled={loading}
+                        >
+                          {loading ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              Creating...
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus className="h-4 w-4 mr-2" />
+                              Create Visit
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </DialogContent>
